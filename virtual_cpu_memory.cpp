@@ -83,10 +83,12 @@ int CPU::read_memory(uint32_t address, int size) {
     std::string error_message =
         "Invalid memory page! Reading from unmapped memory!";
     // Add hex address to the error message
-    error_message += " Address: 0x" + std::to_string(address) + " ";
+    error_message += " Address: 0x" + std::format("{:x}", address) + " ";
     // Add page number to the error message
     error_message += " Page: " + std::to_string(page);
-    throw std::runtime_error(error_message);
+    // throw std::runtime_error(error_message);
+    std::cerr << error_message << std::endl;
+    return 0;
   }
   std::cout << "Reading from page: " << page << " offset: " << offset
             << std::endl;

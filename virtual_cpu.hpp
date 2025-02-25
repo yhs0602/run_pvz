@@ -16,7 +16,7 @@ public:
   int eax, ebx, ecx, edx;
   int esi, edi, ebp, eip, esp;
   short cs, ds, es, fs, gs, ss;
-  int eflags;
+  uint32_t eflags;
   csh handle;
 
   std::map<int, std::vector<uint8_t>> memory;
@@ -46,6 +46,32 @@ public:
   }
 
   void initialize_teb();
+
+  void pushad() {
+    push(eax);
+    push(ecx);
+    push(edx);
+    push(ebx);
+    push(esp);
+    push(ebp);
+    push(esi);
+    push(edi);
+  }
+  void popad() {
+    pop(X86_REG_EDI);
+    pop(X86_REG_ESI);
+    pop(X86_REG_EBP);
+    pop(X86_REG_ESP);
+    pop(X86_REG_EBX);
+    pop(X86_REG_EDX);
+    pop(X86_REG_ECX);
+    pop(X86_REG_EAX);
+  }
+  void pushf() { push(eflags); }
+  void popf() {
+    eflags = read_memory(esp);
+    esp += 4;
+  }
 
   void push(int value) {
     esp -= 4;
@@ -207,12 +233,50 @@ public:
   void execute_call(const cs_insn *insn);
   void execute_jmp(const cs_insn *insn);
   void execute_mov(const cs_insn *insn);
+  void execute_lea(const cs_insn *insn);
   void execute_push(const cs_insn *insn);
   void execute_pop(const cs_insn *insn);
+
+  void execute_je(const cs_insn *insn);
+
+  void update_parity_flag(int result);
+  void update_sign_flag(int result);
+  void update_zero_flag(int result);
+
   void execute_add(const cs_insn *insn);
   void execute_sub(const cs_insn *insn);
+  void execute_mul(const cs_insn *insn);
+  void execute_div(const cs_insn *insn);
   void execute_and(const cs_insn *insn);
   void execute_or(const cs_insn *insn);
+  void execute_xor(const cs_insn *insn);
+  void extracted(int &result);
+  void execute_test(const cs_insn *insn);
+  void execute_cmp(const cs_insn *insn);
   uint32_t translate_gdt(short segment_value);
   uint32_t calculate_operand_memory(const x86_op_mem &operand);
+  int read_operand(const cs_x86_op &op) {
+    switch (op.type) {
+    case X86_OP_REG:
+      return read_register(op.reg);
+    case X86_OP_IMM:
+      return op.imm;
+    case X86_OP_MEM:
+      return read_memory(calculate_operand_memory(op.mem), op.size);
+    default:
+      throw std::runtime_error("Invalid operand type!");
+    }
+  }
+  void write_operand(const cs_x86_op &op, int value) {
+    switch (op.type) {
+    case X86_OP_REG:
+      write_register(op.reg, value);
+      break;
+    case X86_OP_MEM:
+      write_memory(calculate_operand_memory(op.mem), value, op.size);
+      break;
+    default:
+      throw std::runtime_error("Invalid operand type!");
+    }
+  }
 };

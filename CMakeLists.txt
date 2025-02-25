@@ -33,6 +33,7 @@ add_executable(
     virtual_cpu_stack.cpp
     virtual_cpu_memory.cpp
     virtual_cpu_mov.cpp
+    virtual_cpu_arith.cpp
 )
 target_include_directories(runner PRIVATE ${CAPSTONE_INCLUDE_DIRS})
 target_link_directories(runner PRIVATE ${CAPSTONE_LIBRARY_DIRS})

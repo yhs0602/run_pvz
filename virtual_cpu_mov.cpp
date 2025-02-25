@@ -61,3 +61,61 @@ void CPU::execute_mov(const cs_insn *insn) {
   } break;
   }
 }
+
+void CPU::execute_lea(const cs_insn *insn) {
+  std::cout << "Lea instruction detected!" << std::endl;
+  const cs_x86 &x86 = insn->detail->x86;
+
+  if (x86.op_count <= 0) {
+    std::cerr << "Error: No operands found!" << std::endl;
+    throw std::runtime_error("No operands found in LEA instruction!");
+  }
+  const cs_x86_op &op1 = x86.operands[0];
+  const cs_x86_op &op2 = x86.operands[1];
+  // read operand 2
+  int value;
+  switch (op2.type) {
+  case X86_OP_MEM: {
+    std::cout << "Calculating memory address" << std::endl;
+    uint32_t address = calculate_operand_memory(op2.mem);
+    value = address;
+    break;
+  }
+  case X86_OP_REG: {
+    std::cerr << "Register operand not supported!" << std::endl;
+    throw std::runtime_error("Register operand in LEA instruction!");
+  } break;
+  case X86_OP_IMM: {
+    std::cerr << "Immediate operand not supported!" << std::endl;
+    throw std::runtime_error("Immediate operand in LEA instruction!");
+  } break;
+  case X86_OP_INVALID: {
+    std::cerr << "Invalid operand!" << std::endl;
+    throw std::runtime_error("Invalid operand in LEA instruction!");
+  } break;
+  }
+
+  // write to operand 1
+  switch (op1.type) {
+  case X86_OP_REG: {
+    std::cout << "Moving to register: " << cs_reg_name(handle, op1.reg)
+              << std::endl;
+    write_register(op1.reg, value);
+    break;
+  }
+  case X86_OP_MEM: {
+    std::cout << "Moving to memory" << std::endl;
+    uint32_t address = calculate_operand_memory(op1.mem);
+    write_memory(address, value, op1.size);
+    break;
+  }
+  case X86_OP_IMM: {
+    std::cerr << "Immediate operand not supported!" << std::endl;
+    throw std::runtime_error("Immediate operand in LEA instruction!");
+  } break;
+  case X86_OP_INVALID: {
+    std::cerr << "Invalid operand!" << std::endl;
+    throw std::runtime_error("Invalid operand in LEA instruction!");
+  } break;
+  }
+}

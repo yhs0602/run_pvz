@@ -65,6 +65,47 @@ void execute_one_instruction(const csh handle, const cs_insn *insn, CPU &cpu) {
     cpu.execute_mov(insn);
     break;
   }
+  case X86_INS_LEA: {
+    cpu.execute_lea(insn);
+    break;
+  }
+  case X86_INS_SUB: {
+    cpu.execute_sub(insn);
+    break;
+  }
+  case X86_INS_ADD: {
+    cpu.execute_add(insn);
+    break;
+  }
+  case X86_INS_AND: {
+    cpu.execute_and(insn);
+    break;
+  }
+  case X86_INS_XOR: {
+    cpu.execute_xor(insn);
+    break;
+  }
+  case X86_INS_OR: {
+    cpu.execute_or(insn);
+    break;
+  }
+  case X86_INS_TEST: {
+    cpu.execute_test(insn);
+    break;
+  }
+  case X86_INS_JE: {
+    cpu.execute_je(insn);
+    break;
+  }
+  case X86_INS_CMP: {
+    cpu.execute_cmp(insn);
+    break;
+  }
+
+  default:
+    std::cerr << "Unhandled instruction: " << insn->mnemonic << std::endl;
+    throw std::runtime_error("Unhandled instruction");
+    break;
   }
   cpu.dump();
   std::cout << "=========================" << std::endl;
@@ -104,7 +145,7 @@ void execute_x86(const std::span<const uint8_t> &code, uint64_t start_offset,
       // calculate the new current_code_ptr
       current_code_ptr = code.data() + (cpu.eip - address);
       virtaddr = cpu.eip;
-      if (executed == 20) {
+      if (executed == 40) {
         break;
       }
     } else {
@@ -139,6 +180,7 @@ int main(int argc, char **argv) {
   // binary->optional_header().addressof_entrypoint()
   // setEntryPoint(oph.getAddressOfEntryPoint());
   // fileContents = filec;
+  binary->import_section();
   for (const auto &section : binary->sections()) {
     std::cout << "Section Name: " << section.name() << std::endl;
     std::cout << "Size: " << section.size() << " bytes" << std::endl;
@@ -157,6 +199,30 @@ int main(int argc, char **argv) {
   if (!text_section) {
     std::cerr << "Error: No .text section found!" << std::endl;
     return 1;
+  }
+
+  // std::cout << binary->section_from_rva(0x699fe8) << std::endl;
+  // Parse IAT
+  for (auto &import : binary->imported_functions()) {
+    std::cout << "Imported Function: " << import << std::endl;
+  }
+  for (auto &library : binary->imported_libraries()) {
+    std::cout << "Imported Library: " << library << std::endl;
+  }
+  // data directories
+  for (const auto &data_directory : binary->data_directories()) {
+    std::cout << "Data Directory: " << data_directory << std::endl;
+  }
+
+  for (const auto &import : binary->imports()) {
+    for (const auto &entry : import.entries()) {
+      if (entry.iat_value() == 0x699FE8) {
+        std::cout << "0x699FE8 is used for API: " << entry.name() << std::endl;
+      } else {
+        std::cout << "API: " << entry.name() << " IAT: " << std::hex
+                  << entry.iat_value() << std::dec << std::endl;
+      }
+    }
   }
 
   uint64_t entry_offset = entry_point_va - text_section->virtual_address() +

@@ -1,4 +1,5 @@
 #include "virtual_cpu.hpp"
+#include "flags.hpp"
 #include "x86.h"
 
 void CPU::execute_return() { this->pop(X86_REG_EIP); }
@@ -68,6 +69,44 @@ void CPU::execute_jmp(const cs_insn *insn) {
     std::cout << "Scale: " << op.mem.scale << std::endl;
     std::cout << "Displacement: " << op.mem.disp << std::endl;
     throw std::runtime_error("Indirect JMP not supported!");
+  } break;
+  }
+}
+
+void CPU::execute_je(const cs_insn *insn) {
+  std::cout << "JE instruction detected!" << std::endl;
+  const cs_x86 &x86 = insn->detail->x86;
+
+  if (x86.op_count <= 0) {
+    std::cerr << "Error: No operands found!" << std::endl;
+    throw std::runtime_error("No operands found in JE instruction!");
+  }
+  const cs_x86_op &op = x86.operands[0];
+
+  switch (op.type) {
+  case X86_OP_INVALID: {
+    std::cerr << "Invalid operand!" << std::endl;
+    throw std::runtime_error("Invalid operand in JE instruction!");
+  } break;
+  case X86_OP_REG: {
+    throw std::runtime_error("JE to register not supported!");
+  } break;
+  case X86_OP_IMM:
+    std::cout << "Comparing relative address: 0x" << std::hex << op.imm
+              << std::dec << std::endl;
+    if (test_flag(eflags, ZF)) {
+      std::cout << "ZF is set, jumping to 0x" << std::hex << op.imm << std::dec
+                << std::endl;
+      eip = op.imm; // Capstone returns the target address value for JE imm
+    }
+    break;
+  case X86_OP_MEM: {
+    std::cout << "Indirect compare via memory address" << std::endl;
+    std::cout << "Base: " << cs_reg_name(handle, op.mem.base) << std::endl;
+    std::cout << "Index: " << cs_reg_name(handle, op.mem.index) << std::endl;
+    std::cout << "Scale: " << op.mem.scale << std::endl;
+    std::cout << "Displacement: " << op.mem.disp << std::endl;
+    throw std::runtime_error("Indirect JE not supported!");
   } break;
   }
 }
