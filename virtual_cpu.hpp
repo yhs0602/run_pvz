@@ -238,6 +238,7 @@ public:
   void execute_pop(const cs_insn *insn);
 
   void execute_je(const cs_insn *insn);
+  void execute_jne(const cs_insn *insn);
 
   void update_parity_flag(int result);
   void update_sign_flag(int result);

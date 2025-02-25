@@ -101,6 +101,10 @@ void execute_one_instruction(const csh handle, const cs_insn *insn, CPU &cpu) {
     cpu.execute_cmp(insn);
     break;
   }
+  case X86_INS_JNE: {
+    cpu.execute_jne(insn);
+    break;
+  }
 
   default:
     std::cerr << "Unhandled instruction: " << insn->mnemonic << std::endl;
