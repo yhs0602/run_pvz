@@ -1,5 +1,6 @@
 #include <LIEF/LIEF.hpp>
 #include <capstone/capstone.h>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <vector>
@@ -25,6 +26,45 @@ void disassemble_x86(const std::vector<uint8_t> &code, uint64_t address) {
     std::cerr << "Disassembly failed!" << std::endl;
   }
 
+  cs_close(&handle);
+}
+
+void execute_one_instruction(const cs_insn &insn) {
+  std::cout << std::hex << insn.address << ": " << insn.mnemonic << " "
+            << insn.op_str << std::endl;
+  switch(insn.id) {
+    case X86_INS_CALL:
+      std::cout << "Call instruction detected! Detail:" << insn.detail << std::endl;
+      break;
+    case X86_INS_RET:
+      std::cout << "Return instruction detected!" << std::endl;
+      break;
+  }
+}
+
+void execute_x86(const std::vector<uint8_t> &code, uint64_t address) {
+  csh handle;
+  cs_insn insn;
+  size_t count;
+
+  if (cs_open(CS_ARCH_X86, CS_MODE_32, &handle) != CS_ERR_OK) {
+    std::cerr << "Failed to initialize Capstone!" << std::endl;
+    return;
+  }
+  std::cout << "Executing from entry point...\n";
+  const uint8_t *code_ptr = code.data();
+  size_t code_size = code.size();
+  uint64_t virtaddr = address;
+  while (true) {
+    count = cs_disasm_iter(handle, &code_ptr, &code_size, &virtaddr, &insn);
+    if (count == 1) {
+      execute_one_instruction(insn);
+      break;
+    } else {
+      std::cerr << "Disassembly failed!" << std::endl;
+      break;
+    }
+  }
   cs_close(&handle);
 }
 
@@ -102,6 +142,7 @@ int main(int argc, char **argv) {
   // Capstone을 사용해 엔트리포인트부터 디스어셈블
   std::cout << "\nDisassembling from entry point...\n";
   disassemble_x86(code, entry_point_va);
+  execute_x86(code, entry_point_va);
 
   return 0;
 }
