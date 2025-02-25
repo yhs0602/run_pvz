@@ -1,11 +1,22 @@
-cmake_minimum_required(VERSION 3.11)
+cmake_minimum_required(VERSION 3.15)
 project(runner)
 
-# C++11 설정
-set(CMAKE_CXX_STANDARD 11)
+# C++20
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type (Debug/Release)" FORCE)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    add_compile_options(-g)  # 디버그 심볼 추가
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    add_compile_options(/Zi /Od)  # MSVC 디버그 심볼
+    add_link_options(/DEBUG)  # MSVC 디버그 링커 옵션
+endif()
 
 find_package(LIEF REQUIRED)
 find_package(PkgConfig REQUIRED)
