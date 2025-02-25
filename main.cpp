@@ -9,8 +9,7 @@ void disassemble_x86(const std::vector<uint8_t> &code, uint64_t address) {
   cs_insn *insn;
   size_t count;
 
-  if (cs_open(CS_ARCH_X86, CS_MODE_32, &handle) !=
-      CS_ERR_OK) {
+  if (cs_open(CS_ARCH_X86, CS_MODE_32, &handle) != CS_ERR_OK) {
     std::cerr << "Failed to initialize Capstone!" << std::endl;
     return;
   }
@@ -46,7 +45,12 @@ int main(int argc, char **argv) {
   std::cout << "Number of Sections: " << binary->sections().size() << std::endl;
 
   LIEF::PE::Section *text_section = nullptr;
-
+  // setCodeSectionBase(oph.getBaseOfCode());
+  // setCodeSectionLimit(getCodeSectionBase() + oph.getSizeOfCode());
+  // setCodeVirtAddr(oph.getImageBase() + getCodeSectionBase());
+  // binary->optional_header().addressof_entrypoint()
+  // setEntryPoint(oph.getAddressOfEntryPoint());
+  // fileContents = filec;
   for (const auto &section : binary->sections()) {
     std::cout << "Section Name: " << section.name() << std::endl;
     std::cout << "Size: " << section.size() << " bytes" << std::endl;
@@ -59,7 +63,7 @@ int main(int argc, char **argv) {
     }
   }
 
-  uint64_t entry_point_va = binary->entrypoint();
+  uint64_t entry_point_va = binary->optional_header().addressof_entrypoint();
   std::cout << "Entry Point Address (VA): 0x" << std::hex << entry_point_va
             << std::dec << std::endl;
 
@@ -68,8 +72,8 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  uint64_t entry_offset =
-      entry_point_va - text_section->virtual_address() + text_section->offset();
+  uint64_t entry_offset = entry_point_va - text_section->virtual_address() +
+                          text_section->pointerto_raw_data();
   std::cout << "Corrected Entry Point Offset in file: 0x" << std::hex
             << entry_offset << std::dec << std::endl;
 
