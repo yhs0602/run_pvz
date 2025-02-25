@@ -1,3 +1,5 @@
+#include "virtual_cpu.hpp"
+#include "x86.h"
 #include <LIEF/LIEF.hpp>
 #include <capstone/capstone.h>
 #include <cstdint>
@@ -30,48 +32,42 @@ void disassemble_x86(const std::vector<uint8_t> &code, uint64_t address) {
   cs_close(&handle);
 }
 
-// returns the offset of the next instruction
-int execute_one_instruction(const csh handle, const cs_insn *insn) {
+// returns the next eip value
+void execute_one_instruction(const csh handle, const cs_insn *insn, CPU &cpu) {
   std::cout << std::hex << insn->address << ": " << insn->mnemonic << " "
             << insn->op_str << std::endl;
+  // assert that cpu eip is same as insn address
+  assert(cpu.eip == insn->address);
+  // Step the CPU
+  cpu.eip = cpu.eip + insn->size;
+
   switch (insn->id) {
   case X86_INS_CALL: {
-    std::cout << "Call instruction detected! Detail:" << insn->detail
-              << std::endl;
-    const cs_x86 &x86 = insn->detail->x86;
-
-    if (x86.op_count <= 0) {
-      std::cerr << "Error: No operands found!" << std::endl;
-      throw std::runtime_error("No operands found in CALL instruction!");
-    }
-    const cs_x86_op &op = x86.operands[0];
-    switch (op.type) {
-    case X86_OP_IMM:
-      std::cout << "Calling relative address: 0x" << std::hex << op.imm
-                << std::dec << std::endl;
-      return (insn->address + insn->size) + op.imm;
-    case X86_OP_MEM:
-      std::cout << "Indirect call via memory address" << std::endl;
-      std::cout << "Base: " << cs_reg_name(handle, op.mem.base) << std::endl;
-      std::cout << "Index: " << cs_reg_name(handle, op.mem.index) << std::endl;
-      std::cout << "Scale: " << op.mem.scale << std::endl;
-      std::cout << "Displacement: " << op.mem.disp << std::endl;
-      break;
-    case X86_OP_REG:
-      std::cout << "Indirect call via register: " << cs_reg_name(handle, op.reg)
-                << std::endl;
-      break;
-    case X86_OP_INVALID:
-      std::cerr << "Invalid operand!" << std::endl;
-      throw std::runtime_error("Invalid operand in CALL instruction!");
-    }
+    cpu.execute_call(insn);
     break;
   }
   case X86_INS_RET:
-    std::cout << "Return instruction detected!" << std::endl;
+    cpu.execute_return();
+    break;
+  case X86_INS_JMP: {
+    cpu.execute_jmp(insn);
     break;
   }
-  return 0;
+  case X86_INS_PUSH: {
+    cpu.execute_push(insn);
+    break;
+  }
+  case X86_INS_POP: {
+    cpu.execute_pop(insn);
+    break;
+  }
+  case X86_INS_MOV: {
+    cpu.execute_mov(insn);
+    break;
+  }
+  }
+  cpu.dump();
+  std::cout << "=========================" << std::endl;
 }
 
 void execute_x86(const std::span<const uint8_t> &code, uint64_t start_offset,
@@ -90,20 +86,27 @@ void execute_x86(const std::span<const uint8_t> &code, uint64_t start_offset,
     return;
   }
 
-  std::cout << "Executing from entry point...\n";
+  CPU cpu(handle, address);
+  std::cout << "Executing from entry point..." << std::endl << std::endl;
 
   const uint8_t *current_code_ptr = (code.data() + start_offset);
   size_t code_size = code.size();
   uint64_t virtaddr = address;
+
+  int executed = 0;
+  cpu.eip = address;
   while (true) {
-    count = cs_disasm_iter(handle, &current_code_ptr, &code_size, &virtaddr, insn);
+    count =
+        cs_disasm_iter(handle, &current_code_ptr, &code_size, &virtaddr, insn);
     if (count == 1) {
-      int next_instruction_offset = execute_one_instruction(handle, insn);
-      if (next_instruction_offset > 0) {
-        std::cout << "Next instruction offset: " << next_instruction_offset
-                  << std::endl;
+      execute_one_instruction(handle, insn, cpu);
+      executed += 1;
+      // calculate the new current_code_ptr
+      current_code_ptr = code.data() + (cpu.eip - address);
+      virtaddr = cpu.eip;
+      if (executed == 20) {
+        break;
       }
-      break;
     } else {
       std::cerr << "Disassembly failed!" << std::endl;
       break;
