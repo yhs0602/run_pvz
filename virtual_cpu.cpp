@@ -27,7 +27,11 @@ void CPU::execute_call(const cs_insn *insn) {
     std::cout << "Target address: 0x" << std::hex << target_address << std::dec
               << std::endl;
     push(insn->address + insn->size);
-    eip = target_address;
+    uint32_t call_address = read_memory(target_address, 4);
+    std::cout << "Calling address: 0x" << std::hex << call_address << std::dec
+              << std::endl;
+    // TODO: calculate actual call address based on the call_address
+    eip = call_address;
     break;
   }
   case X86_OP_REG:

@@ -1,5 +1,6 @@
 #include "virtual_cpu.hpp"
 #include <cstdint>
+#include <span>
 
 typedef struct _PEB_LDR_DATA {
   uint8_t Reserved1[8];
@@ -73,7 +74,7 @@ void CPU::initialize_teb() {
   write_memory(PEB_BASE + 0x3C, 0, 4); // Session ID
 }
 
-int CPU::read_memory(uint32_t address, int size) {
+uint64_t CPU::read_memory(uint32_t address, int size) {
   int page = address / PAGE_SIZE;
   int offset = address % PAGE_SIZE;
   if (offset % size != 0) {
@@ -83,28 +84,75 @@ int CPU::read_memory(uint32_t address, int size) {
     std::string error_message =
         "Invalid memory page! Reading from unmapped memory!";
     // Add hex address to the error message
-    error_message += " Address: 0x" + std::format("{:x}", address) + " ";
+    error_message += " Address: 0x" + std::format("{:x}", address) + "\n";
+    // for (const auto &[page, data] : memory) {
+    //   error_message += "Allocated Page: " + std::format("{:x}\n", page);
+    // }
     // Add page number to the error message
     error_message += " Page: " + std::to_string(page);
-    // throw std::runtime_error(error_message);
+    throw std::runtime_error(error_message);
     std::cerr << error_message << std::endl;
     return 0;
   }
-  std::cout << "Reading from page: " << page << " offset: " << offset
-            << std::endl;
+  // std::cout << "Reading from page: " << page << " offset: " << offset
+  //           << std::endl;
   switch (size) {
   case 1:
-    return static_cast<uint8_t>(memory[page][offset]);
+    return static_cast<uint64_t>(memory[page][offset]);
   case 2:
-    return static_cast<uint8_t>(memory[page][offset]) |
-           (static_cast<uint8_t>(memory[page][offset + 1]) << 8);
+    return static_cast<uint64_t>(memory[page][offset]) |
+           (static_cast<uint64_t>(memory[page][offset + 1]) << 8);
   case 4:
-    return static_cast<uint8_t>(memory[page][offset]) |
-           (static_cast<uint8_t>(memory[page][offset + 1]) << 8) |
-           (static_cast<uint8_t>(memory[page][offset + 2]) << 16) |
-           (static_cast<uint8_t>(memory[page][offset + 3]) << 24);
+    return static_cast<uint64_t>(memory[page][offset]) |
+           (static_cast<uint64_t>(memory[page][offset + 1]) << 8) |
+           (static_cast<uint64_t>(memory[page][offset + 2]) << 16) |
+           (static_cast<uint64_t>(memory[page][offset + 3]) << 24);
+  case 8:
+    return static_cast<uint64_t>(memory[page][offset]) |
+           (static_cast<uint64_t>(memory[page][offset + 1]) << 8) |
+           (static_cast<uint64_t>(memory[page][offset + 2]) << 16) |
+           (static_cast<uint64_t>(memory[page][offset + 3]) << 24) |
+           (static_cast<uint64_t>(memory[page][offset + 4]) << 32) |
+           (static_cast<uint64_t>(memory[page][offset + 5]) << 40) |
+           (static_cast<uint64_t>(memory[page][offset + 6]) << 48) |
+           (static_cast<uint64_t>(memory[page][offset + 7]) << 56);
   default:
     throw std::runtime_error("Invalid memory read size!");
+  }
+}
+
+void CPU::write_memory_bulk(uint32_t address,
+                            const std::span<const uint8_t> &data) {
+  const uint32_t size = data.size();
+  // calculate the start page
+  const uint32_t start_page = address / PAGE_SIZE;
+  const uint32_t start_offset = address % PAGE_SIZE;
+  // calculate the end page
+  const uint32_t end_page = (address + size - 1) / PAGE_SIZE;
+
+  uint32_t bytes_written = 0;
+  uint32_t remaining_bytes = size;
+  uint32_t current_address = address;
+
+  for (uint32_t current_page = start_page; current_page <= end_page;
+       ++current_page) {
+    // Ensure the page is allocated
+    if (memory.find(current_page) == memory.end()) {
+      memory[current_page] = std::vector<uint8_t>(PAGE_SIZE);
+    }
+
+    uint32_t current_offset = current_address % PAGE_SIZE;
+    uint32_t bytes_to_copy =
+        std::min(PAGE_SIZE - current_offset, remaining_bytes);
+
+    // Copy the data chunk to the current page
+    std::memcpy(&memory[current_page][current_offset], &data[bytes_written],
+                bytes_to_copy);
+
+    // Update counters
+    bytes_written += bytes_to_copy;
+    remaining_bytes -= bytes_to_copy;
+    current_address += bytes_to_copy;
   }
 }
 

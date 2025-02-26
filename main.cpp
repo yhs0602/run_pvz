@@ -1,12 +1,15 @@
+#include "import_handler.hpp"
 #include "virtual_cpu.hpp"
 #include "x86.h"
+#include <LIEF/Abstract/Binary.hpp>
 #include <LIEF/LIEF.hpp>
 #include <capstone/capstone.h>
 #include <cstdint>
-#include <fstream>
 #include <iostream>
 #include <span>
 #include <vector>
+
+std::map<uint64_t, ImportInfo> api_map;
 
 void disassemble_x86(const std::vector<uint8_t> &code, uint64_t address) {
   csh handle;
@@ -32,10 +35,20 @@ void disassemble_x86(const std::vector<uint8_t> &code, uint64_t address) {
   cs_close(&handle);
 }
 
+void byte_array_to_string(const uint8_t *bytes, size_t size, std::string &str) {
+  for (size_t i = 0; i < size; i++) {
+    char buf[4];
+    snprintf(buf, sizeof(buf), "%02x ", bytes[i]);
+    str += buf;
+  }
+}
+
 // returns the next eip value
 void execute_one_instruction(const csh handle, const cs_insn *insn, CPU &cpu) {
-  std::cout << std::hex << insn->address << ": " << insn->mnemonic << " "
-            << insn->op_str << std::endl;
+  std::string bytes;
+  byte_array_to_string(insn->bytes, insn->size, bytes);
+  std::cout << std::hex << insn->address << ": " << std::hex << bytes << " "
+            << insn->mnemonic << " " << insn->op_str << std::endl;
   // assert that cpu eip is same as insn address
   assert(cpu.eip == insn->address);
   // Step the CPU
@@ -111,12 +124,13 @@ void execute_one_instruction(const csh handle, const cs_insn *insn, CPU &cpu) {
     throw std::runtime_error("Unhandled instruction");
     break;
   }
-  cpu.dump();
+  // cpu.dump();
   std::cout << "=========================" << std::endl;
 }
 
 void execute_x86(const std::span<const uint8_t> &code, uint64_t start_offset,
-                 uint64_t address) {
+                 uint64_t entrypoint_va,
+                 std::unique_ptr<LIEF::PE::Binary> binary) {
   csh handle;
   size_t count;
 
@@ -131,24 +145,101 @@ void execute_x86(const std::span<const uint8_t> &code, uint64_t start_offset,
     return;
   }
 
-  CPU cpu(handle, address);
+  CPU cpu(handle, entrypoint_va);
+
+  // For each section, write the content to memory
+  for (const auto &section : binary->sections()) {
+    if (section.size() == 0) {
+      continue;
+    }
+    std::cout << "Writing section: " << section.name() << " to memory... at "
+              << section.virtual_address() << "("
+              << section.virtual_address() +
+                     binary->optional_header().imagebase()
+              << "-"
+              << section.virtual_address() +
+                     binary->optional_header().imagebase() + section.size()
+              << ")" << std::endl;
+    cpu.write_memory_bulk(section.virtual_address() +
+                              binary->optional_header().imagebase(),
+                          section.content());
+  }
+  // Fix IAT with imagebase
+  for (const auto &import : binary->imports()) {
+    for (const auto &entry : import.entries()) {
+      // if (entry.iat_value() != 0) {
+      std::cout << "Fixing IAT for API: <<" << entry.name() << ">> from <"
+                << import.name() << "> of value 0x" << std::hex
+                << entry.iat_value() << " at 0x" << entry.iat_address()
+                << std::dec << std::endl;
+      const uint64_t augmented_iat_value = entry.iat_value() + 0xFF000000;
+      api_map[augmented_iat_value] =
+          ImportInfo{entry.iat_value(), import.name(), entry.name()};
+      if (cpu.read_memory(
+              entry.iat_address() + binary->optional_header().imagebase(), 4) !=
+          entry.iat_value()) {
+        std::cerr << "IAT value mismatch!:" << std::hex
+                  << cpu.read_memory(entry.iat_address() +
+                                         binary->optional_header().imagebase(),
+                                     4)
+                  << "!=" << entry.iat_value() << std::dec << std::endl;
+        throw std::runtime_error("IAT value mismatch!");
+      }
+      cpu.write_memory(entry.iat_address() +
+                           binary->optional_header().imagebase(),
+                       augmented_iat_value, 4);
+      // << "Demangled" << entry.demangled_name()
+      // << "HintNameRVA" <<  entry.hint_name_rva()
+      // << "Hint" <<  entry.hint()
+      // << "Data" <<  entry.data()
+      // << "Ordinal" <<  entry.ordinal()
+      // << "Size" <<  entry.size()
+      // << std::dec << std::endl;
+      // cpu.write_memory(
+      //     entry.iat_value(),
+      //     entry.iat_address() + binary->optional_header().imagebase(), 4);
+      // }
+    }
+  }
+
   std::cout << "Executing from entry point..." << std::endl << std::endl;
 
   const uint8_t *current_code_ptr = (code.data() + start_offset);
   size_t code_size = code.size();
-  uint64_t virtaddr = address;
+  uint64_t virtaddr = entrypoint_va;
 
   int executed = 0;
-  cpu.eip = address;
+
+  std::vector<uint8_t> code_cache(16);
+  cpu.eip = entrypoint_va;
   while (true) {
+    // check if the current eip is 0xFF......
+    if (cpu.eip >= 0xFF000000) {
+      std::cout << "IAT call detected!" << std::endl;
+      const uint64_t iat_value = cpu.eip;
+      auto it = api_map.find(cpu.eip);
+      if (it != api_map.end()) {
+        std::cout << "API Call: " << it->second.dll_name << "!"
+                  << it->second.function_name << std::endl;
+      } else {
+        std::cerr << "Unknown API Call!" << std::endl;
+      }
+      break;
+    }
+
+    // load code cache (eip, eip+1, ... eip+15)
+    for (int i = 0; i < 16; i++) {
+      code_cache[i] = cpu.read_memory(cpu.eip + i, 1);
+    }
+    current_code_ptr = code_cache.data();
+    code_size = code_cache.size();
+    virtaddr = cpu.eip;
     count =
         cs_disasm_iter(handle, &current_code_ptr, &code_size, &virtaddr, insn);
+
     if (count == 1) {
       execute_one_instruction(handle, insn, cpu);
       executed += 1;
-      // calculate the new current_code_ptr
-      current_code_ptr = code.data() + (cpu.eip - address);
-      virtaddr = cpu.eip;
       if (executed == 40) {
         break;
       }
@@ -196,7 +287,8 @@ int main(int argc, char **argv) {
       text_section = const_cast<LIEF::PE::Section *>(&section);
     }
   }
-  uint64_t entry_point_va = binary->optional_header().addressof_entrypoint();
+  uint32_t entry_point_va = binary->optional_header().addressof_entrypoint() +
+                            binary->optional_header().imagebase();
   std::cout << "Entry Point Address (VA): 0x" << std::hex << entry_point_va
             << std::dec << std::endl;
 
@@ -220,12 +312,9 @@ int main(int argc, char **argv) {
 
   for (const auto &import : binary->imports()) {
     for (const auto &entry : import.entries()) {
-      if (entry.iat_value() == 0x699FE8) {
-        std::cout << "0x699FE8 is used for API: " << entry.name() << std::endl;
-      } else {
-        std::cout << "API: " << entry.name() << " IAT: " << std::hex
-                  << entry.iat_value() << std::dec << std::endl;
-      }
+      std::cout << "API: " << entry.name() << " From " << import.name()
+                << " IAT: " << std::hex << entry.iat_value() << std::dec
+                << std::endl;
     }
   }
 
@@ -243,29 +332,14 @@ int main(int argc, char **argv) {
             << text_section->offset() << std::dec << std::endl;
   std::cout << "Calculated Entry Point Offset: 0x" << std::hex << entry_offset
             << std::dec << std::endl;
-
-  // Read the PE file to get the code section content
-  std::ifstream pe_file(argv[1], std::ios::binary);
-  if (!pe_file) {
-    std::cerr << "Error opening PE file!" << std::endl;
-    return 1;
-  }
-  // Read the entire code section
   auto text_content = text_section->content();
-  uint64_t entry_point_offset_in_text =
-      entry_point_va - text_section->virtual_address();
+  uint64_t entry_point_offset_in_text = entry_point_va -
+                                        text_section->virtual_address() -
+                                        binary->optional_header().imagebase();
   std::cout << "Entry Point Offset in .text section: 0x" << std::hex
             << entry_point_offset_in_text << std::dec << std::endl;
-
-  // // 엔트리포인트 주변 코드(256바이트) 읽기
-  // pe_file.seekg(entry_offset);
-  // std::vector<uint8_t> code(256);
-  // pe_file.read(reinterpret_cast<char *>(code.data()), code.size());
-
-  // // Capstone을 사용해 엔트리포인트부터 디스어셈블
-  // std::cout << "\nDisassembling from entry point...\n";
-  // disassemble_x86(code, entry_point_va);
-  execute_x86(text_content, entry_point_offset_in_text, entry_point_va);
+  execute_x86(text_content, entry_point_offset_in_text, entry_point_va,
+              std::move(binary));
 
   return 0;
 }

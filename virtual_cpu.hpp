@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <iostream>
 #include <map>
+#include <span>
 #include <vector>
 
 constexpr uint32_t TEB_BASE = 0xFFFDF000; // 에뮬레이터에서 TEB의 가짜 주소
@@ -14,7 +15,8 @@ constexpr uint32_t PAGE_SIZE = 0x1000;
 class CPU {
 public:
   int eax, ebx, ecx, edx;
-  int esi, edi, ebp, eip, esp;
+  int esi, edi, ebp, esp;
+  uint32_t eip;
   short cs, ds, es, fs, gs, ss;
   uint32_t eflags;
   csh handle;
@@ -100,10 +102,12 @@ public:
     stack.pop();
   }
 
-  int read_memory(uint32_t address, int size = 4);
+  uint64_t read_memory(uint32_t address, int size = 4);
 
   // memory
   void write_memory(uint32_t address, int value, int size = 4);
+  void write_memory_bulk(uint32_t address,
+                         const std::span<const uint8_t> &data);
 
   int read_register(const x86_reg reg) {
     switch (reg) {
@@ -226,6 +230,12 @@ public:
       std::cout << "0x" << std::hex << stack_copy.top() << std::dec
                 << std::endl;
       stack_copy.pop();
+    }
+    std::cout << "==== Memory ====" << std::endl;
+    // dump allocated memory
+    for (const auto &[page, data] : memory) {
+      // dump only allocated pages stat
+      std::cout << "Page: " << std::hex << page << std::dec << std::endl;
     }
   }
 
