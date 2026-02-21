@@ -3,12 +3,15 @@ import json
 import time
 import subprocess
 import re
+import hashlib
+import shutil
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from keystone import Ks, KS_ARCH_ARM64, KS_MODE_LITTLE_ENDIAN
 
 JIT_REQUESTS_DIR = "jit_requests"
 COMPILED_BLOCKS_DIR = "compiled_blocks"
+LLM_CACHE_DIR = "llm_cache"
 
 # Register mapping idea:
 # eax->x0, ecx->x1, edx->x2, ebx->x3, esp->x4, ebp->x5, esi->x6, edi->x7
@@ -54,6 +57,30 @@ class JITCompilerHandler(FileSystemEventHandler):
                 data = json.load(f)
             
             address = data["address"]
+
+            # --- BEGIN CACHE LOGIC ---
+            assembly_lines = data.get("assembly", [])
+            assembly_str = "\n".join(assembly_lines)
+            
+            # CRITICAL FIX: Memory accesses crash the native C++ dispatcher because Unicorn's 32-bit addresses
+            # do not map 1:1 to the macOS host virtual memory.
+            # We must fallback to Unicorn (skip JIT) for blocks containing memory indirection.
+            if "[" in assembly_str or "]" in assembly_str:
+                print(f"[!] Bypassing JIT for {address} (Memory Access not supported in native JIT yet).")
+                os.rename(filepath, filepath + ".processed")
+                return
+
+            block_hash = hashlib.sha256(assembly_str.encode()).hexdigest()
+            cache_bin_path = os.path.join(LLM_CACHE_DIR, f"{block_hash}.bin")
+            bin_filepath = os.path.join(COMPILED_BLOCKS_DIR, f"block_{address}.bin")
+
+            if os.path.exists(cache_bin_path):
+                print(f"[+] Cache HIT! Loading block {address} from cache (hash: {block_hash[:8]})...")
+                shutil.copy2(cache_bin_path, bin_filepath)
+                os.rename(filepath, filepath + ".processed")
+                return
+            # --- END CACHE LOGIC ---
+
             prompt = PROMPT_TEMPLATE.format(json_context=json.dumps(data, indent=2))
             
             # Use codex exec
@@ -93,10 +120,10 @@ class JITCompilerHandler(FileSystemEventHandler):
             encoding, count = self.ks.asm(assembly)
             
             if encoding:
-                bin_filepath = os.path.join(COMPILED_BLOCKS_DIR, f"block_{address}.bin")
                 with open(bin_filepath, "wb") as f:
                     f.write(bytearray(encoding))
-                print(f"[+] Successfully compiled {address} to {bin_filepath} ({len(encoding)} bytes)\n")
+                shutil.copy2(bin_filepath, cache_bin_path)
+                print(f"[+] Successfully compiled {address} to {bin_filepath} ({len(encoding)} bytes) and cached.\n")
             else:
                 print(f"[!] Keystone failed to assemble {address}\n")
                 
@@ -115,6 +142,7 @@ class JITCompilerHandler(FileSystemEventHandler):
 if __name__ == "__main__":
     os.makedirs(JIT_REQUESTS_DIR, exist_ok=True)
     os.makedirs(COMPILED_BLOCKS_DIR, exist_ok=True)
+    os.makedirs(LLM_CACHE_DIR, exist_ok=True)
     
     event_handler = JITCompilerHandler()
     
