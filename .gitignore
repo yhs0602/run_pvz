@@ -47,3 +47,5 @@ CMakeUserPresets.json
 *.dylib
 .cache
 build/
+__pycache__
+qemu

@@ -21,20 +21,21 @@ endif()
 find_package(LIEF REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(CAPSTONE REQUIRED capstone)
+pkg_check_modules(UNICORN REQUIRED unicorn)
 
-# Print capsotne include and library directories
+# Print include and library directories
 message(STATUS "Capstone include dirs: ${CAPSTONE_INCLUDE_DIRS}")
 message(STATUS "Capstone library dirs: ${CAPSTONE_LIBRARY_DIRS}")
+message(STATUS "Unicorn include dirs: ${UNICORN_INCLUDE_DIRS}")
+message(STATUS "Unicorn library dirs: ${UNICORN_LIBRARY_DIRS}")
 
 add_executable(
     runner
     main.cpp
-    virtual_cpu.cpp
-    virtual_cpu_stack.cpp
-    virtual_cpu_memory.cpp
-    virtual_cpu_mov.cpp
-    virtual_cpu_arith.cpp
+    windows_env.cpp
+    api_handler.cpp
+    pe_loader.cpp
 )
-target_include_directories(runner PRIVATE ${CAPSTONE_INCLUDE_DIRS})
-target_link_directories(runner PRIVATE ${CAPSTONE_LIBRARY_DIRS})
-target_link_libraries(runner LIEF::LIEF capstone)
+target_include_directories(runner PRIVATE ${CAPSTONE_INCLUDE_DIRS} ${UNICORN_INCLUDE_DIRS})
+target_link_directories(runner PRIVATE ${CAPSTONE_LIBRARY_DIRS} ${UNICORN_LIBRARY_DIRS})
+target_link_libraries(runner LIEF::LIEF capstone unicorn)
