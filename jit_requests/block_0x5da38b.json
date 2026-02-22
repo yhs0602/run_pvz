@@ -1,0 +1,17 @@
+{
+  "address": "0x5da38b",
+  "size": 6,
+  "assembly": [
+    "xor ebp, ebp",
+    "test ecx, ecx",
+    "jle 0x5da3ee"
+  ],
+  "live_in": [
+    "ebp",
+    "ecx"
+  ],
+  "live_out": [
+    "ebp",
+    "eflags"
+  ]
+}

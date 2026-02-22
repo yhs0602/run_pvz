@@ -1,0 +1,17 @@
+{
+  "address": "0x5da3d3",
+  "size": 10,
+  "assembly": [
+    "add edi, 1",
+    "sub dword ptr [esp + 0x10], 1",
+    "jne 0x5da3b0"
+  ],
+  "live_in": [
+    "edi",
+    "esp"
+  ],
+  "live_out": [
+    "edi",
+    "eflags"
+  ]
+}

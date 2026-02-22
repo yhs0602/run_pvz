@@ -1,0 +1,32 @@
+{
+  "address": "0x40416c",
+  "size": 25,
+  "assembly": [
+    "mov eax, ecx",
+    "mov ecx, dword ptr [ebp - 0xc]",
+    "pop edi",
+    "mov byte ptr [eax + ebx], 0",
+    "pop esi",
+    "mov dword ptr fs:[0], ecx",
+    "pop ebx",
+    "mov esp, ebp",
+    "pop ebp",
+    "ret 8"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "ecx",
+    "esp",
+    "fs"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ebx",
+    "ecx",
+    "edi",
+    "esi",
+    "esp"
+  ]
+}

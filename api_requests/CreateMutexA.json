@@ -1,0 +1,5 @@
+{
+  "api_name": "CreateMutexA",
+  "module": "KERNEL32.dll",
+  "address": "0x76010210"
+}

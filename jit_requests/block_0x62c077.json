@@ -1,0 +1,23 @@
+{
+  "address": "0x62c077",
+  "size": 16,
+  "assembly": [
+    "lea eax, [ebp - 0x64]",
+    "push eax",
+    "movzx eax, dl",
+    "push eax",
+    "mov dword ptr [ebp - 0x44], esi",
+    "call 0x620843"
+  ],
+  "live_in": [
+    "dl",
+    "ebp",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "esp"
+  ]
+}

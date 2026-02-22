@@ -1,0 +1,14 @@
+{
+  "address": "0x61efd1",
+  "size": 8,
+  "assembly": [
+    "cmp ecx, dword ptr [0x699fe8]",
+    "jne 0x61efdb"
+  ],
+  "live_in": [
+    "ecx"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

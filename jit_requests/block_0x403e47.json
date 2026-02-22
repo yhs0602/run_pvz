@@ -1,0 +1,15 @@
+{
+  "address": "0x403e47",
+  "size": 4,
+  "assembly": [
+    "cmp esi, ebx",
+    "jne 0x403e6a"
+  ],
+  "live_in": [
+    "ebx",
+    "esi"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

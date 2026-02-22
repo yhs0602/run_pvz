@@ -1,0 +1,18 @@
+{
+  "address": "0x404470",
+  "size": 9,
+  "assembly": [
+    "mov cl, byte ptr [eax]",
+    "add eax, 1",
+    "test cl, cl",
+    "jne 0x404470"
+  ],
+  "live_in": [
+    "eax"
+  ],
+  "live_out": [
+    "cl",
+    "eax",
+    "eflags"
+  ]
+}

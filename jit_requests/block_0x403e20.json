@@ -1,0 +1,30 @@
+{
+  "address": "0x403e20",
+  "size": 19,
+  "assembly": [
+    "push ebx",
+    "mov ebx, dword ptr [esp + 8]",
+    "push ebp",
+    "mov ebp, dword ptr [esp + 0x10]",
+    "cmp dword ptr [ebx + 0x14], ebp",
+    "push esi",
+    "push edi",
+    "mov esi, ecx",
+    "jae 0x403e38"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "ecx",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "ebx",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

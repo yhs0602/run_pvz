@@ -1,0 +1,16 @@
+{
+  "address": "0x40411d",
+  "size": 7,
+  "assembly": [
+    "mov ebx, dword ptr [ebp + 0xc]",
+    "test ebx, ebx",
+    "jbe 0x404144"
+  ],
+  "live_in": [
+    "ebp"
+  ],
+  "live_out": [
+    "ebx",
+    "eflags"
+  ]
+}

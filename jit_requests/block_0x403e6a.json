@@ -1,0 +1,14 @@
+{
+  "address": "0x403e6a",
+  "size": 5,
+  "assembly": [
+    "cmp edi, -2",
+    "jbe 0x403e74"
+  ],
+  "live_in": [
+    "edi"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

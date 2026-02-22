@@ -1,0 +1,16 @@
+{
+  "address": "0x6211e3",
+  "size": 6,
+  "assembly": [
+    "inc ecx",
+    "cmp ecx, 0x2d",
+    "jb 0x6211da"
+  ],
+  "live_in": [
+    "ecx"
+  ],
+  "live_out": [
+    "ecx",
+    "eflags"
+  ]
+}

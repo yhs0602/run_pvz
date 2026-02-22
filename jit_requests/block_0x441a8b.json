@@ -1,0 +1,19 @@
+{
+  "address": "0x441a8b",
+  "size": 10,
+  "assembly": [
+    "movzx esi, byte ptr [edx]",
+    "movzx edi, byte ptr [ecx]",
+    "sub esi, edi",
+    "jne 0x441ada"
+  ],
+  "live_in": [
+    "ecx",
+    "edx"
+  ],
+  "live_out": [
+    "edi",
+    "eflags",
+    "esi"
+  ]
+}

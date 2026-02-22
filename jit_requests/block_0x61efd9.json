@@ -1,0 +1,13 @@
+{
+  "address": "0x61efd9",
+  "size": 2,
+  "assembly": [
+    "repz ret"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "esp"
+  ]
+}

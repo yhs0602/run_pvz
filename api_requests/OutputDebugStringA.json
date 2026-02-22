@@ -1,0 +1,5 @@
+{
+  "api_name": "OutputDebugStringA",
+  "module": "KERNEL32.dll",
+  "address": "0x76010030"
+}

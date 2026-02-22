@@ -1,0 +1,17 @@
+{
+  "address": "0x5da045",
+  "size": 4,
+  "assembly": [
+    "xor ax, ax",
+    "ret"
+  ],
+  "live_in": [
+    "ax",
+    "esp"
+  ],
+  "live_out": [
+    "ax",
+    "eflags",
+    "esp"
+  ]
+}

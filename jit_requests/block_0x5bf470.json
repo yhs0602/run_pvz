@@ -1,0 +1,19 @@
+{
+  "address": "0x5bf470",
+  "size": 11,
+  "assembly": [
+    "mov eax, ecx",
+    "mov ecx, dword ptr [esp + 8]",
+    "cmp ecx, 1",
+    "jne 0x5bf4a7"
+  ],
+  "live_in": [
+    "ecx",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags"
+  ]
+}

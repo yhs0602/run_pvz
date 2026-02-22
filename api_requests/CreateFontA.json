@@ -1,0 +1,5 @@
+{
+  "api_name": "CreateFontA",
+  "module": "GDI32.dll",
+  "address": "0x900007e0"
+}

@@ -1,0 +1,28 @@
+{
+  "address": "0x5da322",
+  "size": 23,
+  "assembly": [
+    "mov ecx, eax",
+    "mov eax, edi",
+    "cdq",
+    "and edx, 0xf",
+    "add eax, edx",
+    "mov ebx, eax",
+    "sar ebx, 4",
+    "test ebx, ebx",
+    "mov dword ptr [esp + 0x14], ecx",
+    "jle 0x5da38b"
+  ],
+  "live_in": [
+    "eax",
+    "edi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebx",
+    "ecx",
+    "edx",
+    "eflags"
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "address": "0x5d79f0",
+  "size": 52,
+  "assembly": [
+    "neg al",
+    "push esi",
+    "mov esi, dword ptr [esp + 8]",
+    "sbb eax, eax",
+    "and eax, 8",
+    "neg dl",
+    "sbb edx, edx",
+    "and edx, 4",
+    "or eax, edx",
+    "neg cl",
+    "sbb ecx, ecx",
+    "and ecx, 2",
+    "or eax, ecx",
+    "xor ecx, ecx",
+    "cmp byte ptr [esp + 0xc], cl",
+    "setne cl",
+    "or eax, ecx",
+    "or eax, 0x10",
+    "cmp esi, 0x888",
+    "jg 0x5d7a4e"
+  ],
+  "live_in": [
+    "al",
+    "cl",
+    "dl",
+    "eax",
+    "ecx",
+    "edx",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "cl",
+    "dl",
+    "eax",
+    "ecx",
+    "edx",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

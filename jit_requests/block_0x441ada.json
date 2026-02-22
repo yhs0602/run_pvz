@@ -1,0 +1,16 @@
+{
+  "address": "0x441ada",
+  "size": 9,
+  "assembly": [
+    "test esi, esi",
+    "mov eax, 1",
+    "jg 0x441aeb"
+  ],
+  "live_in": [
+    "esi"
+  ],
+  "live_out": [
+    "eax",
+    "eflags"
+  ]
+}

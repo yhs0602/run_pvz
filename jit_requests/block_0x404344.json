@@ -1,0 +1,19 @@
+{
+  "address": "0x404344",
+  "size": 10,
+  "assembly": [
+    "mov eax, ebx",
+    "mov ebp, dword ptr [esp + 0x10]",
+    "cmp ebp, eax",
+    "jb 0x40437f"
+  ],
+  "live_in": [
+    "ebx",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "eflags"
+  ]
+}

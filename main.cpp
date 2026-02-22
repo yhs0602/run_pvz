@@ -378,13 +378,21 @@ int main(int argc, char **argv) {
         uint32_t pc = pe_module.entry_point;
         while (true) {
             uc_err err = uc_emu_start(uc, pc, 0, 0, 0);
-            uc_reg_read(uc, UC_X86_REG_EIP, &pc);
-            
             if (err) {
-                cout << "\n[!] Emulation stopped due to error: " << uc_strerror(err) << " (Code: " << err << ")\n";
-                cout << "[!] EIP = 0x" << hex << pc << endl;
+                std::cerr << "\n[!] Emulation stopped due to error: " << uc_strerror(err) << " (Code: " << err << ")\n";
+                uint32_t val;
+                uc_reg_read(uc, UC_X86_REG_EIP, &val); std::cerr << "[!] EIP = 0x" << std::hex << val << std::dec << "\n";
+                uc_reg_read(uc, UC_X86_REG_EAX, &val); std::cerr << "EAX=0x" << std::hex << val << " ";
+                uc_reg_read(uc, UC_X86_REG_EBX, &val); std::cerr << "EBX=0x" << std::hex << val << " ";
+                uc_reg_read(uc, UC_X86_REG_ECX, &val); std::cerr << "ECX=0x" << std::hex << val << " ";
+                uc_reg_read(uc, UC_X86_REG_EDX, &val); std::cerr << "EDX=0x" << std::hex << val << "\n";
+                uc_reg_read(uc, UC_X86_REG_ESI, &val); std::cerr << "ESI=0x" << std::hex << val << " ";
+                uc_reg_read(uc, UC_X86_REG_EDI, &val); std::cerr << "EDI=0x" << std::hex << val << " ";
+                uc_reg_read(uc, UC_X86_REG_ESP, &val); std::cerr << "ESP=0x" << std::hex << val << " ";
+                uc_reg_read(uc, UC_X86_REG_EBP, &val); std::cerr << "EBP=0x" << std::hex << val << "\n";
                 break;
             }
+            uc_reg_read(uc, UC_X86_REG_EIP, &pc);
             
             if (pc == 0 || pc == 0xffffffff) {
                 cout << "\n[+] Emulation cleanly finished at EIP = 0x" << hex << pc << endl;

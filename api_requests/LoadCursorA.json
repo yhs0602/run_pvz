@@ -1,0 +1,5 @@
+{
+  "api_name": "LoadCursorA",
+  "module": "USER32.dll",
+  "address": "0x900004e0"
+}

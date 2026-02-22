@@ -1,0 +1,5 @@
+{
+  "api_name": "timeGetTime",
+  "module": "WINMM.dll",
+  "address": "0x90000570"
+}

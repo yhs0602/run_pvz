@@ -1,0 +1,24 @@
+{
+  "address": "0x4043cb",
+  "size": 11,
+  "assembly": [
+    "mov eax, ebx",
+    "push edi",
+    "push ebp",
+    "push ecx",
+    "push eax",
+    "call 0x61be1b"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "ecx",
+    "edi",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "esp"
+  ]
+}

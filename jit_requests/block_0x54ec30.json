@@ -1,0 +1,21 @@
+{
+  "address": "0x54ec30",
+  "size": 23,
+  "assembly": [
+    "mov esi, dword ptr [ecx + 0x320]",
+    "mov byte ptr [eax + esi + 0xf4], dl",
+    "add eax, 1",
+    "cmp eax, 0xff",
+    "jl 0x54ec30"
+  ],
+  "live_in": [
+    "dl",
+    "eax",
+    "ecx"
+  ],
+  "live_out": [
+    "eax",
+    "eflags",
+    "esi"
+  ]
+}

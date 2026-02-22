@@ -1,0 +1,16 @@
+{
+  "address": "0x4042da",
+  "size": 4,
+  "assembly": [
+    "lea eax, [ecx + 4]",
+    "ret"
+  ],
+  "live_in": [
+    "ecx",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "esp"
+  ]
+}

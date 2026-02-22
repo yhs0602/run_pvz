@@ -1,0 +1,42 @@
+{
+  "address": "0x404080",
+  "size": 51,
+  "assembly": [
+    "push ebp",
+    "mov ebp, esp",
+    "push -1",
+    "push 0x63faa0",
+    "mov eax, dword ptr fs:[0]",
+    "push eax",
+    "mov dword ptr fs:[0], esp",
+    "sub esp, 0xc",
+    "mov eax, dword ptr [ebp + 8]",
+    "push ebx",
+    "push esi",
+    "mov esi, eax",
+    "push edi",
+    "or esi, 0xf",
+    "cmp esi, -2",
+    "mov edi, ecx",
+    "mov dword ptr [ebp - 0x10], esp",
+    "mov dword ptr [ebp - 0x14], edi",
+    "jbe 0x4040b7"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "ecx",
+    "edi",
+    "esi",
+    "esp",
+    "fs"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "edi",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

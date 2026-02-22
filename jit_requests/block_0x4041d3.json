@@ -1,0 +1,16 @@
+{
+  "address": "0x4041d3",
+  "size": 7,
+  "assembly": [
+    "add esp, 4",
+    "add esp, 0xc",
+    "ret"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esp"
+  ]
+}

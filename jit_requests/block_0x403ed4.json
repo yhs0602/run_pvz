@@ -1,0 +1,26 @@
+{
+  "address": "0x403ed4",
+  "size": 11,
+  "assembly": [
+    "push edi",
+    "add edx, ebp",
+    "push edx",
+    "push ecx",
+    "push eax",
+    "call 0x61be1b"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "ecx",
+    "edi",
+    "edx",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "edx",
+    "eflags",
+    "esp"
+  ]
+}

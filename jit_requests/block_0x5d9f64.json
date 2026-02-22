@@ -1,0 +1,15 @@
+{
+  "address": "0x5d9f64",
+  "size": 2,
+  "assembly": [
+    "pop esi",
+    "ret"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "esi",
+    "esp"
+  ]
+}

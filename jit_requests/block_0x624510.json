@@ -1,0 +1,34 @@
+{
+  "address": "0x624510",
+  "size": 24,
+  "assembly": [
+    "push ebp",
+    "mov ebp, esp",
+    "push edi",
+    "push esi",
+    "mov esi, dword ptr [ebp + 0xc]",
+    "mov ecx, dword ptr [ebp + 0x10]",
+    "mov edi, dword ptr [ebp + 8]",
+    "mov eax, ecx",
+    "mov edx, ecx",
+    "add eax, esi",
+    "cmp edi, esi",
+    "jbe 0x624530"
+  ],
+  "live_in": [
+    "ebp",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ecx",
+    "edi",
+    "edx",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

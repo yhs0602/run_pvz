@@ -1,0 +1,22 @@
+{
+  "address": "0x5da97b",
+  "size": 14,
+  "assembly": [
+    "sar ebx, 0x10",
+    "add edi, 1",
+    "cmp edi, dword ptr [esp + 0x14]",
+    "mov edx, ebx",
+    "jl 0x5da951"
+  ],
+  "live_in": [
+    "ebx",
+    "edi",
+    "esp"
+  ],
+  "live_out": [
+    "ebx",
+    "edi",
+    "edx",
+    "eflags"
+  ]
+}

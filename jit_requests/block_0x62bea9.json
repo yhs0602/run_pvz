@@ -1,0 +1,20 @@
+{
+  "address": "0x62bea9",
+  "size": 17,
+  "assembly": [
+    "movsx eax, dl",
+    "movzx eax, byte ptr [eax + 0x653b80]",
+    "and eax, 0xf",
+    "xor esi, esi",
+    "jmp 0x62bebe"
+  ],
+  "live_in": [
+    "dl",
+    "esi"
+  ],
+  "live_out": [
+    "eax",
+    "eflags",
+    "esi"
+  ]
+}

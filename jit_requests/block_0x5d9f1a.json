@@ -1,0 +1,22 @@
+{
+  "address": "0x5d9f1a",
+  "size": 12,
+  "assembly": [
+    "mov edi, eax",
+    "mov eax, dword ptr [esi + 0xc]",
+    "add esp, 4",
+    "test eax, eax",
+    "jle 0x5d9f36"
+  ],
+  "live_in": [
+    "eax",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "edi",
+    "eflags",
+    "esp"
+  ]
+}

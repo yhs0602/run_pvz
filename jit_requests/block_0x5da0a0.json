@@ -1,0 +1,15 @@
+{
+  "address": "0x5da0a0",
+  "size": 5,
+  "assembly": [
+    "cmp eax, dword ptr [esi + 0x10]",
+    "jl 0x5da0ac"
+  ],
+  "live_in": [
+    "eax",
+    "esi"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

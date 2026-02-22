@@ -1,0 +1,32 @@
+{
+  "address": "0x5da310",
+  "size": 18,
+  "assembly": [
+    "sub esp, 0xc",
+    "push ebx",
+    "push ebp",
+    "push esi",
+    "push edi",
+    "mov edi, eax",
+    "mov esi, ecx",
+    "mov eax, esi",
+    "call 0x5cc2c0"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "ebx",
+    "ecx",
+    "edi",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "edi",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "address": "0x404156",
+  "size": 22,
+  "assembly": [
+    "cmp esi, 0x10",
+    "mov ecx, dword ptr [ebp + 8]",
+    "lea eax, [edi + 4]",
+    "mov byte ptr [eax], 0",
+    "mov dword ptr [eax], ecx",
+    "mov dword ptr [edi + 0x18], esi",
+    "mov dword ptr [edi + 0x14], ebx",
+    "jb 0x40416e"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "edi",
+    "esi"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags"
+  ]
+}

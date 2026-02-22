@@ -1,0 +1,5 @@
+{
+  "api_name": "RegCreateKeyExA",
+  "module": "ADVAPI32.dll",
+  "address": "0x90000820"
+}

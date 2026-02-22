@@ -1,0 +1,19 @@
+{
+  "address": "0x62c65d",
+  "size": 13,
+  "assembly": [
+    "mov ecx, dword ptr [ebp - 0x74]",
+    "mov edi, dword ptr [ebp - 0x2c]",
+    "mov dl, al",
+    "jmp 0x62be93"
+  ],
+  "live_in": [
+    "al",
+    "ebp"
+  ],
+  "live_out": [
+    "dl",
+    "ecx",
+    "edi"
+  ]
+}

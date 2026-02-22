@@ -1,0 +1,29 @@
+{
+  "address": "0x5da615",
+  "size": 25,
+  "assembly": [
+    "mov eax, dword ptr [esi + 0x10]",
+    "xor ecx, ecx",
+    "mov edx, 2",
+    "mul edx",
+    "seto cl",
+    "neg ecx",
+    "or ecx, eax",
+    "push ecx",
+    "call 0x60ae9b"
+  ],
+  "live_in": [
+    "ecx",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "cl",
+    "eax",
+    "ecx",
+    "edx",
+    "eflags",
+    "esp"
+  ]
+}

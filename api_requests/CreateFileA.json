@@ -1,0 +1,5 @@
+{
+  "api_name": "CreateFileA",
+  "module": "KERNEL32.dll",
+  "address": "0x760102e0"
+}

@@ -1,0 +1,25 @@
+{
+  "address": "0x62bebe",
+  "size": 25,
+  "assembly": [
+    "movsx eax, byte ptr [ecx + eax*8 + 0x653ba0]",
+    "push 7",
+    "sar eax, 4",
+    "pop ecx",
+    "cmp eax, ecx",
+    "mov dword ptr [ebp - 0x74], eax",
+    "ja 0x62c651"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "ecx",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

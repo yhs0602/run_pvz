@@ -1,0 +1,16 @@
+{
+  "address": "0x5d9fd0",
+  "size": 4,
+  "assembly": [
+    "mov al, byte ptr [eax + 4]",
+    "ret"
+  ],
+  "live_in": [
+    "eax",
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "esp"
+  ]
+}

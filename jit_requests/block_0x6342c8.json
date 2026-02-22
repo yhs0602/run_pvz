@@ -1,0 +1,14 @@
+{
+  "address": "0x6342c8",
+  "size": 6,
+  "assembly": [
+    "test byte ptr [ecx + 0xc], 0x40",
+    "je 0x6342d4"
+  ],
+  "live_in": [
+    "ecx"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

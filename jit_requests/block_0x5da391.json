@@ -1,0 +1,16 @@
+{
+  "address": "0x5da391",
+  "size": 10,
+  "assembly": [
+    "mov edx, edi",
+    "and edx, 0x8000000f",
+    "jns 0x5da3a0"
+  ],
+  "live_in": [
+    "edi"
+  ],
+  "live_out": [
+    "edx",
+    "eflags"
+  ]
+}

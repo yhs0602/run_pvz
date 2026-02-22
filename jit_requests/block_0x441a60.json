@@ -1,0 +1,25 @@
+{
+  "address": "0x441a60",
+  "size": 19,
+  "assembly": [
+    "mov eax, dword ptr [esp + 0xc]",
+    "cmp eax, 4",
+    "mov ecx, dword ptr [esp + 8]",
+    "mov edx, dword ptr [esp + 4]",
+    "push esi",
+    "push edi",
+    "jb 0x441a87"
+  ],
+  "live_in": [
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "edx",
+    "eflags",
+    "esp"
+  ]
+}

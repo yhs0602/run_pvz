@@ -1,0 +1,16 @@
+{
+  "address": "0x61fc72",
+  "size": 7,
+  "assembly": [
+    "mov esi, dword ptr [ebp + 8]",
+    "test esi, esi",
+    "je 0x61fcee"
+  ],
+  "live_in": [
+    "ebp"
+  ],
+  "live_out": [
+    "eflags",
+    "esi"
+  ]
+}

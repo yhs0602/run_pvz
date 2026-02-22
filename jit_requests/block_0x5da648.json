@@ -1,0 +1,22 @@
+{
+  "address": "0x5da648",
+  "size": 12,
+  "assembly": [
+    "add esp, 0xc",
+    "mov al, byte ptr [edi + 4]",
+    "mov byte ptr [esi + 4], al",
+    "mov eax, esi",
+    "ret"
+  ],
+  "live_in": [
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "eax",
+    "eflags",
+    "esp"
+  ]
+}

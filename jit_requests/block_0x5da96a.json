@@ -1,0 +1,25 @@
+{
+  "address": "0x5da96a",
+  "size": 17,
+  "assembly": [
+    "movzx ebx, ax",
+    "add esi, edx",
+    "add ebx, esi",
+    "push ebx",
+    "lea esi, [esp + 0x1c]",
+    "call 0x5da060"
+  ],
+  "live_in": [
+    "ax",
+    "edx",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ebx",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "address": "0x544420",
+  "size": 17,
+  "assembly": [
+    "mov byte ptr [eax + ebp + 0x11d], al",
+    "add eax, 1",
+    "cmp eax, 0x100",
+    "jl 0x544420"
+  ],
+  "live_in": [
+    "al",
+    "eax",
+    "ebp"
+  ],
+  "live_out": [
+    "eax",
+    "eflags"
+  ]
+}

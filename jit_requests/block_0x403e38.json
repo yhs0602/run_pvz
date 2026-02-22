@@ -1,0 +1,21 @@
+{
+  "address": "0x403e38",
+  "size": 13,
+  "assembly": [
+    "mov edi, dword ptr [ebx + 0x14]",
+    "mov eax, dword ptr [esp + 0x1c]",
+    "sub edi, ebp",
+    "cmp eax, edi",
+    "jae 0x403e47"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "edi",
+    "eflags"
+  ]
+}

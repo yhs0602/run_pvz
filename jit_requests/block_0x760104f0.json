@@ -1,0 +1,13 @@
+{
+  "address": "0x760104f0",
+  "size": 3,
+  "assembly": [
+    "ret 0xc"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "esp"
+  ]
+}

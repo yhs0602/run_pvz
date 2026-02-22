@@ -1,0 +1,31 @@
+{
+  "address": "0x6246bc",
+  "size": 23,
+  "assembly": [
+    "mov al, byte ptr [esi]",
+    "mov byte ptr [edi], al",
+    "mov al, byte ptr [esi + 1]",
+    "mov byte ptr [edi + 1], al",
+    "mov al, byte ptr [esi + 2]",
+    "mov byte ptr [edi + 2], al",
+    "mov eax, dword ptr [ebp + 8]",
+    "pop esi",
+    "pop edi",
+    "leave",
+    "ret"
+  ],
+  "live_in": [
+    "ebp",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "eax",
+    "ebp",
+    "edi",
+    "esi",
+    "esp"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "address": "0x61fcc5",
+  "size": 15,
+  "assembly": [
+    "push esi",
+    "push 0",
+    "push dword ptr [0x6a6dd4]",
+    "call dword ptr [0x652198]"
+  ],
+  "live_in": [
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "esp"
+  ]
+}

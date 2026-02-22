@@ -1,0 +1,21 @@
+{
+  "address": "0x4041da",
+  "size": 12,
+  "assembly": [
+    "or eax, 0xffffffff",
+    "xor edx, edx",
+    "div ecx",
+    "cmp eax, 1",
+    "jae 0x4041cd"
+  ],
+  "live_in": [
+    "eax",
+    "ecx",
+    "edx"
+  ],
+  "live_out": [
+    "eax",
+    "edx",
+    "eflags"
+  ]
+}
