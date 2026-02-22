@@ -57,10 +57,63 @@ const std::unordered_map<std::string, int> DummyAPIHandler::KNOWN_SIGNATURES = {
     {"USER32.dll!PostMessageW", 16},
     {"USER32.dll!SendMessageA", 16},
     {"USER32.dll!SendMessageW", 16},
+    {"USER32.dll!RegisterWindowMessageA", 4},
+    {"USER32.dll!SystemParametersInfoA", 16},
     // Dynamic Resolution and Pointer HLE
     {"KERNEL32.dll!GetProcAddress", 8},
     {"KERNEL32.dll!EncodePointer", 4},
-    {"KERNEL32.dll!DecodePointer", 4}
+    {"KERNEL32.dll!DecodePointer", 4},
+    // Critical Sections (Trivial Stubs)
+    {"KERNEL32.dll!InitializeCriticalSectionAndSpinCount", 8},
+    {"KERNEL32.dll!InitializeCriticalSection", 4},
+    {"KERNEL32.dll!InitializeCriticalSectionEx", 12},
+    {"KERNEL32.dll!EnterCriticalSection", 4},
+    {"KERNEL32.dll!LeaveCriticalSection", 4},
+    {"KERNEL32.dll!DeleteCriticalSection", 4},
+    {"KERNEL32.dll!TryEnterCriticalSection", 4},
+    // FLS (Fiber Local Storage)
+    {"KERNEL32.dll!FlsAlloc", 4},
+    {"KERNEL32.dll!FlsGetValue", 4},
+    {"KERNEL32.dll!FlsSetValue", 8},
+    {"KERNEL32.dll!FlsFree", 4},
+    // String & Locale (Trivial Stubs)
+    {"KERNEL32.dll!GetLocaleInfoA", 16},
+    {"KERNEL32.dll!GetLocaleInfoW", 16},
+    {"KERNEL32.dll!GetStringTypeW", 16},
+    {"KERNEL32.dll!GetStringTypeA", 16},
+    {"KERNEL32.dll!LCMapStringW", 24},
+    {"KERNEL32.dll!LCMapStringA", 24},
+    {"KERNEL32.dll!MultiByteToWideChar", 24},
+    {"KERNEL32.dll!WideCharToMultiByte", 32},
+    {"KERNEL32.dll!GetCPInfo", 8},
+    {"KERNEL32.dll!GetACP", 0},
+    {"KERNEL32.dll!GetOEMCP", 0},
+    {"KERNEL32.dll!IsValidCodePage", 4},
+    {"KERNEL32.dll!FreeEnvironmentStringsW", 4},
+    {"KERNEL32.dll!GetEnvironmentStringsW", 0},
+    {"KERNEL32.dll!GetCommandLineA", 0},
+    {"KERNEL32.dll!GetCommandLineW", 0},
+    {"KERNEL32.dll!GetStdHandle", 4},
+    {"KERNEL32.dll!GetFileType", 4},
+    {"KERNEL32.dll!SetHandleCount", 4},
+    {"KERNEL32.dll!RaiseException", 16},
+    {"KERNEL32.dll!SetUnhandledExceptionFilter", 4},
+    {"KERNEL32.dll!IsDebuggerPresent", 0},
+    {"KERNEL32.dll!IsProcessorFeaturePresent", 4},
+    {"KERNEL32.dll!ExitProcess", 4},
+    {"KERNEL32.dll!TerminateProcess", 8},
+    // IPC and Memory
+    {"KERNEL32.dll!CreateFileMappingA", 24},
+    {"KERNEL32.dll!OpenFileMappingA", 12},
+    {"KERNEL32.dll!MapViewOfFile", 20},
+    {"KERNEL32.dll!UnmapViewOfFile", 4},
+    {"KERNEL32.dll!GetSystemInfo", 4},
+    // Dynamic Library Loading
+    {"KERNEL32.dll!LoadLibraryA", 4},
+    {"KERNEL32.dll!LoadLibraryW", 4},
+    {"KERNEL32.dll!FreeLibrary", 4},
+    {"KERNEL32.dll!GetModuleHandleW", 4},
+    {"KERNEL32.dll!GetModuleFileNameW", 12}
 };
 
 DummyAPIHandler::DummyAPIHandler(uc_engine* engine) : current_addr(FAKE_API_BASE) {
@@ -73,7 +126,7 @@ DummyAPIHandler::DummyAPIHandler(uc_engine* engine) : current_addr(FAKE_API_BASE
 
     // --- BUILD FAKE KERNEL32.DLL PE HEADER ---
     uint32_t k32_base = 0x76000000;
-    uc_mem_map(ctx.uc, k32_base, 0x10000, UC_PROT_ALL);
+    uc_mem_map(ctx.uc, k32_base, 0x200000, UC_PROT_ALL);
     
     uint16_t mz_magic = 0x5A4D; // "MZ"
     uc_mem_write(ctx.uc, k32_base, &mz_magic, 2);
@@ -582,6 +635,16 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t ptr = handler->ctx.get_arg(0);
                 handler->ctx.set_eax(ptr);
                 std::cout << "\n[API CALL] [OK] " << name << "(0x" << std::hex << ptr << std::dec << ") returning unchanged.\n";
+            } else if (name == "KERNEL32.dll!FlsGetValue" || name == "KERNEL32.dll!TlsGetValue" || name == "KERNEL32.dll!GetLastError") {
+                handler->ctx.set_eax(0);
+                std::cout << "\n[API CALL] [OK] Intercepted call to " << name << " returning 0.\n";
+            } else if (name == "KERNEL32.dll!GetEnvironmentStringsW" || name == "KERNEL32.dll!GetCommandLineA" || name == "KERNEL32.dll!GetCommandLineW") {
+                handler->ctx.set_eax(0x76001500); // Pointing to guaranteed zeroed memory in our fake PE header
+                std::cout << "\n[API CALL] [OK] Intercepted call to " << name << " returning static empty string.\n";
+            } else if (name == "KERNEL32.dll!MapViewOfFile") {
+                // Return a valid pointer to a dummy 4KB shared memory block mapped at 0x76002000
+                handler->ctx.set_eax(0x76002000); 
+                std::cout << "\n[API CALL] [OK] MapViewOfFile -> Dummy Shared Memory at 0x76002000\n";
             } else {
                 // For other trivial APIs, return 1 (Success) by default to avoid zero-checks failing
                 handler->ctx.set_eax(1);

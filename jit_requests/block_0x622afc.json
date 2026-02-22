@@ -1,0 +1,21 @@
+{
+  "address": "0x622afc",
+  "size": 5,
+  "assembly": [
+    "pop edi",
+    "pop esi",
+    "pop ebp",
+    "pop ebx",
+    "ret"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "ebx",
+    "edi",
+    "esi",
+    "esp"
+  ]
+}

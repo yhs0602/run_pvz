@@ -1,0 +1,18 @@
+{
+  "address": "0x628725",
+  "size": 7,
+  "assembly": [
+    "cmp dword ptr [ebp - 4], 5",
+    "pop ecx",
+    "jle 0x628730"
+  ],
+  "live_in": [
+    "ebp",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

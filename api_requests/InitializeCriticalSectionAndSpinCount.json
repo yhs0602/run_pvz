@@ -1,5 +1,5 @@
 {
   "api_name": "InitializeCriticalSectionAndSpinCount",
   "module": "KERNEL32.dll",
-  "address": "0x900011d0"
+  "address": "0x760108f0"
 }

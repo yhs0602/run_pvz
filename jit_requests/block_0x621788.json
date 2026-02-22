@@ -1,0 +1,17 @@
+{
+  "address": "0x621788",
+  "size": 7,
+  "assembly": [
+    "mov eax, dword ptr [ecx - 4]",
+    "test al, al",
+    "je 0x6217c1"
+  ],
+  "live_in": [
+    "al",
+    "ecx"
+  ],
+  "live_out": [
+    "eax",
+    "eflags"
+  ]
+}

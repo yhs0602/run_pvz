@@ -1,5 +1,5 @@
 {
   "api_name": "GetLocaleInfoA",
   "module": "KERNEL32.dll",
-  "address": "0x90000490"
+  "address": "0x76010490"
 }

@@ -1,0 +1,18 @@
+{
+  "address": "0x628ff7",
+  "size": 12,
+  "assembly": [
+    "mov edi, eax",
+    "mov eax, dword ptr [0x69a600]",
+    "test dword ptr [edi + 0x70], eax",
+    "je 0x629020"
+  ],
+  "live_in": [
+    "eax",
+    "eflags"
+  ],
+  "live_out": [
+    "eax",
+    "edi"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "address": "0x628a09",
+  "size": 3,
+  "assembly": [
+    "pop ecx",
+    "call eax"
+  ],
+  "live_in": [
+    "eax",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "esp"
+  ]
+}

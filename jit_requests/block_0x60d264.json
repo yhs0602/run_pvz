@@ -1,0 +1,24 @@
+{
+  "address": "0x60d264",
+  "size": 17,
+  "assembly": [
+    "push dword ptr [ebp + 0x10]",
+    "lea eax, [ebp - 0x10]",
+    "push eax",
+    "push esi",
+    "push dword ptr [ebp + 8]",
+    "push ebx",
+    "call 0x60d03a"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "esp"
+  ]
+}

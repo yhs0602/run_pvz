@@ -1,0 +1,14 @@
+{
+  "address": "0x62903a",
+  "size": 4,
+  "assembly": [
+    "test esi, esi",
+    "je 0x629058"
+  ],
+  "live_in": [
+    "esi"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

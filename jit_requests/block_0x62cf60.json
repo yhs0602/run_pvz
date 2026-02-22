@@ -1,0 +1,25 @@
+{
+  "address": "0x62cf60",
+  "size": 19,
+  "assembly": [
+    "push ebp",
+    "mov ebp, esp",
+    "mov eax, dword ptr [ebp + 8]",
+    "push esi",
+    "lea esi, [eax*8 + 0x69a8f8]",
+    "cmp dword ptr [esi], 0",
+    "jne 0x62cf86"
+  ],
+  "live_in": [
+    "ebp",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

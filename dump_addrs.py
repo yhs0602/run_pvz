@@ -15,4 +15,4 @@ def dump(addr, size):
                 b_str = ' '.join(f'{b:02X}' for b in i.bytes)
                 print(f"0x{i.address:x}: {b_str:<20} {i.mnemonic}\t{i.op_str}")
 
-dump(0x628700, 150)
+dump(0x5ba8d0, 150)

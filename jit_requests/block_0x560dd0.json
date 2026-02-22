@@ -1,0 +1,25 @@
+{
+  "address": "0x560dd0",
+  "size": 17,
+  "assembly": [
+    "mov dl, byte ptr [edi]",
+    "mov byte ptr [ecx], dl",
+    "sub esi, 1",
+    "add ecx, 1",
+    "add edi, 1",
+    "test esi, esi",
+    "ja 0x560dd0"
+  ],
+  "live_in": [
+    "ecx",
+    "edi",
+    "esi"
+  ],
+  "live_out": [
+    "dl",
+    "ecx",
+    "edi",
+    "eflags",
+    "esi"
+  ]
+}

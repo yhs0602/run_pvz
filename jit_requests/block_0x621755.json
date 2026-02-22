@@ -1,0 +1,14 @@
+{
+  "address": "0x621755",
+  "size": 8,
+  "assembly": [
+    "test ecx, 3",
+    "jne 0x62174c"
+  ],
+  "live_in": [
+    "ecx"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "address": "0x62929b",
+  "size": 7,
+  "assembly": [
+    "or byte ptr [eax], 8",
+    "inc eax",
+    "dec ecx",
+    "jne 0x62929b"
+  ],
+  "live_in": [
+    "eax",
+    "ecx"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags"
+  ]
+}

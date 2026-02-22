@@ -1,0 +1,21 @@
+{
+  "address": "0x622ac0",
+  "size": 15,
+  "assembly": [
+    "push 6",
+    "lea ebx, [esi + 0x50]",
+    "pop ebp",
+    "cmp dword ptr [ebx - 8], 0x69a608",
+    "je 0x622ad8"
+  ],
+  "live_in": [
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "ebx",
+    "eflags",
+    "esp"
+  ]
+}

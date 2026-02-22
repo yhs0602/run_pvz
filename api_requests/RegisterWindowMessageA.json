@@ -1,0 +1,5 @@
+{
+  "api_name": "RegisterWindowMessageA",
+  "module": "USER32.dll",
+  "address": "0x90000040"
+}

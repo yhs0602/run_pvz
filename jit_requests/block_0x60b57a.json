@@ -1,0 +1,27 @@
+{
+  "address": "0x60b57a",
+  "size": 26,
+  "assembly": [
+    "mov eax, dword ptr [esp + 4]",
+    "and eax, 3",
+    "push esi",
+    "mov esi, ecx",
+    "mov dword ptr [esi], eax",
+    "imul eax, eax, 0x18",
+    "add eax, 0x6a6390",
+    "push eax",
+    "call 0x60cebc"
+  ],
+  "live_in": [
+    "ecx",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

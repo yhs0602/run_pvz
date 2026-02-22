@@ -1,0 +1,15 @@
+{
+  "address": "0x62cf86",
+  "size": 8,
+  "assembly": [
+    "push dword ptr [esi]",
+    "call dword ptr [0x6520f8]"
+  ],
+  "live_in": [
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "esp"
+  ]
+}

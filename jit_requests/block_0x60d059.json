@@ -1,0 +1,26 @@
+{
+  "address": "0x60d059",
+  "size": 11,
+  "assembly": [
+    "and word ptr [eax], 0",
+    "xor eax, eax",
+    "pop edi",
+    "pop esi",
+    "pop ebx",
+    "pop ebp",
+    "ret"
+  ],
+  "live_in": [
+    "eax",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ebx",
+    "edi",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

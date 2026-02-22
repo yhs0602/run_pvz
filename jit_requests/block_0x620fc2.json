@@ -1,0 +1,13 @@
+{
+  "address": "0x620fc2",
+  "size": 9,
+  "assembly": [
+    "cmp dword ptr [0x75cac0], 3",
+    "jne 0x621016"
+  ],
+  "live_in": [
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "address": "0x628a20",
+  "size": 8,
+  "assembly": [
+    "or dword ptr [esi + 4], 0xffffffff",
+    "mov dword ptr [esi], eax",
+    "jmp 0x628a31"
+  ],
+  "live_in": [
+    "eax",
+    "esi"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

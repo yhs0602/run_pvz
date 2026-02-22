@@ -1,0 +1,16 @@
+{
+  "address": "0x628a18",
+  "size": 8,
+  "assembly": [
+    "pop ecx",
+    "pop ecx",
+    "call dword ptr [0x6520e8]"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "esp"
+  ]
+}

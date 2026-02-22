@@ -1,0 +1,14 @@
+{
+  "address": "0x60cec7",
+  "size": 10,
+  "assembly": [
+    "push dword ptr [esp + 4]",
+    "call dword ptr [0x6520ec]"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "esp"
+  ]
+}

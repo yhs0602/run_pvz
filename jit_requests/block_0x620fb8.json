@@ -1,0 +1,19 @@
+{
+  "address": "0x620fb8",
+  "size": 10,
+  "assembly": [
+    "xor ebx, ebx",
+    "mov dword ptr [ebp - 0x1c], ebx",
+    "cmp esi, -0x20",
+    "ja 0x62102b"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "esi"
+  ],
+  "live_out": [
+    "ebx",
+    "eflags"
+  ]
+}

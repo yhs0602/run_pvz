@@ -1,0 +1,15 @@
+{
+  "address": "0x62903e",
+  "size": 7,
+  "assembly": [
+    "push esi",
+    "call dword ptr [0x6520b0]"
+  ],
+  "live_in": [
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "esp"
+  ]
+}

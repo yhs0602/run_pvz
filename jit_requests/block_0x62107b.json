@@ -1,0 +1,17 @@
+{
+  "address": "0x62107b",
+  "size": 7,
+  "assembly": [
+    "mov eax, ebx",
+    "call 0x62a891"
+  ],
+  "live_in": [
+    "ebx",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "esp"
+  ]
+}

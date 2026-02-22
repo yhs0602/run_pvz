@@ -1,0 +1,24 @@
+{
+  "address": "0x62891e",
+  "size": 23,
+  "assembly": [
+    "mov dword ptr [ebp - 0x1c], eax",
+    "mov esi, dword ptr [ebp + 8]",
+    "mov dword ptr [esi + 0x5c], 0x69aa40",
+    "xor edi, edi",
+    "inc edi",
+    "mov dword ptr [esi + 0x14], edi",
+    "test eax, eax",
+    "je 0x628964"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "edi"
+  ],
+  "live_out": [
+    "edi",
+    "eflags",
+    "esi"
+  ]
+}
