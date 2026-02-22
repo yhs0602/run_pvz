@@ -1,0 +1,18 @@
+{
+  "address": "0x62e3b9",
+  "size": 9,
+  "assembly": [
+    "movzx eax, al",
+    "push eax",
+    "call 0x62e25b"
+  ],
+  "live_in": [
+    "al",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "esp"
+  ]
+}

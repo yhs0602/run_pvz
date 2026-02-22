@@ -1,0 +1,5 @@
+{
+  "api_name": "GetSystemDirectoryA",
+  "module": "KERNEL32.dll",
+  "address": "0x760102d0"
+}

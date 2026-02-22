@@ -386,10 +386,24 @@ int main(int argc, char **argv) {
                 uc_reg_read(uc, UC_X86_REG_EBX, &val); std::cerr << "EBX=0x" << std::hex << val << " ";
                 uc_reg_read(uc, UC_X86_REG_ECX, &val); std::cerr << "ECX=0x" << std::hex << val << " ";
                 uc_reg_read(uc, UC_X86_REG_EDX, &val); std::cerr << "EDX=0x" << std::hex << val << "\n";
-                uc_reg_read(uc, UC_X86_REG_ESI, &val); std::cerr << "ESI=0x" << std::hex << val << " ";
-                uc_reg_read(uc, UC_X86_REG_EDI, &val); std::cerr << "EDI=0x" << std::hex << val << " ";
-                uc_reg_read(uc, UC_X86_REG_ESP, &val); std::cerr << "ESP=0x" << std::hex << val << " ";
-                uc_reg_read(uc, UC_X86_REG_EBP, &val); std::cerr << "EBP=0x" << std::hex << val << "\n";
+                uint32_t esi, edi, esp, ebp;
+                uc_reg_read(uc, UC_X86_REG_ESI, &esi);
+                uc_reg_read(uc, UC_X86_REG_EDI, &edi);
+                uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+                uc_reg_read(uc, UC_X86_REG_EBP, &ebp);
+                std::cerr << "ESI=0x" << std::hex << esi << " EDI=0x" << edi << " ESP=0x" << esp << " EBP=0x" << ebp << "\n";
+        
+                std::cerr << "--- Stack Dump ---\n";
+                for (int i = 0; i < 8; i++) {
+                    uint32_t stack_val = 0;
+                    uc_err mem_err = uc_mem_read(uc, esp + (i * 4), &stack_val, 4);
+                    if (mem_err == UC_ERR_OK) {
+                        std::cerr << "  [ESP+" << std::hex << (i*4) << "] = 0x" << stack_val << "\n";
+                    } else {
+                        std::cerr << "  [ESP+" << std::hex << (i*4) << "] = UNMAPPED (" << uc_strerror(mem_err) << ")\n";
+                    }
+                }
+                std::cerr << "------------------\n";
                 break;
             }
             uc_reg_read(uc, UC_X86_REG_EIP, &pc);

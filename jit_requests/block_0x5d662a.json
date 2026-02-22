@@ -1,0 +1,16 @@
+{
+  "address": "0x5d662a",
+  "size": 9,
+  "assembly": [
+    "mov eax, ecx",
+    "and eax, 0x80000007",
+    "jns 0x5d6638"
+  ],
+  "live_in": [
+    "ecx"
+  ],
+  "live_out": [
+    "eax",
+    "eflags"
+  ]
+}

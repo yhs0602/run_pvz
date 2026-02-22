@@ -1,0 +1,23 @@
+{
+  "address": "0x5d6644",
+  "size": 14,
+  "assembly": [
+    "and edx, 7",
+    "add eax, edx",
+    "mov edi, eax",
+    "sar edi, 3",
+    "test ecx, ecx",
+    "je 0x5d665b"
+  ],
+  "live_in": [
+    "eax",
+    "ecx",
+    "edx"
+  ],
+  "live_out": [
+    "eax",
+    "edi",
+    "edx",
+    "eflags"
+  ]
+}

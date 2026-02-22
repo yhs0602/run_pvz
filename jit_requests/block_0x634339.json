@@ -1,0 +1,22 @@
+{
+  "address": "0x634339",
+  "size": 13,
+  "assembly": [
+    "mov al, byte ptr [ebx]",
+    "dec dword ptr [esp + 0xc]",
+    "mov ecx, edi",
+    "call 0x6342c8"
+  ],
+  "live_in": [
+    "ebx",
+    "edi",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

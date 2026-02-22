@@ -89,6 +89,29 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"KERNEL32.dll!DirectDrawCreate", 12},
     {"KERNEL32.dll!DirectDrawCreateEx", 16},
     {"KERNEL32.dll!Direct3DCreate8", 4},
+    {"DDRAW.dll!IDirectDraw7_Method_0", 12},
+    {"DDRAW.dll!IDirectDraw7_Method_1", 4},
+    {"DDRAW.dll!IDirectDraw7_Method_2", 4},
+    {"DDRAW.dll!IDirectDraw7_Method_6", 16},
+    {"DDRAW.dll!IDirectDraw7_Method_20", 12},
+    {"DDRAW.dll!IDirectDraw7_Method_21", 24},
+    {"DDRAW.dll!IDirectDraw7_Method_23", 16},
+    {"DDRAW.dll!IDirectDraw2_Method_20", 12}, // SetCooperativeLevel
+    {"DDRAW.dll!IDirectDraw2_Method_21", 24}, // SetDisplayMode
+    {"DDRAW.dll!IDirectDrawSurface2_Method_22", 8}, // GetSurfaceDesc
+    {"DDRAW.dll!IDirect3D7_Method_4", 16},
+    {"DDRAW.dll!IDirect3DDevice7_Method_0", 12},
+    {"DDRAW.dll!IDirect3DDevice7_Method_1", 4},
+    {"DDRAW.dll!IDirect3DDevice7_Method_2", 4},
+    {"DDRAW.dll!IDirect3DDevice7_Method_4", 12},
+    {"DDRAW.dll!IDirect3D8_Method_0", 12},
+    {"DDRAW.dll!IDirect3D8_Method_1", 4},
+    {"DDRAW.dll!IDirect3D8_Method_2", 4},
+    {"DDRAW.dll!IDirect3D8_Method_5", 16},
+    {"DDRAW.dll!IDirect3D8_Method_13", 16},
+    {"DDRAW.dll!IDirect3D8_Method_15", 28},
+    {"DDRAW.dll!IDirectDrawSurface7_Method_25", 20}, // Lock
+    {"DDRAW.dll!IDirectDrawSurface7_Method_32", 8},  // Unlock
     // Dynamic Resolution and Pointer HLE
     {"KERNEL32.dll!GetProcAddress", 8},
     {"KERNEL32.dll!EncodePointer", 4},
@@ -105,6 +128,10 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"KERNEL32.dll!FlsAlloc", 4},
     {"KERNEL32.dll!FlsGetValue", 4},
     {"KERNEL32.dll!FlsSetValue", 8},
+    {"KERNEL32.dll!TlsSetValue", 8},
+    {"KERNEL32.dll!InterlockedIncrement", 4},
+    {"KERNEL32.dll!InterlockedDecrement", 4},
+    {"KERNEL32.dll!InterlockedExchange", 8},
     {"KERNEL32.dll!FlsFree", 4},
     // String & Locale (Trivial Stubs)
     {"KERNEL32.dll!GetLocaleInfoA", 16},
@@ -159,6 +186,10 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"KERNEL32.dll!GetCurrentDirectoryA", 8},
     {"KERNEL32.dll!SetCurrentDirectoryW", 4},
     {"KERNEL32.dll!SetCurrentDirectoryA", 4},
+    {"KERNEL32.dll!GetSystemDirectoryW", 8},
+    {"KERNEL32.dll!GetSystemDirectoryA", 8},
+    {"KERNEL32.dll!GetWindowsDirectoryW", 8},
+    {"KERNEL32.dll!GetWindowsDirectoryA", 8},
     {"KERNEL32.dll!GetFullPathNameW", 16},
     {"KERNEL32.dll!GetFullPathNameA", 16},
     {"KERNEL32.dll!GetFileAttributesW", 4},
@@ -180,6 +211,14 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"KERNEL32.dll!WriteFile", 20},
     {"KERNEL32.dll!SetFilePointer", 16},
     {"KERNEL32.dll!GetFileSize", 8},
+    {"KERNEL32.dll!GetFileTime", 16},
+    {"KERNEL32.dll!SetFileTime", 16},
+    {"KERNEL32.dll!FileTimeToSystemTime", 8},
+    {"KERNEL32.dll!SystemTimeToFileTime", 8},
+    {"KERNEL32.dll!FileTimeToLocalFileTime", 8},
+    {"KERNEL32.dll!LocalFileTimeToFileTime", 8},
+    {"KERNEL32.dll!GetSystemTime", 4},
+    {"KERNEL32.dll!GetLocalTime", 4},
     // Media and Timing (WINMM)
     {"WINMM.dll!timeGetTime", 0},
     // Registry (ADVAPI32)
@@ -311,7 +350,12 @@ uint32_t DummyAPIHandler::create_fake_com_object(const std::string& class_name, 
     // 3. Register fake APIs for each method
     for (int i = 0; i < num_methods; i++) {
         std::string method_name = "DDRAW.dll!" + class_name + "_Method_" + std::to_string(i);
-        KNOWN_SIGNATURES[method_name] = 0; // Add to fast-path dynamically
+        if (KNOWN_SIGNATURES.find(method_name) == KNOWN_SIGNATURES.end()) {
+            if (i == 0) KNOWN_SIGNATURES[method_name] = 12;      // QueryInterface (this, riid, ppv)
+            else if (i == 1) KNOWN_SIGNATURES[method_name] = 4; // AddRef (this)
+            else if (i == 2) KNOWN_SIGNATURES[method_name] = 4; // Release (this)
+            else KNOWN_SIGNATURES[method_name] = 0;             // Default unknown
+        }
         uint32_t api_addr = register_fake_api(method_name);
         // Write the API address into the VTable at index i
         uc_mem_write(ctx.uc, vtable_addr + (i * 4), &api_addr, 4);
@@ -618,7 +662,10 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
         bool known = (KNOWN_SIGNATURES.find(name) != KNOWN_SIGNATURES.end());
         std::cout << "\n[DEBUG] hook_api_call name='" << name << "', known=" << known << "\n";
         
-        if (known) {
+        if (handler->try_load_dylib(name)) {
+            std::cout << "\n[API CALL] [JIT MOCK] Redirecting to " << name << std::endl;
+            handler->dylib_funcs[name](&handler->ctx);
+        } else if (known) {
             if (name == "KERNEL32.dll!GetLastError") {
                 uint32_t last_error = handler->ctx.global_state["LastError"];
                 handler->ctx.set_eax(last_error);
@@ -726,6 +773,119 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uc_mem_write(handler->ctx.uc, shared_mem_ptr, &zero, 4); // Zero out the first dword so subsequent pointer reads fail safely
                 handler->ctx.set_eax(shared_mem_ptr); 
                 std::cout << "\n[API CALL] [OK] MapViewOfFile -> Dummy Shared Memory at 0x76002000\n";
+            } else if (name == "DDRAW.dll!IDirectDraw7_Method_0") {
+                // HRESULT QueryInterface(REFIID riid, void **ppvObj)
+                uint32_t riid = handler->ctx.get_arg(1);
+                uint32_t ppvObj = handler->ctx.get_arg(2);
+                uint8_t guid[16];
+                uc_mem_read(handler->ctx.uc, riid, guid, 16);
+                
+                std::cout << "\n[API CALL] QueryInterface requested GUID: ";
+                for (int i=0; i<16; i++) std::cout << std::hex << (int)guid[i] << " ";
+                std::cout << std::dec << "\n";
+                
+                if (ppvObj) {
+                    uint32_t dummy_obj = 0;
+                    if (guid[0] == 0x80) { // IID_IDirectDraw2
+                        dummy_obj = handler->create_fake_com_object("IDirectDraw2", 50);
+                    } else if (guid[0] == 0x77) { // IID_IDirect3D7
+                        dummy_obj = handler->create_fake_com_object("IDirect3D7", 50);
+                    } else {
+                        dummy_obj = handler->create_fake_com_object("GenericCOM", 50);
+                    }
+                    uc_mem_write(handler->ctx.uc, ppvObj, &dummy_obj, 4);
+                }
+                handler->ctx.set_eax(0); // S_OK
+                std::cout << "[API CALL] [OK] IDirectDraw7::QueryInterface -> Wrote Object to 0x" << std::hex << ppvObj << std::dec << "\n";
+            } else if (name == "DDRAW.dll!IDirect3D7_Method_4") {
+                // HRESULT CreateDevice(REFCLSID rclsid, LPDIRECTDRAWSURFACE7 lpDDS, LPDIRECT3DDEVICE7 *lplpD3DDevice)
+                uint32_t lplpD3DDevice = handler->ctx.get_arg(3);
+                if (lplpD3DDevice) {
+                    uint32_t dummy_device = handler->create_fake_com_object("IDirect3DDevice7", 100);
+                    uc_mem_write(handler->ctx.uc, lplpD3DDevice, &dummy_device, 4);
+                }
+                handler->ctx.set_eax(0); // D3D_OK
+                std::cout << "\n[API CALL] [OK] IDirect3D7::CreateDevice -> Returned Dummy IDirect3DDevice7 object.\n";
+            } else if (name == "DDRAW.dll!IDirectDraw7_Method_6") {
+                // HRESULT CreateSurface(LPDDSURFACEDESC2, LPDIRECTDRAWSURFACE7*, IUnknown*)
+                uint32_t lplpDDSurface = handler->ctx.get_arg(2);
+                if (lplpDDSurface) {
+                    uint32_t dummy_surface = handler->create_fake_com_object("IDirectDrawSurface7", 50);
+                    uc_mem_write(handler->ctx.uc, lplpDDSurface, &dummy_surface, 4);
+                }
+                handler->ctx.set_eax(0); // DD_OK
+                std::cout << "\n[API CALL] [OK] IDirectDraw7::CreateSurface -> Wrote surface to 0x" << std::hex << lplpDDSurface << std::dec << ".\n";
+            } else if (name == "DDRAW.dll!IDirectDrawSurface7_Method_0") {
+                // HRESULT QueryInterface(REFIID riid, void **ppvObj)
+                uint32_t riid = handler->ctx.get_arg(1);
+                uint32_t ppvObj = handler->ctx.get_arg(2);
+                uint8_t guid[16];
+                uc_mem_read(handler->ctx.uc, riid, guid, 16);
+                
+                std::cout << "\n[API CALL] IDirectDrawSurface7::QueryInterface requested GUID: ";
+                for (int i=0; i<16; i++) std::cout << std::hex << (int)guid[i] << " ";
+                std::cout << std::dec << "\n";
+                
+                if (ppvObj) {
+                    uint32_t dummy_obj = 0;
+                    if (guid[0] == 0x81) { // IID_IDirectDrawSurface2
+                        dummy_obj = handler->create_fake_com_object("IDirectDrawSurface2", 50);
+                    } else {
+                        dummy_obj = handler->create_fake_com_object("GenericCOM", 50);
+                    }
+                    uc_mem_write(handler->ctx.uc, ppvObj, &dummy_obj, 4);
+                }
+                handler->ctx.set_eax(0); // S_OK
+                std::cout << "[API CALL] [OK] IDirectDrawSurface7::QueryInterface -> Wrote Object to 0x" << std::hex << ppvObj << std::dec << "\n";                
+            } else if (name == "DDRAW.dll!IDirectDrawSurface7_Method_25") {
+                // HRESULT Lock(LPRECT lpDestRect, LPDDSURFACEDESC2 lpDDSurfaceDesc, DWORD dwFlags, HANDLE hEvent)
+                uint32_t surface_ptr = handler->ctx.get_arg(0);
+                uint32_t lpDestRect = handler->ctx.get_arg(1);
+                uint32_t lpDDSurfaceDesc = handler->ctx.get_arg(2);
+                
+                std::string key = "surface_buffer_" + std::to_string(surface_ptr);
+                uint32_t pixel_buffer = 0;
+                if (handler->ctx.global_state.find(key) != handler->ctx.global_state.end()) {
+                    pixel_buffer = handler->ctx.global_state[key];
+                } else {
+                    if (handler->ctx.global_state.find("SurfaceHeap") == handler->ctx.global_state.end()) {
+                        handler->ctx.global_state["SurfaceHeap"] = 0x30000000;
+                        uc_mem_map(handler->ctx.uc, 0x30000000, 0x10000000, UC_PROT_ALL);
+                    }
+                    pixel_buffer = handler->ctx.global_state["SurfaceHeap"];
+                    handler->ctx.global_state["SurfaceHeap"] += (800 * 600 * 4);
+                    handler->ctx.global_state[key] = pixel_buffer;
+                    std::cout << "\n[API CALL] Allocated late surface buffer at 0x" << std::hex << pixel_buffer << std::dec << "\n";
+                }
+
+                if (lpDDSurfaceDesc) {
+                    uint32_t height = 600, width = 800;
+                    uint32_t pitch = width * 4;
+
+                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 8, &height, 4);
+                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 12, &width, 4);
+                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 16, &pitch, 4);
+                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 36, &pixel_buffer, 4);
+                    
+                    uint32_t pf_flags = 0x40; // DDPF_RGB
+                    uint32_t bpp = 32;
+                    uint32_t r_mask = 0x00FF0000;
+                    uint32_t g_mask = 0x0000FF00;
+                    uint32_t b_mask = 0x000000FF;
+                    
+                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 72 + 8, &pf_flags, 4);
+                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 72 + 16, &bpp, 4);
+                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 72 + 20, &r_mask, 4);
+                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 72 + 24, &g_mask, 4);
+                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 72 + 28, &b_mask, 4);
+                }
+                
+                handler->ctx.set_eax(0);
+                std::cout << "\n[API CALL] [OK] IDirectDrawSurface7::Lock -> Buffer: 0x" << std::hex << pixel_buffer << std::dec << "\n";
+            } else if (name == "DDRAW.dll!IDirectDrawSurface7_Method_32") {
+                // HRESULT Unlock(LPRECT lpRect)
+                handler->ctx.set_eax(0);
+                std::cout << "\n[API CALL] [OK] IDirectDrawSurface7::Unlock\n";
             } else if (name == "KERNEL32.dll!DirectDrawCreateEx" || name == "KERNEL32.dll!DirectDrawCreate") {
                 uint32_t lplpDD = handler->ctx.get_arg(1); // Arg 1 is out-pointer to interface
                 if (lplpDD) {
@@ -733,7 +893,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     uc_mem_write(handler->ctx.uc, lplpDD, &dummy_ddraw_obj, 4);
                 }
                 handler->ctx.set_eax(0); // S_OK
-                std::cout << "\n[API CALL] [OK] Intercepted " << name << " -> Returned Dummy IDirectDraw7 Interface.\n";
+                std::cout << "\n[API CALL] [OK] Intercepted DirectDrawCreateEx -> Wrote IDirectDraw7 to 0x" << std::hex << lplpDD << std::dec << "\n";
             } else if (name == "KERNEL32.dll!Direct3DCreate8") {
                 uint32_t dummy_d3d_obj = handler->create_fake_com_object("IDirect3D8", 50);
                 handler->ctx.set_eax(dummy_d3d_obj); // Returns the interface pointer directly in EAX
@@ -752,10 +912,21 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 std::cout << "\n[API CALL] [OK] Intercepted call to " << name << "\n";
             } else if (name == "KERNEL32.dll!TerminateProcess") {
                 uint32_t ret_addr = 0;
-                uint32_t esp;
+                uint32_t esp, ebp;
                 uc_reg_read(handler->ctx.uc, UC_X86_REG_ESP, &esp);
+                uc_reg_read(handler->ctx.uc, UC_X86_REG_EBP, &ebp);
                 uc_mem_read(handler->ctx.uc, esp, &ret_addr, 4);
-                std::cout << "\n[!] Engine called TerminateProcess! Return address (caller): 0x" << std::hex << ret_addr << std::dec << "\n";
+                std::cout << "\n[!] Engine called TerminateProcess! Direct Return: 0x" << std::hex << ret_addr << std::dec << "\n";
+                // Stack Walk
+                std::cout << "--- Stack Trace ---\n";
+                for (int i = 0; i < 5; i++) {
+                    if (ebp == 0) break;
+                    uint32_t next_ret = 0;
+                    uc_mem_read(handler->ctx.uc, ebp + 4, &next_ret, 4);
+                    std::cout << "  Frame " << i << ": 0x" << std::hex << next_ret << std::dec << "\n";
+                    uc_mem_read(handler->ctx.uc, ebp, &ebp, 4); // Next frame
+                }
+                std::cout << "-------------------\n";
                 handler->ctx.set_eax(1);
             } else {
                 // For other trivial APIs, return 1 (Success) by default to avoid zero-checks failing
@@ -763,14 +934,8 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 std::cout << "\n[API CALL] [OK] Intercepted call to " << name << std::endl;
             }
         } else {
-            if (handler->try_load_dylib(name)) {
-                std::cout << "\n[API CALL] [JIT MOCK] Redirecting to " << name << std::endl;
-                // Dispatch to C++ JIT Mock!
-                handler->dylib_funcs[name](&handler->ctx);
-            } else {
-                std::cout << "\n[API CALL] [UNKNOWN] Calling LLM API Compiler for " << name << std::endl;
-                handler->handle_unknown_api(name, address);
-            }
+            std::cout << "\n[API CALL] [UNKNOWN] Calling LLM API Compiler for " << name << std::endl;
+            handler->handle_unknown_api(name, address);
         }
     }
 }

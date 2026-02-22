@@ -1,0 +1,16 @@
+{
+  "address": "0x62e39e",
+  "size": 6,
+  "assembly": [
+    "mov al, byte ptr [esi]",
+    "cmp al, 0x20",
+    "ja 0x62e3ac"
+  ],
+  "live_in": [
+    "esi"
+  ],
+  "live_out": [
+    "al",
+    "eflags"
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "api_name": "FlsSetValue",
+  "module": "KERNEL32.dll",
+  "address": "0x760108b0"
+}

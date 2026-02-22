@@ -30,25 +30,11 @@ extern "C" void mock_WideCharToMultiByte(APIContext* ctx) {
 
     if (lp_wide_char_str == 0 || cch_wide_char == 0 || cch_wide_char < -1 || cb_multi_byte < 0) {
         fail(ERROR_INVALID_PARAMETER);
-        uint32_t esp;
-        uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
-        uint32_t ret_addr;
-        uc_mem_read(ctx->uc, esp, &ret_addr, 4);
-        esp += 32 + 4; // Add arg size + 4 bytes for the return address itself
-        uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-        uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
         return;
     }
 
     if (code_page == CP_UTF8 && (lp_default_char != 0 || lp_used_default_char != 0)) {
         fail(ERROR_INVALID_PARAMETER);
-        uint32_t esp;
-        uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
-        uint32_t ret_addr;
-        uc_mem_read(ctx->uc, esp, &ret_addr, 4);
-        esp += 32 + 4; // Add arg size + 4 bytes for the return address itself
-        uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-        uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
         return;
     }
 
@@ -65,13 +51,6 @@ extern "C" void mock_WideCharToMultiByte(APIContext* ctx) {
             uint16_t w = 0;
             if (!read_u16(lp_wide_char_str + (i * 2), w)) {
                 fail(ERROR_INVALID_PARAMETER);
-                uint32_t esp;
-                uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
-                uint32_t ret_addr;
-                uc_mem_read(ctx->uc, esp, &ret_addr, 4);
-                esp += 32 + 4; // Add arg size + 4 bytes for the return address itself
-                uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-                uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
                 return;
             }
             wide.push_back(w);
@@ -79,13 +58,6 @@ extern "C" void mock_WideCharToMultiByte(APIContext* ctx) {
         }
         if (wide.empty() || wide.back() != 0) {
             fail(ERROR_NO_UNICODE_TRANSLATION);
-            uint32_t esp;
-            uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
-            uint32_t ret_addr;
-            uc_mem_read(ctx->uc, esp, &ret_addr, 4);
-            esp += 32 + 4; // Add arg size + 4 bytes for the return address itself
-            uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-            uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
             return;
         }
     } else {
@@ -94,13 +66,6 @@ extern "C" void mock_WideCharToMultiByte(APIContext* ctx) {
             uint16_t w = 0;
             if (!read_u16(lp_wide_char_str + (static_cast<uint32_t>(i) * 2), w)) {
                 fail(ERROR_INVALID_PARAMETER);
-                uint32_t esp;
-                uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
-                uint32_t ret_addr;
-                uc_mem_read(ctx->uc, esp, &ret_addr, 4);
-                esp += 32 + 4; // Add arg size + 4 bytes for the return address itself
-                uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-                uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
                 return;
             }
             wide.push_back(w);
@@ -190,50 +155,21 @@ extern "C" void mock_WideCharToMultiByte(APIContext* ctx) {
         }
         ctx->global_state["LastError"] = ERROR_SUCCESS;
         ctx->set_eax(required);
-
-        uint32_t esp;
-        uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
-        uint32_t ret_addr;
-        uc_mem_read(ctx->uc, esp, &ret_addr, 4);
-        esp += 32 + 4; // Add arg size + 4 bytes for the return address itself
-        uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-        uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
         return;
     }
 
     if (lp_multi_byte_str == 0) {
         fail(ERROR_INVALID_PARAMETER);
-        uint32_t esp;
-        uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
-        uint32_t ret_addr;
-        uc_mem_read(ctx->uc, esp, &ret_addr, 4);
-        esp += 32 + 4; // Add arg size + 4 bytes for the return address itself
-        uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-        uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
         return;
     }
 
     if (static_cast<uint32_t>(cb_multi_byte) < required) {
         fail(ERROR_INSUFFICIENT_BUFFER);
-        uint32_t esp;
-        uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
-        uint32_t ret_addr;
-        uc_mem_read(ctx->uc, esp, &ret_addr, 4);
-        esp += 32 + 4; // Add arg size + 4 bytes for the return address itself
-        uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-        uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
         return;
     }
 
     if (required > 0 && uc_mem_write(ctx->uc, lp_multi_byte_str, out.data(), required) != UC_ERR_OK) {
         fail(ERROR_INVALID_PARAMETER);
-        uint32_t esp;
-        uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
-        uint32_t ret_addr;
-        uc_mem_read(ctx->uc, esp, &ret_addr, 4);
-        esp += 32 + 4; // Add arg size + 4 bytes for the return address itself
-        uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-        uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
         return;
     }
 
@@ -244,12 +180,4 @@ extern "C" void mock_WideCharToMultiByte(APIContext* ctx) {
 
     ctx->global_state["LastError"] = ERROR_SUCCESS;
     ctx->set_eax(required);
-
-    uint32_t esp;
-    uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
-    uint32_t ret_addr;
-    uc_mem_read(ctx->uc, esp, &ret_addr, 4);
-    esp += 32 + 4; // Add arg size + 4 bytes for the return address itself
-    uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-    uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
 }

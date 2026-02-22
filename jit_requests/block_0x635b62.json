@@ -1,0 +1,16 @@
+{
+  "address": "0x635b62",
+  "size": 9,
+  "assembly": [
+    "sub eax, 0x1000",
+    "test dword ptr [eax], eax",
+    "jmp 0x635b54"
+  ],
+  "live_in": [
+    "eax"
+  ],
+  "live_out": [
+    "eax",
+    "eflags"
+  ]
+}
