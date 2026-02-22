@@ -49,3 +49,4 @@ CMakeUserPresets.json
 build/
 __pycache__
 qemu
+boot_trace.txt

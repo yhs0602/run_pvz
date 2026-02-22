@@ -1,0 +1,19 @@
+{
+  "address": "0x6293db",
+  "size": 13,
+  "assembly": [
+    "mov cl, byte ptr [eax + ebx + 0x1c]",
+    "mov byte ptr [eax + 0x69a300], cl",
+    "inc eax",
+    "jmp 0x6293d1"
+  ],
+  "live_in": [
+    "eax",
+    "ebx"
+  ],
+  "live_out": [
+    "cl",
+    "eax",
+    "eflags"
+  ]
+}

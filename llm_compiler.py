@@ -65,7 +65,10 @@ class JITCompilerHandler(FileSystemEventHandler):
             # CRITICAL FIX: Memory accesses crash the native C++ dispatcher because Unicorn's 32-bit addresses
             # do not map 1:1 to the macOS host virtual memory.
             # We must fallback to Unicorn (skip JIT) for blocks containing memory indirection.
-            if "[" in assembly_str or "]" in assembly_str:
+            implicit_mem_insts = ["push", "pop", "call", "ret", "leave"]
+            has_implicit_mem = any(inst in assembly_str for inst in implicit_mem_insts)
+            
+            if "[" in assembly_str or "]" in assembly_str or has_implicit_mem:
                 print(f"[!] Bypassing JIT for {address} (Memory Access not supported in native JIT yet).")
                 os.rename(filepath, filepath + ".processed")
                 return

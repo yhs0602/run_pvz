@@ -1,0 +1,16 @@
+{
+  "address": "0x61c145",
+  "size": 8,
+  "assembly": [
+    "push dword ptr [ebp + 8]",
+    "call 0x621111"
+  ],
+  "live_in": [
+    "ebp",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "esp"
+  ]
+}

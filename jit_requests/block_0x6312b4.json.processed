@@ -1,0 +1,23 @@
+{
+  "address": "0x6312b4",
+  "size": 10,
+  "assembly": [
+    "mov cl, byte ptr [esi]",
+    "mov byte ptr [edx], cl",
+    "inc edx",
+    "inc esi",
+    "cmp cl, bl",
+    "je 0x6312c1"
+  ],
+  "live_in": [
+    "bl",
+    "edx",
+    "esi"
+  ],
+  "live_out": [
+    "cl",
+    "edx",
+    "eflags",
+    "esi"
+  ]
+}

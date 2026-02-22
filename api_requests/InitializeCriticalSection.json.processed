@@ -1,0 +1,5 @@
+{
+  "api_name": "InitializeCriticalSection",
+  "module": "KERNEL32.dll",
+  "address": "0x900003a0"
+}

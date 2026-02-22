@@ -1,0 +1,16 @@
+{
+  "address": "0x61c152",
+  "size": 2,
+  "assembly": [
+    "leave",
+    "ret"
+  ],
+  "live_in": [
+    "ebp",
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "esp"
+  ]
+}

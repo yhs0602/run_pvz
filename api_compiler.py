@@ -19,12 +19,16 @@ Requirements:
 2. You must `#include "api_context.hpp"`.
 3. Inside the function, retrieve arguments using `ctx->get_arg(index)` where index 0 is the first argument.
 4. Set the return value (usually in EAX) using `ctx->set_eax(value)`.
-5. Emulate the `stdcall` return by popping arguments off the stack. To do this, modify the ESP register:
+5. Emulate the `stdcall` return by popping arguments off the stack and manually setting EIP. You MUST use this EXACT snippet, replacing <ARGS_BYTES> with the total byte size of the arguments:
    uint32_t esp;
    uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
-   esp += <number of argument bytes>;
+   uint32_t ret_addr;
+   uc_mem_read(ctx->uc, esp, &ret_addr, 4);
+   esp += <ARGS_BYTES> + 4; // Add arg size + 4 bytes for the return address itself
    uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-6. For example, TlsGetValue takes 1 arg (4 bytes) -> esp += 4; GetModuleHandleA takes 1 arg -> esp += 4.
+   uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
+
+6. For example, TlsGetValue takes 1 arg (4 bytes) -> <ARGS_BYTES> is 4. GetModuleHandleA takes 1 arg -> <ARGS_BYTES> is 4.
 7. Return realistic values. If you need dynamic allocation or persistent state, use `ctx->global_state` or `ctx->handle_map`.
    Example: GetModuleHandleA(NULL) should return 0x400000 (ImageBase).
 8. RETURN ONLY THE C++ SOURCE CODE inside a ```cpp block. No explanations or markdown.
@@ -78,7 +82,7 @@ class APICompilerHandler(FileSystemEventHandler):
             # Compile command for macOS dynamic library
             pkg_cflags = subprocess.check_output(["pkg-config", "--cflags", "unicorn"]).decode().strip().split()
             compile_cmd = [
-                "clang++", "-dynamiclib", "-std=c++17",
+                "clang++", "-dynamiclib", "-std=c++20",
                 "-I.", "-undefined", "dynamic_lookup"
             ] + pkg_cflags + [cpp_filepath, "-o", dylib_filepath]
             

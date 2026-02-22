@@ -1,0 +1,18 @@
+{
+  "address": "0x623d1e",
+  "size": 5,
+  "assembly": [
+    "dec ecx",
+    "cmp byte ptr [eax], bl",
+    "je 0x623d2b"
+  ],
+  "live_in": [
+    "bl",
+    "eax",
+    "ecx"
+  ],
+  "live_out": [
+    "ecx",
+    "eflags"
+  ]
+}

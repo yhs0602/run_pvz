@@ -1,0 +1,5 @@
+{
+  "api_name": "InterlockedIncrement",
+  "module": "KERNEL32.dll",
+  "address": "0x900003b0"
+}

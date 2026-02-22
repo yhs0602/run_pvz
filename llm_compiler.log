@@ -1,0 +1,1299 @@
+[*] Checking for existing JIT requests...
+[*] LLM Compiler Bot listening on jit_requests/
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62120f.json
+[!] Bypassing JIT for 0x62120f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289c6.json
+[!] Bypassing JIT for 0x6289c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289ce.json
+[!] Bypassing JIT for 0x6289ce (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62887f.json
+[!] Bypassing JIT for 0x62887f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62888c.json
+[*] Sending block 0x62888c to Codex LLM...
+[*] Generated ARM64 Assembly for 0x62888c:
+mov w6, w0
+tst w6, w6
+mov w9, #0x88ad
+movk w9, #0x62, lsl #16
+mov w10, #0x8892
+movk w10, #0x62, lsl #16
+csel w8, w9, w10, ne
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x62888c to compiled_blocks/block_0x62888c.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628892.json
+[!] Bypassing JIT for 0x628892 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287ed.json
+[!] Bypassing JIT for 0x6287ed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287fc.json
+[*] Sending block 0x6287fc to Codex LLM...
+[*] Generated ARM64 Assembly for 0x6287fc:
+tst w0, w0
+mov w9, #0x8821
+movk w9, #0x62, lsl #16
+mov w10, #0x8800
+movk w10, #0x62, lsl #16
+csel w8, w9, w10, eq
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x6287fc to compiled_blocks/block_0x6287fc.bin (28 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628821.json
+[!] Bypassing JIT for 0x628821 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62882c.json
+[*] Sending block 0x62882c to Codex LLM...
+[*] Generated ARM64 Assembly for 0x62882c:
+mov w6, w0
+tst w6, w6
+movz w9, #0x8832
+movk w9, #0x62, lsl #16
+movz w10, #0x8855
+movk w10, #0x62, lsl #16
+csel w8, w10, w9, eq
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x62882c to compiled_blocks/block_0x62882c.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628832.json
+[!] Bypassing JIT for 0x628832 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62870a.json
+[!] Bypassing JIT for 0x62870a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbe2.json
+[!] Bypassing JIT for 0x61dbe2 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc0a.json
+[!] Bypassing JIT for 0x61dc0a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbed.json
+[!] Bypassing JIT for 0x61dbed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62120f.json
+[!] Bypassing JIT for 0x62120f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289c6.json
+[!] Bypassing JIT for 0x6289c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289ce.json
+[!] Bypassing JIT for 0x6289ce (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62887f.json
+[!] Bypassing JIT for 0x62887f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62888c.json
+[+] Cache HIT! Loading block 0x62888c from cache (hash: e1b91f30)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628892.json
+[!] Bypassing JIT for 0x628892 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287ed.json
+[!] Bypassing JIT for 0x6287ed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287fc.json
+[+] Cache HIT! Loading block 0x6287fc from cache (hash: 31c915b7)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628821.json
+[!] Bypassing JIT for 0x628821 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62882c.json
+[+] Cache HIT! Loading block 0x62882c from cache (hash: 7626a8d4)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628832.json
+[!] Bypassing JIT for 0x628832 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62870a.json
+[!] Bypassing JIT for 0x62870a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbe2.json
+[!] Bypassing JIT for 0x61dbe2 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc0a.json
+[!] Bypassing JIT for 0x61dc0a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbed.json
+[!] Bypassing JIT for 0x61dbed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62120f.json
+[!] Bypassing JIT for 0x62120f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289c6.json
+[!] Bypassing JIT for 0x6289c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289ce.json
+[!] Bypassing JIT for 0x6289ce (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62887f.json
+[!] Bypassing JIT for 0x62887f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62888c.json
+[+] Cache HIT! Loading block 0x62888c from cache (hash: e1b91f30)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628892.json
+[!] Bypassing JIT for 0x628892 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287ed.json
+[!] Bypassing JIT for 0x6287ed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287fc.json
+[+] Cache HIT! Loading block 0x6287fc from cache (hash: 31c915b7)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628821.json
+[!] Bypassing JIT for 0x628821 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62882c.json
+[+] Cache HIT! Loading block 0x62882c from cache (hash: 7626a8d4)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628832.json
+[!] Bypassing JIT for 0x628832 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62870a.json
+[!] Bypassing JIT for 0x62870a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbe2.json
+[!] Bypassing JIT for 0x61dbe2 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc0a.json
+[!] Bypassing JIT for 0x61dc0a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbed.json
+[!] Bypassing JIT for 0x61dbed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62120f.json
+[!] Bypassing JIT for 0x62120f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289c6.json
+[!] Bypassing JIT for 0x6289c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289ce.json
+[!] Bypassing JIT for 0x6289ce (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62887f.json
+[!] Bypassing JIT for 0x62887f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62888c.json
+[+] Cache HIT! Loading block 0x62888c from cache (hash: e1b91f30)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628892.json
+[!] Bypassing JIT for 0x628892 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287ed.json
+[!] Bypassing JIT for 0x6287ed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287fc.json
+[+] Cache HIT! Loading block 0x6287fc from cache (hash: 31c915b7)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628821.json
+[!] Bypassing JIT for 0x628821 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62882c.json
+[+] Cache HIT! Loading block 0x62882c from cache (hash: 7626a8d4)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628832.json
+[!] Bypassing JIT for 0x628832 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62870a.json
+[!] Bypassing JIT for 0x62870a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbe2.json
+[!] Bypassing JIT for 0x61dbe2 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc0a.json
+[!] Bypassing JIT for 0x61dc0a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbed.json
+[!] Bypassing JIT for 0x61dbed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62120f.json
+[!] Bypassing JIT for 0x62120f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289c6.json
+[!] Bypassing JIT for 0x6289c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289ce.json
+[!] Bypassing JIT for 0x6289ce (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62887f.json
+[!] Bypassing JIT for 0x62887f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62888c.json
+[+] Cache HIT! Loading block 0x62888c from cache (hash: e1b91f30)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628892.json
+[!] Bypassing JIT for 0x628892 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287ed.json
+[!] Bypassing JIT for 0x6287ed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287fc.json
+[+] Cache HIT! Loading block 0x6287fc from cache (hash: 31c915b7)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628821.json
+[!] Bypassing JIT for 0x628821 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62882c.json
+[+] Cache HIT! Loading block 0x62882c from cache (hash: 7626a8d4)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628832.json
+[!] Bypassing JIT for 0x628832 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62870a.json
+[!] Bypassing JIT for 0x62870a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbe2.json
+[!] Bypassing JIT for 0x61dbe2 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc0a.json
+[!] Bypassing JIT for 0x61dc0a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbed.json
+[!] Bypassing JIT for 0x61dbed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62120f.json
+[!] Bypassing JIT for 0x62120f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289c6.json
+[!] Bypassing JIT for 0x6289c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289ce.json
+[!] Bypassing JIT for 0x6289ce (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62887f.json
+[!] Bypassing JIT for 0x62887f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62888c.json
+[+] Cache HIT! Loading block 0x62888c from cache (hash: e1b91f30)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628892.json
+[!] Bypassing JIT for 0x628892 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287ed.json
+[!] Bypassing JIT for 0x6287ed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287fc.json
+[+] Cache HIT! Loading block 0x6287fc from cache (hash: 31c915b7)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628821.json
+[!] Bypassing JIT for 0x628821 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62882c.json
+[+] Cache HIT! Loading block 0x62882c from cache (hash: 7626a8d4)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628832.json
+[!] Bypassing JIT for 0x628832 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62870a.json
+[!] Bypassing JIT for 0x62870a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbe2.json
+[!] Bypassing JIT for 0x61dbe2 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc0a.json
+[!] Bypassing JIT for 0x61dc0a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbed.json
+[!] Bypassing JIT for 0x61dbed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62120f.json
+[!] Bypassing JIT for 0x62120f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289c6.json
+[!] Bypassing JIT for 0x6289c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289ce.json
+[!] Bypassing JIT for 0x6289ce (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62887f.json
+[!] Bypassing JIT for 0x62887f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62888c.json
+[+] Cache HIT! Loading block 0x62888c from cache (hash: e1b91f30)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628892.json
+[!] Bypassing JIT for 0x628892 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287ed.json
+[!] Bypassing JIT for 0x6287ed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287fc.json
+[+] Cache HIT! Loading block 0x6287fc from cache (hash: 31c915b7)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628821.json
+[!] Bypassing JIT for 0x628821 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62882c.json
+[+] Cache HIT! Loading block 0x62882c from cache (hash: 7626a8d4)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628832.json
+[!] Bypassing JIT for 0x628832 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62870a.json
+[!] Bypassing JIT for 0x62870a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbe2.json
+[!] Bypassing JIT for 0x61dbe2 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc0a.json
+[!] Bypassing JIT for 0x61dc0a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbed.json
+[!] Bypassing JIT for 0x61dbed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62120f.json
+[!] Bypassing JIT for 0x62120f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289c6.json
+[!] Bypassing JIT for 0x6289c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289ce.json
+[!] Bypassing JIT for 0x6289ce (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62887f.json
+[!] Bypassing JIT for 0x62887f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62888c.json
+[+] Cache HIT! Loading block 0x62888c from cache (hash: e1b91f30)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628892.json
+[!] Bypassing JIT for 0x628892 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287ed.json
+[!] Bypassing JIT for 0x6287ed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287fc.json
+[+] Cache HIT! Loading block 0x6287fc from cache (hash: 31c915b7)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628821.json
+[!] Bypassing JIT for 0x628821 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62882c.json
+[+] Cache HIT! Loading block 0x62882c from cache (hash: 7626a8d4)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628832.json
+[!] Bypassing JIT for 0x628832 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62870a.json
+[!] Bypassing JIT for 0x62870a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbe2.json
+[!] Bypassing JIT for 0x61dbe2 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc0a.json
+[!] Bypassing JIT for 0x61dc0a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dbed.json
+[!] Bypassing JIT for 0x61dbed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e773.json
+[!] Bypassing JIT for 0x62e773 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x629332.json
+[!] Bypassing JIT for 0x629332 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62607f.json
+[!] Bypassing JIT for 0x62607f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628e95.json
+[!] Bypassing JIT for 0x628e95 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x623d23.json
+[*] Sending block 0x623d23 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x623d23:
+add w0, w0, #1
+cmp w1, w3
+mov w9, #0x3d1e
+movk w9, #0x62, lsl #16
+mov w10, #0x3d28
+movk w10, #0x62, lsl #16
+csel w8, w9, w10, ne
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x623d23 to compiled_blocks/block_0x623d23.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x623d1e.json
+[!] Bypassing JIT for 0x623d1e (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f59.json
+[*] Sending block 0x628f59 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x628f59:
+ands wzr, w1, #0x2
+mov w9, #0x8f73
+movk w9, #0x62, lsl #16
+mov w8, #0x8f5e
+movk w8, #0x62, lsl #16
+csel w8, w9, w8, eq
+ret
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x628f59 to compiled_blocks/block_0x628f59.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f73.json
+[!] Bypassing JIT for 0x628f73 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f41.json
+[!] Bypassing JIT for 0x628f41 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f7b.json
+[*] Sending block 0x628f7b to Codex LLM...
+[*] Generated ARM64 Assembly for 0x628f7b:
+add w0, w0, #1
+cmp w0, w7
+mov w9, #0x8f41
+movk w9, #0x62, lsl #16
+mov w10, #0x8f80
+movk w10, #0x62, lsl #16
+csel w8, w9, w10, lo
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x628f7b to compiled_blocks/block_0x628f7b.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293db.json
+[!] Bypassing JIT for 0x6293db (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293d1.json
+[!] Bypassing JIT for 0x6293d1 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293f4.json
+[!] Bypassing JIT for 0x6293f4 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293ea.json
+[!] Bypassing JIT for 0x6293ea (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a3d.json
+[!] Bypassing JIT for 0x628a3d (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289c6.json
+[!] Bypassing JIT for 0x6289c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289ce.json
+[!] Bypassing JIT for 0x6289ce (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62887f.json
+[!] Bypassing JIT for 0x62887f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62888c.json
+[+] Cache HIT! Loading block 0x62888c from cache (hash: e1b91f30)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6288ad.json
+[!] Bypassing JIT for 0x6288ad (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289db.json
+[!] Bypassing JIT for 0x6289db (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289dd.json
+[*] Sending block 0x6289dd to Codex LLM...
+[*] Generated ARM64 Assembly for 0x6289dd:
+mov w6, w0
+tst w6, w6
+mov w9, #0x8a31
+movk w9, #0x62, lsl #16
+mov w10, #0x89e3
+movk w10, #0x62, lsl #16
+csel w8, w9, w10, ne
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x6289dd to compiled_blocks/block_0x6289dd.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a31.json
+[!] Bypassing JIT for 0x628a31 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a38.json
+[!] Bypassing JIT for 0x628a38 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a43.json
+[*] Sending block 0x628a43 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x628a43:
+mov w6, w0
+tst w6, w6
+mov w9, #0x8a51
+movk w9, #0x62, lsl #16
+mov w10, #0x8a49
+movk w10, #0x62, lsl #16
+csel w8, w9, w10, ne
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x628a43 to compiled_blocks/block_0x628a43.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a51.json
+[!] Bypassing JIT for 0x628a51 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c75e.json
+[!] Bypassing JIT for 0x61c75e (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c76d.json
+[!] Bypassing JIT for 0x61c76d (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c772.json
+[!] Bypassing JIT for 0x61c772 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c79c.json
+[!] Bypassing JIT for 0x61c79c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c7bd.json
+[!] Bypassing JIT for 0x61c7bd (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c7c6.json
+[!] Bypassing JIT for 0x61c7c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c7da.json
+[!] Bypassing JIT for 0x61c7da (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e530.json
+[!] Bypassing JIT for 0x62e530 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e4df.json
+[!] Bypassing JIT for 0x62e4df (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e4f4.json
+[!] Bypassing JIT for 0x62e4f4 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e502.json
+[!] Bypassing JIT for 0x62e502 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e25b.json
+[!] Bypassing JIT for 0x62e25b (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e20a.json
+[!] Bypassing JIT for 0x62e20a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e21b.json
+[!] Bypassing JIT for 0x62e21b (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e22b.json
+[!] Bypassing JIT for 0x62e22b (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e243.json
+[*] Sending block 0x62e243 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x62e243:
+eor w0, w0, w0
+tst w0, w0
+mov w9, #0xe24c
+movk w9, #0x62, lsl #16
+mov w10, #0xe249
+movk w10, #0x62, lsl #16
+csel w8, w9, w10, eq
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x62e243 to compiled_blocks/block_0x62e243.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e24c.json
+[!] Bypassing JIT for 0x62e24c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e252.json
+[!] Bypassing JIT for 0x62e252 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e26a.json
+[!] Bypassing JIT for 0x62e26a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e50e.json
+[!] Bypassing JIT for 0x62e50e (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e526.json
+[!] Bypassing JIT for 0x62e526 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e4fa.json
+[!] Bypassing JIT for 0x62e4fa (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x621770.json
+[!] Bypassing JIT for 0x621770 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628440.json
+[*] Sending block 0x628440 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x628440:
+mrs x11, nzcv
+subs w7, w7, #1
+mrs x12, nzcv
+and x11, x11, #0x20000000
+and x12, x12, #0xD0000000
+orr x12, x12, x11
+msr nzcv, x12
+mov w9, #0x8436
+movk w9, #0x62, lsl #16
+mov w10, #0x8443
+movk w10, #0x62, lsl #16
+csel w8, w9, w10, ne
+ret
+
+[*] Compiling to machine code...
+[!] Error processing /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628440.json: Unknown error
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628436.json
+[!] Bypassing JIT for 0x628436 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62a84c.json
+[!] Bypassing JIT for 0x62a84c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62a891.json
+[!] Bypassing JIT for 0x62a891 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x64ff00.json
+[!] Bypassing JIT for 0x64ff00 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6501b0.json
+[!] Bypassing JIT for 0x6501b0 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x564370.json
+[!] Bypassing JIT for 0x564370 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6501b7.json
+[*] Sending block 0x6501b7 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x6501b7:
+add w2, w2, #0x38
+subs w6, w6, #0x1
+mov w9, #0x1b0
+movk w9, #0x65, lsl #16
+mov w10, #0x1bf
+movk w10, #0x65, lsl #16
+csel w8, w9, w10, pl
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x6501b7 to compiled_blocks/block_0x6501b7.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc78.json
+[!] Bypassing JIT for 0x61dc78 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc80.json
+[*] Sending block 0x61dc80 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x61dc80:
+add w6, w6, #4
+cmp w6, w7
+movz w9, #0xdc78
+movk w9, #0x61, lsl #16
+movz w10, #0xdc87
+movk w10, #0x61, lsl #16
+csel w8, w9, w10, lo
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x61dc80 to compiled_blocks/block_0x61dc80.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc7e.json
+[!] Bypassing JIT for 0x61dc7e (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628776.json
+[!] Bypassing JIT for 0x628776 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628785.json
+[*] Sending block 0x628785 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x628785:
+tst w0, w0
+mov w9, #0x87aa
+movk w9, #0x62, lsl #16
+mov w10, #0x8789
+movk w10, #0x62, lsl #16
+csel w8, w9, w10, eq
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x628785 to compiled_blocks/block_0x628785.bin (28 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628789.json
+[!] Bypassing JIT for 0x628789 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287d0.json
+[*] Sending block 0x6287d0 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x6287d0:
+tst w0, w0
+mov w8, #0x87d4
+movk w8, #0x62, lsl #16
+mov w9, #0x87de
+movk w9, #0x62, lsl #16
+csel w8, w9, w8, eq
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x6287d0 to compiled_blocks/block_0x6287d0.bin (28 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287de.json
+[!] Bypassing JIT for 0x6287de (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287ed.json
+[!] Bypassing JIT for 0x6287ed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287fc.json
+[+] Cache HIT! Loading block 0x6287fc from cache (hash: 31c915b7)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628800.json
+[!] Bypassing JIT for 0x628800 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628847.json
+[*] Sending block 0x628847 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x628847:
+tst w0, w0
+mov w9, #0x8855
+movk w9, #0x62, lsl #16
+mov w10, #0x884b
+movk w10, #0x62, lsl #16
+csel w8, w9, w10, eq
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x628847 to compiled_blocks/block_0x628847.bin (28 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628855.json
+[!] Bypassing JIT for 0x628855 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628793.json
+[!] Bypassing JIT for 0x628793 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62879c.json
+[!] Bypassing JIT for 0x62879c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62879e.json
+[+] Cache HIT! Loading block 0x62879e from cache (hash: 524402c2)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287a2.json
+[!] Bypassing JIT for 0x6287a2 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6503d0.json
+[!] Bypassing JIT for 0x6503d0 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6503d7.json
+[*] Sending block 0x6503d7 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x6503d7:
+add w2, w2, #0x38
+subs w6, w6, #0x1
+mov w9, #0x03d0
+movk w9, #0x65, lsl #16
+mov w10, #0x03df
+movk w10, #0x65, lsl #16
+csel w8, w9, w10, pl
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x6503d7 to compiled_blocks/block_0x6503d7.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62880a.json
+[!] Bypassing JIT for 0x62880a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628813.json
+[!] Bypassing JIT for 0x628813 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628815.json
+[+] Cache HIT! Loading block 0x628815 from cache (hash: 31c915b7)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62456a.json
+[!] Bypassing JIT for 0x62456a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628819.json
+[!] Bypassing JIT for 0x628819 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x5a98f0.json
+[!] Bypassing JIT for 0x5a98f0 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x622ba2.json
+[!] Bypassing JIT for 0x622ba2 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6312ac.json
+[*] Sending block 0x6312ac to Codex LLM...
+[*] Generated ARM64 Assembly for 0x6312ac:
+add w2, w2, #1
+subs w7, w7, #1
+mov w9, #0x12a8
+movk w9, #0x63, lsl #16
+mov w10, #0x12b0
+movk w10, #0x63, lsl #16
+csel w8, w9, w10, ne
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x6312ac to compiled_blocks/block_0x6312ac.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6312a8.json
+[!] Bypassing JIT for 0x6312a8 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6312b4.json
+[!] Bypassing JIT for 0x6312b4 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6312be.json
+[*] Sending block 0x6312be to Codex LLM...
+[*] Generated ARM64 Assembly for 0x6312be:
+mrs x9, nzcv
+subs w7, w7, #1
+mrs x10, nzcv
+movz x11, #0
+movk x11, #0x2000, lsl #16
+and x12, x9, x11
+mvn x13, x11
+and x10, x10, x13
+orr x10, x10, x12
+msr nzcv, x10
+mov w12, #0x12b4
+movk w12, #0x63, lsl #16
+mov w13, #0x12c1
+movk w13, #0x63, lsl #16
+csel w8, w12, w13, ne
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x6312be to compiled_blocks/block_0x6312be.bin (64 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x404310.json
+[!] Bypassing JIT for 0x404310 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x560db0.json
+[!] Bypassing JIT for 0x560db0 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x560dd0.json
+[!] Bypassing JIT for 0x560dd0 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x621740.json
+[!] Bypassing JIT for 0x621740 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x621788.json
+[!] Bypassing JIT for 0x621788 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62178f.json
+[*] Sending block 0x62178f to Codex LLM...
+[*] Generated ARM64 Assembly for 0x62178f:
+sbfx w9, w0, #8, #8
+tst w9, w9
+mov w10, #0x17b7
+movk w10, #0x62, lsl #16
+mov w11, #0x1793
+movk w11, #0x62, lsl #16
+csel w8, w10, w11, eq
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x62178f to compiled_blocks/block_0x62178f.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62174c.json
+[!] Bypassing JIT for 0x62174c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x621755.json
+[*] Sending block 0x621755 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x621755:
+tst w1, #0x3
+mov w9, #0x174c
+movk w9, #0x62, lsl #16
+mov w10, #0x175d
+movk w10, #0x62, lsl #16
+csel w8, w9, w10, ne
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x621755 to compiled_blocks/block_0x621755.bin (28 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x621793.json
+[*] Sending block 0x621793 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x621793:
+tst w0, #0xff0000
+movz w9, #0x179a
+movk w9, #0x62, lsl #16
+movz w10, #0x17ad
+movk w10, #0x62, lsl #16
+csel w8, w10, w9, eq
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x621793 to compiled_blocks/block_0x621793.bin (28 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62179a.json
+[*] Sending block 0x62179a to Codex LLM...
+[*] Generated ARM64 Assembly for 0x62179a:
+mov w8, #0x17a1
+movk w8, #0x62, lsl #16
+mov w9, #0x17a3
+movk w9, #0x62, lsl #16
+tst w0, #0xff000000
+csel w8, w9, w8, eq
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x62179a to compiled_blocks/block_0x62179a.bin (28 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6217a3.json
+[!] Bypassing JIT for 0x6217a3 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6283f8.json
+[!] Bypassing JIT for 0x6283f8 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628405.json
+[!] Bypassing JIT for 0x628405 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628428.json
+[!] Bypassing JIT for 0x628428 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628434.json
+[!] Bypassing JIT for 0x628434 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628443.json
+[*] Sending block 0x628443 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x628443:
+cmp w7, w3
+mov w9, #0x8457
+movk w9, #0x62, lsl #16
+mov w10, #0x8447
+movk w10, #0x62, lsl #16
+csel w8, w9, w10, ne
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x628443 to compiled_blocks/block_0x628443.bin (28 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628457.json
+[!] Bypassing JIT for 0x628457 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62175d.json
+[!] Bypassing JIT for 0x62175d (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x621111.json
+[!] Bypassing JIT for 0x621111 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62111f.json
+[!] Bypassing JIT for 0x62111f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62114c.json
+[!] Bypassing JIT for 0x62114c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x621156.json
+[*] Sending block 0x621156 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x621156:
+cmp w5, w6
+mov w9, #0x115e
+movk w9, #0x62, lsl #16
+mov w10, #0x115a
+movk w10, #0x62, lsl #16
+csel w8, w9, w10, eq
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x621156 to compiled_blocks/block_0x621156.bin (28 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62115a.json
+[*] Sending block 0x62115a to Codex LLM...
+[*] Generated ARM64 Assembly for 0x62115a:
+mov w0, w5
+mov w8, #0x1161
+movk w8, #0x62, lsl #16
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x62115a to compiled_blocks/block_0x62115a.bin (16 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x621161.json
+[!] Bypassing JIT for 0x621161 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x621182.json
+[!] Bypassing JIT for 0x621182 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62118b.json
+[*] Sending block 0x62118b to Codex LLM...
+[*] Generated ARM64 Assembly for 0x62118b:
+mov w6, w0
+tst w6, w6
+mov w8, #0x1191
+movk w8, #0x62, lsl #16
+mov w9, #0x11b7
+movk w9, #0x62, lsl #16
+csel w8, w9, w8, ne
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x62118b to compiled_blocks/block_0x62118b.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6211b7.json
+[!] Bypassing JIT for 0x6211b7 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60b57a.json
+[!] Bypassing JIT for 0x60b57a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60cebc.json
+[!] Bypassing JIT for 0x60cebc (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60cec6.json
+[!] Bypassing JIT for 0x60cec6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60b594.json
+[!] Bypassing JIT for 0x60b594 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60b59b.json
+[!] Bypassing JIT for 0x60b59b (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60cec7.json
+[!] Bypassing JIT for 0x60cec7 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60ced1.json
+[!] Bypassing JIT for 0x60ced1 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60b5ab.json
+[!] Bypassing JIT for 0x60b5ab (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c130.json
+[!] Bypassing JIT for 0x61c130 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c145.json
+[!] Bypassing JIT for 0x61c145 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c14d.json
+[!] Bypassing JIT for 0x61c14d (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c152.json
+[!] Bypassing JIT for 0x61c152 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6217c1.json
+[!] Bypassing JIT for 0x6217c1 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d03a.json
+[!] Bypassing JIT for 0x60d03a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d047.json
+[!] Bypassing JIT for 0x60d047 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d04d.json
+[!] Bypassing JIT for 0x60d04d (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d064.json
+[!] Bypassing JIT for 0x60d064 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d07a.json
+[!] Bypassing JIT for 0x60d07a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d086.json
+[!] Bypassing JIT for 0x60d086 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d08d.json
+[!] Bypassing JIT for 0x60d08d (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d05f.json
+[!] Bypassing JIT for 0x60d05f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d21c.json
+[!] Bypassing JIT for 0x60d21c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d230.json
+[*] Sending block 0x60d230 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x60d230:
+add w4, w4, #0x14
+tst w0, w0
+mov w9, #0xd241
+movk w9, #0x60, lsl #16
+mov w10, #0xd237
+movk w10, #0x60, lsl #16
+csel w8, w9, w10, le
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x60d230 to compiled_blocks/block_0x60d230.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d237.json
+[!] Bypassing JIT for 0x60d237 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d264.json
+[!] Bypassing JIT for 0x60d264 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d275.json
+[*] Sending block 0x60d275 to Codex LLM...
+[*] Generated ARM64 Assembly for 0x60d275:
+add w4, w4, #0x14
+tst w0, w0
+mov w9, #0xd286
+movk w9, #0x60, lsl #16
+mov w10, #0xd27c
+movk w10, #0x60, lsl #16
+csel w8, w9, w10, le
+ret
+
+[*] Compiling to machine code...
+[+] Successfully compiled 0x60d275 to compiled_blocks/block_0x60d275.bin (32 bytes) and cached.
+
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d27c.json
+[!] Bypassing JIT for 0x60d27c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6217b7.json
+[!] Bypassing JIT for 0x6217b7 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6217ad.json
+[!] Bypassing JIT for 0x6217ad (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x621c7b.json
+[!] Bypassing JIT for 0x621c7b (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x621bdc.json
+[!] Bypassing JIT for 0x621bdc (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d052.json
+[!] Bypassing JIT for 0x60d052 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x60d059.json
+[!] Bypassing JIT for 0x60d059 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6244ea.json
+[!] Bypassing JIT for 0x6244ea (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6244ef.json
+[!] Bypassing JIT for 0x6244ef (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62450c.json
+[!] Bypassing JIT for 0x62450c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e773.json
+[!] Bypassing JIT for 0x62e773 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x629332.json
+[!] Bypassing JIT for 0x629332 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62607f.json
+[!] Bypassing JIT for 0x62607f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628e95.json
+[!] Bypassing JIT for 0x628e95 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x623d23.json
+[+] Cache HIT! Loading block 0x623d23 from cache (hash: 512dcf5c)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x623d1e.json
+[!] Bypassing JIT for 0x623d1e (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f59.json
+[+] Cache HIT! Loading block 0x628f59 from cache (hash: a8c2a063)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f73.json
+[!] Bypassing JIT for 0x628f73 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f41.json
+[!] Bypassing JIT for 0x628f41 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f7b.json
+[+] Cache HIT! Loading block 0x628f7b from cache (hash: 14a8a2c4)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293db.json
+[!] Bypassing JIT for 0x6293db (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293d1.json
+[!] Bypassing JIT for 0x6293d1 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293f4.json
+[!] Bypassing JIT for 0x6293f4 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293ea.json
+[!] Bypassing JIT for 0x6293ea (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a3d.json
+[!] Bypassing JIT for 0x628a3d (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289c6.json
+[!] Bypassing JIT for 0x6289c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289ce.json
+[!] Bypassing JIT for 0x6289ce (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62887f.json
+[!] Bypassing JIT for 0x62887f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62888c.json
+[+] Cache HIT! Loading block 0x62888c from cache (hash: e1b91f30)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6288ad.json
+[!] Bypassing JIT for 0x6288ad (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289db.json
+[!] Bypassing JIT for 0x6289db (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289dd.json
+[+] Cache HIT! Loading block 0x6289dd from cache (hash: 6e7c3ecf)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a31.json
+[!] Bypassing JIT for 0x628a31 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a38.json
+[!] Bypassing JIT for 0x628a38 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a43.json
+[+] Cache HIT! Loading block 0x628a43 from cache (hash: b5d44027)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a51.json
+[!] Bypassing JIT for 0x628a51 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c75e.json
+[!] Bypassing JIT for 0x61c75e (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c76d.json
+[!] Bypassing JIT for 0x61c76d (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c772.json
+[!] Bypassing JIT for 0x61c772 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c79c.json
+[!] Bypassing JIT for 0x61c79c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c7bd.json
+[!] Bypassing JIT for 0x61c7bd (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c7c6.json
+[!] Bypassing JIT for 0x61c7c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c7da.json
+[!] Bypassing JIT for 0x61c7da (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e530.json
+[!] Bypassing JIT for 0x62e530 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e4df.json
+[!] Bypassing JIT for 0x62e4df (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e4f4.json
+[!] Bypassing JIT for 0x62e4f4 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e502.json
+[!] Bypassing JIT for 0x62e502 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e25b.json
+[!] Bypassing JIT for 0x62e25b (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e20a.json
+[!] Bypassing JIT for 0x62e20a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e21b.json
+[!] Bypassing JIT for 0x62e21b (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e22b.json
+[!] Bypassing JIT for 0x62e22b (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e243.json
+[+] Cache HIT! Loading block 0x62e243 from cache (hash: 102c2df0)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e24c.json
+[!] Bypassing JIT for 0x62e24c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e252.json
+[!] Bypassing JIT for 0x62e252 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e26a.json
+[!] Bypassing JIT for 0x62e26a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e50e.json
+[!] Bypassing JIT for 0x62e50e (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e526.json
+[!] Bypassing JIT for 0x62e526 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e4fa.json
+[!] Bypassing JIT for 0x62e4fa (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x621770.json
+[!] Bypassing JIT for 0x621770 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628436.json
+[!] Bypassing JIT for 0x628436 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62a84c.json
+[!] Bypassing JIT for 0x62a84c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62a891.json
+[!] Bypassing JIT for 0x62a891 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x64ff00.json
+[!] Bypassing JIT for 0x64ff00 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6501b0.json
+[!] Bypassing JIT for 0x6501b0 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x564370.json
+[!] Bypassing JIT for 0x564370 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6501b7.json
+[+] Cache HIT! Loading block 0x6501b7 from cache (hash: 2ff1664f)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc78.json
+[!] Bypassing JIT for 0x61dc78 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc80.json
+[+] Cache HIT! Loading block 0x61dc80 from cache (hash: 70ac474b)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc7e.json
+[!] Bypassing JIT for 0x61dc7e (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628776.json
+[!] Bypassing JIT for 0x628776 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628785.json
+[+] Cache HIT! Loading block 0x628785 from cache (hash: 524402c2)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628789.json
+[!] Bypassing JIT for 0x628789 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287d0.json
+[+] Cache HIT! Loading block 0x6287d0 from cache (hash: 1d6f9d9c)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287de.json
+[!] Bypassing JIT for 0x6287de (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287ed.json
+[!] Bypassing JIT for 0x6287ed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287fc.json
+[+] Cache HIT! Loading block 0x6287fc from cache (hash: 31c915b7)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628800.json
+[!] Bypassing JIT for 0x628800 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628847.json
+[+] Cache HIT! Loading block 0x628847 from cache (hash: 8838a91b)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628855.json
+[!] Bypassing JIT for 0x628855 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6503d0.json
+[!] Bypassing JIT for 0x6503d0 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6503d7.json
+[+] Cache HIT! Loading block 0x6503d7 from cache (hash: 460573c3)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628793.json
+[!] Bypassing JIT for 0x628793 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62879c.json
+[!] Bypassing JIT for 0x62879c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62879e.json
+[+] Cache HIT! Loading block 0x62879e from cache (hash: 524402c2)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287a2.json
+[!] Bypassing JIT for 0x6287a2 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e773.json
+[!] Bypassing JIT for 0x62e773 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x629332.json
+[!] Bypassing JIT for 0x629332 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62607f.json
+[!] Bypassing JIT for 0x62607f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628e95.json
+[!] Bypassing JIT for 0x628e95 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x623d23.json
+[+] Cache HIT! Loading block 0x623d23 from cache (hash: 512dcf5c)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x623d1e.json
+[!] Bypassing JIT for 0x623d1e (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f59.json
+[+] Cache HIT! Loading block 0x628f59 from cache (hash: a8c2a063)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f73.json
+[!] Bypassing JIT for 0x628f73 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f41.json
+[!] Bypassing JIT for 0x628f41 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f7b.json
+[+] Cache HIT! Loading block 0x628f7b from cache (hash: 14a8a2c4)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293db.json
+[!] Bypassing JIT for 0x6293db (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293d1.json
+[!] Bypassing JIT for 0x6293d1 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293f4.json
+[!] Bypassing JIT for 0x6293f4 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293ea.json
+[!] Bypassing JIT for 0x6293ea (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a3d.json
+[!] Bypassing JIT for 0x628a3d (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289c6.json
+[!] Bypassing JIT for 0x6289c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289ce.json
+[!] Bypassing JIT for 0x6289ce (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62887f.json
+[!] Bypassing JIT for 0x62887f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62888c.json
+[+] Cache HIT! Loading block 0x62888c from cache (hash: e1b91f30)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6288ad.json
+[!] Bypassing JIT for 0x6288ad (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289db.json
+[!] Bypassing JIT for 0x6289db (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289dd.json
+[+] Cache HIT! Loading block 0x6289dd from cache (hash: 6e7c3ecf)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a31.json
+[!] Bypassing JIT for 0x628a31 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a38.json
+[!] Bypassing JIT for 0x628a38 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a43.json
+[+] Cache HIT! Loading block 0x628a43 from cache (hash: b5d44027)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a51.json
+[!] Bypassing JIT for 0x628a51 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c75e.json
+[!] Bypassing JIT for 0x61c75e (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c76d.json
+[!] Bypassing JIT for 0x61c76d (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c772.json
+[!] Bypassing JIT for 0x61c772 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c79c.json
+[!] Bypassing JIT for 0x61c79c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c7bd.json
+[!] Bypassing JIT for 0x61c7bd (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c7c6.json
+[!] Bypassing JIT for 0x61c7c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c7da.json
+[!] Bypassing JIT for 0x61c7da (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e530.json
+[!] Bypassing JIT for 0x62e530 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e4df.json
+[!] Bypassing JIT for 0x62e4df (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e4f4.json
+[!] Bypassing JIT for 0x62e4f4 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e502.json
+[!] Bypassing JIT for 0x62e502 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e25b.json
+[!] Bypassing JIT for 0x62e25b (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e20a.json
+[!] Bypassing JIT for 0x62e20a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e21b.json
+[!] Bypassing JIT for 0x62e21b (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e22b.json
+[!] Bypassing JIT for 0x62e22b (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e243.json
+[+] Cache HIT! Loading block 0x62e243 from cache (hash: 102c2df0)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e24c.json
+[!] Bypassing JIT for 0x62e24c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e252.json
+[!] Bypassing JIT for 0x62e252 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e26a.json
+[!] Bypassing JIT for 0x62e26a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e50e.json
+[!] Bypassing JIT for 0x62e50e (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e526.json
+[!] Bypassing JIT for 0x62e526 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e4fa.json
+[!] Bypassing JIT for 0x62e4fa (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x621770.json
+[!] Bypassing JIT for 0x621770 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628436.json
+[!] Bypassing JIT for 0x628436 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62a84c.json
+[!] Bypassing JIT for 0x62a84c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62a891.json
+[!] Bypassing JIT for 0x62a891 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x64ff00.json
+[!] Bypassing JIT for 0x64ff00 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6501b0.json
+[!] Bypassing JIT for 0x6501b0 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x564370.json
+[!] Bypassing JIT for 0x564370 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6501b7.json
+[+] Cache HIT! Loading block 0x6501b7 from cache (hash: 2ff1664f)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc78.json
+[!] Bypassing JIT for 0x61dc78 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc80.json
+[+] Cache HIT! Loading block 0x61dc80 from cache (hash: 70ac474b)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61dc7e.json
+[!] Bypassing JIT for 0x61dc7e (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628776.json
+[!] Bypassing JIT for 0x628776 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628785.json
+[+] Cache HIT! Loading block 0x628785 from cache (hash: 524402c2)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628789.json
+[!] Bypassing JIT for 0x628789 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287d0.json
+[+] Cache HIT! Loading block 0x6287d0 from cache (hash: 1d6f9d9c)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287de.json
+[!] Bypassing JIT for 0x6287de (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287ed.json
+[!] Bypassing JIT for 0x6287ed (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287fc.json
+[+] Cache HIT! Loading block 0x6287fc from cache (hash: 31c915b7)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628800.json
+[!] Bypassing JIT for 0x628800 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628847.json
+[+] Cache HIT! Loading block 0x628847 from cache (hash: 8838a91b)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628855.json
+[!] Bypassing JIT for 0x628855 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6503d0.json
+[!] Bypassing JIT for 0x6503d0 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6503d7.json
+[+] Cache HIT! Loading block 0x6503d7 from cache (hash: 460573c3)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628793.json
+[!] Bypassing JIT for 0x628793 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62879c.json
+[!] Bypassing JIT for 0x62879c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62879e.json
+[+] Cache HIT! Loading block 0x62879e from cache (hash: 524402c2)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6287a2.json
+[!] Bypassing JIT for 0x6287a2 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e773.json
+[!] Bypassing JIT for 0x62e773 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x629332.json
+[!] Bypassing JIT for 0x629332 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62607f.json
+[!] Bypassing JIT for 0x62607f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628e95.json
+[!] Bypassing JIT for 0x628e95 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x623d23.json
+[+] Cache HIT! Loading block 0x623d23 from cache (hash: 512dcf5c)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x623d1e.json
+[!] Bypassing JIT for 0x623d1e (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f59.json
+[+] Cache HIT! Loading block 0x628f59 from cache (hash: a8c2a063)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f73.json
+[!] Bypassing JIT for 0x628f73 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f41.json
+[!] Bypassing JIT for 0x628f41 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628f7b.json
+[+] Cache HIT! Loading block 0x628f7b from cache (hash: 14a8a2c4)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293db.json
+[!] Bypassing JIT for 0x6293db (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293d1.json
+[!] Bypassing JIT for 0x6293d1 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293f4.json
+[!] Bypassing JIT for 0x6293f4 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6293ea.json
+[!] Bypassing JIT for 0x6293ea (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a3d.json
+[!] Bypassing JIT for 0x628a3d (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289c6.json
+[!] Bypassing JIT for 0x6289c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289ce.json
+[!] Bypassing JIT for 0x6289ce (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62887f.json
+[!] Bypassing JIT for 0x62887f (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62888c.json
+[+] Cache HIT! Loading block 0x62888c from cache (hash: e1b91f30)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6288ad.json
+[!] Bypassing JIT for 0x6288ad (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289db.json
+[!] Bypassing JIT for 0x6289db (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x6289dd.json
+[+] Cache HIT! Loading block 0x6289dd from cache (hash: 6e7c3ecf)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a31.json
+[!] Bypassing JIT for 0x628a31 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a38.json
+[!] Bypassing JIT for 0x628a38 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a43.json
+[+] Cache HIT! Loading block 0x628a43 from cache (hash: b5d44027)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x628a51.json
+[!] Bypassing JIT for 0x628a51 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c75e.json
+[!] Bypassing JIT for 0x61c75e (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c76d.json
+[!] Bypassing JIT for 0x61c76d (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c772.json
+[!] Bypassing JIT for 0x61c772 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c79c.json
+[!] Bypassing JIT for 0x61c79c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c7bd.json
+[!] Bypassing JIT for 0x61c7bd (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c7c6.json
+[!] Bypassing JIT for 0x61c7c6 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x61c7da.json
+[!] Bypassing JIT for 0x61c7da (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e530.json
+[!] Bypassing JIT for 0x62e530 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e4df.json
+[!] Bypassing JIT for 0x62e4df (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e4f4.json
+[!] Bypassing JIT for 0x62e4f4 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e502.json
+[!] Bypassing JIT for 0x62e502 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e25b.json
+[!] Bypassing JIT for 0x62e25b (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e20a.json
+[!] Bypassing JIT for 0x62e20a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e21b.json
+[!] Bypassing JIT for 0x62e21b (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e22b.json
+[!] Bypassing JIT for 0x62e22b (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e243.json
+[+] Cache HIT! Loading block 0x62e243 from cache (hash: 102c2df0)...
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e24c.json
+[!] Bypassing JIT for 0x62e24c (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e252.json
+[!] Bypassing JIT for 0x62e252 (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e26a.json
+[!] Bypassing JIT for 0x62e26a (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e50e.json
+[!] Bypassing JIT for 0x62e50e (Memory Access not supported in native JIT yet).
+[*] Processing new JIT request: /Users/yanghyeonseo/Developer/pvz/jit_requests/block_0x62e526.json
+[!] Bypassing JIT for 0x62e526 (Memory Access not supported in native JIT yet).

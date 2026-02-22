@@ -1,0 +1,26 @@
+{
+  "address": "0x5a98f0",
+  "size": 47,
+  "assembly": [
+    "mov ecx, dword ptr [eax + 0x9c0]",
+    "mov edx, dword ptr [eax + ecx*4 - 4]",
+    "mov ebx, edx",
+    "shr ebx, 0x1e",
+    "xor ebx, edx",
+    "imul ebx, ebx, 0x6c078965",
+    "add ebx, ecx",
+    "mov dword ptr [eax + ecx*4], ebx",
+    "add dword ptr [eax + 0x9c0], 1",
+    "cmp dword ptr [eax + 0x9c0], 0x270",
+    "jl 0x5a98f0"
+  ],
+  "live_in": [
+    "eax"
+  ],
+  "live_out": [
+    "ebx",
+    "ecx",
+    "edx",
+    "eflags"
+  ]
+}

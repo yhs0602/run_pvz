@@ -1,0 +1,18 @@
+{
+  "address": "0x623d23",
+  "size": 5,
+  "assembly": [
+    "inc eax",
+    "cmp ecx, ebx",
+    "jne 0x623d1e"
+  ],
+  "live_in": [
+    "eax",
+    "ebx",
+    "ecx"
+  ],
+  "live_out": [
+    "eax",
+    "eflags"
+  ]
+}

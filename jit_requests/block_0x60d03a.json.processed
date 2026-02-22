@@ -1,0 +1,27 @@
+{
+  "address": "0x60d03a",
+  "size": 13,
+  "assembly": [
+    "push ebp",
+    "mov ebp, esp",
+    "push ebx",
+    "push esi",
+    "push edi",
+    "mov edi, dword ptr [ebp + 0xc]",
+    "test edi, edi",
+    "je 0x60d05d"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "edi",
+    "eflags",
+    "esp"
+  ]
+}

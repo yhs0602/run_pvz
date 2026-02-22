@@ -1,0 +1,18 @@
+{
+  "address": "0x62e773",
+  "size": 7,
+  "assembly": [
+    "add eax, ebp",
+    "cmp word ptr [eax], bx",
+    "jne 0x62e773"
+  ],
+  "live_in": [
+    "bx",
+    "eax",
+    "ebp"
+  ],
+  "live_out": [
+    "eax",
+    "eflags"
+  ]
+}

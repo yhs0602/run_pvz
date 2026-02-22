@@ -1,0 +1,23 @@
+{
+  "address": "0x564370",
+  "size": 20,
+  "assembly": [
+    "mov eax, ecx",
+    "xor ecx, ecx",
+    "mov dword ptr [eax], ecx",
+    "mov dword ptr [eax + 4], ecx",
+    "mov dword ptr [eax + 8], ecx",
+    "mov dword ptr [eax + 0xc], 0xff",
+    "ret"
+  ],
+  "live_in": [
+    "ecx",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

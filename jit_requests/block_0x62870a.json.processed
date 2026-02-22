@@ -1,0 +1,36 @@
+{
+  "address": "0x62870a",
+  "size": 27,
+  "assembly": [
+    "push ebp",
+    "mov ebp, esp",
+    "push ecx",
+    "push ecx",
+    "push ebx",
+    "push esi",
+    "xor esi, esi",
+    "lea eax, [ebp - 4]",
+    "inc esi",
+    "xor ebx, ebx",
+    "push eax",
+    "mov dword ptr [ebp - 8], esi",
+    "mov dword ptr [ebp - 4], ebx",
+    "call 0x61dbe2"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "ecx",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ebx",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "address": "0x60d04d",
+  "size": 5,
+  "assembly": [
+    "cmp byte ptr [edi], 0",
+    "jne 0x60d064"
+  ],
+  "live_in": [
+    "edi"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

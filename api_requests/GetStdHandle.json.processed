@@ -1,0 +1,5 @@
+{
+  "api_name": "GetStdHandle",
+  "module": "KERNEL32.dll",
+  "address": "0x90000730"
+}

@@ -1,0 +1,5 @@
+{
+  "api_name": "GetFileType",
+  "module": "KERNEL32.dll",
+  "address": "0x90000740"
+}

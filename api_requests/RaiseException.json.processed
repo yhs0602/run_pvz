@@ -1,0 +1,5 @@
+{
+  "api_name": "RaiseException",
+  "module": "KERNEL32.dll",
+  "address": "0x900005b0"
+}

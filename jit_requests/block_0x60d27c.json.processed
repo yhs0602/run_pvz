@@ -1,0 +1,23 @@
+{
+  "address": "0x60d27c",
+  "size": 10,
+  "assembly": [
+    "add dword ptr [ebp + 8], eax",
+    "dec edi",
+    "inc ebx",
+    "inc ebx",
+    "test edi, edi",
+    "ja 0x60d264"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "ebx",
+    "edi"
+  ],
+  "live_out": [
+    "ebx",
+    "edi",
+    "eflags"
+  ]
+}

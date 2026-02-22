@@ -1,0 +1,16 @@
+{
+  "address": "0x628a43",
+  "size": 6,
+  "assembly": [
+    "mov esi, eax",
+    "test esi, esi",
+    "jne 0x628a51"
+  ],
+  "live_in": [
+    "eax"
+  ],
+  "live_out": [
+    "eflags",
+    "esi"
+  ]
+}

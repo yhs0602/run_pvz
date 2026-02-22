@@ -1,0 +1,18 @@
+{
+  "address": "0x62174c",
+  "size": 9,
+  "assembly": [
+    "mov al, byte ptr [ecx]",
+    "add ecx, 1",
+    "test al, al",
+    "je 0x6217a3"
+  ],
+  "live_in": [
+    "ecx"
+  ],
+  "live_out": [
+    "al",
+    "ecx",
+    "eflags"
+  ]
+}

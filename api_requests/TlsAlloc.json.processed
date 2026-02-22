@@ -1,0 +1,5 @@
+{
+  "api_name": "TlsAlloc",
+  "module": "KERNEL32.dll",
+  "address": "0x90000660"
+}

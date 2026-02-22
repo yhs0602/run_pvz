@@ -1,0 +1,16 @@
+{
+  "address": "0x6293d1",
+  "size": 10,
+  "assembly": [
+    "mov dword ptr [ebp - 0x1c], eax",
+    "cmp eax, 0x101",
+    "jge 0x6293e8"
+  ],
+  "live_in": [
+    "eax",
+    "ebp"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "address": "0x62450c",
+  "size": 4,
+  "assembly": [
+    "add eax, 0xc",
+    "ret"
+  ],
+  "live_in": [
+    "eax",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "eflags",
+    "esp"
+  ]
+}

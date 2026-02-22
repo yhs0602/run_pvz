@@ -1,0 +1,23 @@
+{
+  "address": "0x62e502",
+  "size": 12,
+  "assembly": [
+    "mov bl, byte ptr [esi]",
+    "movzx eax, bl",
+    "push eax",
+    "inc esi",
+    "call 0x62e25b"
+  ],
+  "live_in": [
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "bl",
+    "eax",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

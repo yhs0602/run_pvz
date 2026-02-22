@@ -1,0 +1,19 @@
+{
+  "address": "0x61c130",
+  "size": 8,
+  "assembly": [
+    "push ebp",
+    "mov ebp, esp",
+    "sub esp, 0xc",
+    "jmp 0x61c145"
+  ],
+  "live_in": [
+    "ebp",
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "eflags",
+    "esp"
+  ]
+}

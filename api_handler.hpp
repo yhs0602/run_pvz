@@ -22,7 +22,14 @@ public:
     explicit DummyAPIHandler(uc_engine* engine);
     ~DummyAPIHandler();
     
+    void set_sdl_window(void* window) { ctx.sdl_window = window; }
+    void set_sdl_renderer(void* renderer) { ctx.sdl_renderer = renderer; }
+    void set_sdl_texture(void* texture) { ctx.sdl_texture = texture; }
+    void set_guest_vram(uint32_t vram) { ctx.guest_vram = vram; }
+    void set_host_vram(void* host_buffer) { ctx.host_vram = host_buffer; }
+    
     uint32_t register_fake_api(const std::string& full_name);
+    uint32_t create_fake_com_object(const std::string& class_name, int num_methods);
     
     static void hook_api_call(uc_engine* uc, uint64_t address, uint32_t size, void* user_data);
     void handle_unknown_api(const std::string& api_name, uint32_t address);

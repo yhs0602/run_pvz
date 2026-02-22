@@ -1,0 +1,20 @@
+{
+  "address": "0x628e95",
+  "size": 12,
+  "assembly": [
+    "mov byte ptr [ebp + eax + 0x398], al",
+    "inc eax",
+    "cmp eax, edi",
+    "jb 0x628e95"
+  ],
+  "live_in": [
+    "al",
+    "eax",
+    "ebp",
+    "edi"
+  ],
+  "live_out": [
+    "eax",
+    "eflags"
+  ]
+}

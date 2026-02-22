@@ -1,0 +1,20 @@
+{
+  "address": "0x60d08d",
+  "size": 12,
+  "assembly": [
+    "movzx cx, byte ptr [edi]",
+    "mov word ptr [eax], cx",
+    "xor eax, eax",
+    "inc eax",
+    "jmp 0x60d05f"
+  ],
+  "live_in": [
+    "eax",
+    "edi"
+  ],
+  "live_out": [
+    "cx",
+    "eax",
+    "eflags"
+  ]
+}

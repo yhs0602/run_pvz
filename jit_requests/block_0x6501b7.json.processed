@@ -1,0 +1,18 @@
+{
+  "address": "0x6501b7",
+  "size": 8,
+  "assembly": [
+    "add edx, 0x38",
+    "sub esi, 1",
+    "jns 0x6501b0"
+  ],
+  "live_in": [
+    "edx",
+    "esi"
+  ],
+  "live_out": [
+    "edx",
+    "eflags",
+    "esi"
+  ]
+}

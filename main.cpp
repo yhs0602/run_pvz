@@ -9,6 +9,7 @@
 #include <string>
 #include <fstream>
 #include <iomanip>
+#include <SDL.h>
 
 #if defined(__APPLE__) && defined(__aarch64__)
 #include <sys/mman.h>
@@ -296,6 +297,51 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
+        cerr << "[!] SDL2 Initialization failed: " << SDL_GetError() << endl;
+        return 1;
+    }
+
+    SDL_Window* window = SDL_CreateWindow(
+        "PvZ Hybrid Emulator",
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        800, 600,
+        SDL_WINDOW_SHOWN
+    );
+
+    if (!window) {
+        cerr << "[!] SDL Window creation failed: " << SDL_GetError() << endl;
+        SDL_Quit();
+        return 1;
+    }
+
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    if (!renderer) {
+        cerr << "[!] SDL Renderer creation failed: " << SDL_GetError() << endl;
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+    SDL_Texture* texture = SDL_CreateTexture(
+        renderer,
+        SDL_PIXELFORMAT_ARGB8888,
+        SDL_TEXTUREACCESS_STREAMING,
+        800, 600
+    );
+    if (!texture) {
+        cerr << "[!] SDL Texture creation failed: " << SDL_GetError() << endl;
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+    uint32_t guest_vram = 0xA0000000;
+    
+    uint32_t* host_vram = new uint32_t[800 * 600];
+    memset(host_vram, 0, 800 * 600 * 4);
+
     // Initialize Capstone (DETAIL mode ON for LVA)
     if (cs_open(CS_ARCH_X86, CS_MODE_32, &cs_handle) != CS_ERR_OK) return 1;
     cs_option(cs_handle, CS_OPT_DETAIL, CS_OPT_ON);
@@ -304,12 +350,20 @@ int main(int argc, char **argv) {
     uc_engine *uc;
     if (uc_open(UC_ARCH_X86, UC_MODE_32, &uc)) return 1;
 
+    // Map Guest VRAM
+    uc_mem_map(uc, guest_vram, 800 * 600 * 4, UC_PROT_ALL);
+
     try {
         global_jit = new JITDispatcher();
 
         PEModule pe_module(argv[1]);
         WindowsEnvironment env(uc);
         DummyAPIHandler api_handler(uc);
+        api_handler.set_sdl_window(window);
+        api_handler.set_sdl_renderer(renderer);
+        api_handler.set_sdl_texture(texture);
+        api_handler.set_guest_vram(guest_vram);
+        api_handler.set_host_vram(host_vram);
 
         pe_module.map_into(uc);
         pe_module.resolve_imports(uc, api_handler);
@@ -345,5 +399,11 @@ int main(int argc, char **argv) {
     delete global_jit;
     uc_close(uc);
     cs_close(&cs_handle);
+    
+    delete[] host_vram;
+    SDL_DestroyTexture(texture);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
     return 0;
 }
