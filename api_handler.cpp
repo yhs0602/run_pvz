@@ -56,7 +56,11 @@ const std::unordered_map<std::string, int> DummyAPIHandler::KNOWN_SIGNATURES = {
     {"USER32.dll!PostMessageA", 16},
     {"USER32.dll!PostMessageW", 16},
     {"USER32.dll!SendMessageA", 16},
-    {"USER32.dll!SendMessageW", 16}
+    {"USER32.dll!SendMessageW", 16},
+    // Dynamic Resolution and Pointer HLE
+    {"KERNEL32.dll!GetProcAddress", 8},
+    {"KERNEL32.dll!EncodePointer", 4},
+    {"KERNEL32.dll!DecodePointer", 4}
 };
 
 DummyAPIHandler::DummyAPIHandler(uc_engine* engine) : current_addr(FAKE_API_BASE) {
@@ -136,7 +140,18 @@ DummyAPIHandler::~DummyAPIHandler() {
 }
 
 uint32_t DummyAPIHandler::register_fake_api(const std::string& full_name) {
-    uint32_t api_addr = current_addr;
+    uint32_t api_addr = 0;
+    
+    // Allocate Kernel32 functions inside the fake kernel32.dll .text section (0x76000000 + 0x10000)
+    static uint32_t kernel32_addr = 0x76010000;
+    if (full_name.find("KERNEL32.dll!") == 0) {
+        api_addr = kernel32_addr;
+        kernel32_addr += 16;
+    } else {
+        api_addr = current_addr;
+        current_addr += 16;
+    }
+
     fake_api_map[api_addr] = full_name;
     
     auto it = KNOWN_SIGNATURES.find(full_name);
@@ -149,7 +164,6 @@ uint32_t DummyAPIHandler::register_fake_api(const std::string& full_name) {
         uc_mem_write(ctx.uc, api_addr, &instruction, 1);
     }
     
-    current_addr += 16;
     return api_addr;
 }
 
@@ -472,6 +486,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
         }
 
         bool known = (DummyAPIHandler::KNOWN_SIGNATURES.find(name) != DummyAPIHandler::KNOWN_SIGNATURES.end());
+        std::cout << "\n[DEBUG] hook_api_call name='" << name << "', known=" << known << "\n";
         
         if (known) {
             if (name == "KERNEL32.dll!GetLastError") {
@@ -528,10 +543,45 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
                 
                 handler->ctx.set_eax(ptr);
+                handler->ctx.global_state["heap_size_" + std::to_string(ptr)] = dwBytes;
                 std::cout << "\n[API CALL] [OK] HeapAlloc(" << dwBytes << ") -> 0x" << std::hex << ptr << std::dec << std::endl;
             } else if (name == "KERNEL32.dll!HeapFree") {
                 handler->ctx.set_eax(1); // Success
                 std::cout << "\n[API CALL] [OK] HeapFree" << std::endl;
+            } else if (name == "KERNEL32.dll!GetProcAddress") {
+                uint32_t hModule = handler->ctx.get_arg(0);
+                uint32_t lpProcName = handler->ctx.get_arg(1);
+                
+                std::string procName;
+                if (lpProcName > 0xFFFF) { // Not an ordinal
+                    char buf[256] = {0};
+                    uc_mem_read(uc, lpProcName, buf, 255);
+                    procName = buf;
+                } else {
+                    procName = "Ordinal_" + std::to_string(lpProcName);
+                }
+                
+                std::string full_name = "KERNEL32.dll!" + procName;
+                
+                uint32_t found_addr = 0;
+                for (const auto& pair : handler->fake_api_map) {
+                    if (pair.second == full_name) {
+                        found_addr = pair.first;
+                        break;
+                    }
+                }
+                
+                if (found_addr == 0) {
+                    found_addr = handler->register_fake_api(full_name);
+                    std::cout << "\n[API CALL] [GetProcAddress] Dynamically assigned " << full_name << " to 0x" << std::hex << found_addr << std::dec << "\n";
+                }
+                
+                handler->ctx.set_eax(found_addr);
+                handler->ctx.global_state["LastError"] = 0;
+            } else if (name == "KERNEL32.dll!EncodePointer" || name == "KERNEL32.dll!DecodePointer") {
+                uint32_t ptr = handler->ctx.get_arg(0);
+                handler->ctx.set_eax(ptr);
+                std::cout << "\n[API CALL] [OK] " << name << "(0x" << std::hex << ptr << std::dec << ") returning unchanged.\n";
             } else {
                 // For other trivial APIs, return 1 (Success) by default to avoid zero-checks failing
                 handler->ctx.set_eax(1);

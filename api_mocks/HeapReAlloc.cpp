@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <iostream>
 
 extern "C" void mock_HeapReAlloc(APIContext* ctx) {
     const uint32_t hHeap = ctx->get_arg(0);
@@ -143,6 +144,7 @@ extern "C" void mock_HeapReAlloc(APIContext* ctx) {
         }
     }
 
+    std::cout << "[mock_HeapReAlloc] lpMem: 0x" << std::hex << lpMem << ", dwBytes: " << std::dec << dwBytes << ", returned ptr: 0x" << std::hex << result << std::dec << "\n";
     ctx->set_eax(result);
 
     uint32_t esp;

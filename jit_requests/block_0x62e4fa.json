@@ -1,0 +1,31 @@
+{
+  "address": "0x62e4fa",
+  "size": 20,
+  "assembly": [
+    "mov al, byte ptr [esi]",
+    "mov byte ptr [edx], al",
+    "inc edx",
+    "mov dword ptr [ebp + 0xc], edx",
+    "mov bl, byte ptr [esi]",
+    "movzx eax, bl",
+    "push eax",
+    "inc esi",
+    "call 0x62e25b"
+  ],
+  "live_in": [
+    "ebp",
+    "edx",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "bl",
+    "eax",
+    "edx",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

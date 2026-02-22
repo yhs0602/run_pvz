@@ -1,0 +1,54 @@
+[*] Parsing PE file: pvz/main.exe
+[*] Mapping FAKE_API boundary at 0x90000000
+[*] Mapping image: Base=0x400000, Size=0x394000
+Mapping Sections:
+  .text VAddr: 0x401000 VSize: 0x251000 RawSize: 0x25008c
+  .rdata VAddr: 0x652000 VSize: 0x47000 RawSize: 0x46c10
+  .data VAddr: 0x699000 VSize: 0xc5000 RawSize: 0xe000
+  .rsrc VAddr: 0x75e000 VSize: 0x36000 RawSize: 0x35edc
+[*] Parsing Imports and Stubbing IAT:
+  [KERNEL32.dll]
+  [USER32.dll]
+  [WININET.dll]
+  [WINMM.dll]
+  [WSOCK32.dll]
+  [GDI32.dll]
+  [ADVAPI32.dll]
+  [SHELL32.dll]
+  [ole32.dll]
+  [OLEAUT32.dll]
+[*] Mapping Stack: Base=0x80000000, Size=0x200000
+[*] Setting up GDT (0xc0000000) and TEB/PEB (0x7ffdf000)
+
+[*] Starting C++ Engine Emulation at 0x61ebf2...
+[*] Profiler Active. JIT Memory Dispatcher Ready.
+
+[API CALL] [OK] Intercepted call to KERNEL32.dll!GetSystemTimeAsFileTime
+
+[API CALL] [OK] Intercepted call to KERNEL32.dll!GetCurrentProcessId
+
+[API CALL] [OK] Intercepted call to KERNEL32.dll!GetCurrentThreadId
+
+[API CALL] [OK] Intercepted call to KERNEL32.dll!GetTickCount
+
+[API CALL] [OK] Intercepted call to KERNEL32.dll!QueryPerformanceCounter
+
+[API CALL] [OK] Intercepted call to KERNEL32.dll!GetStartupInfoA
+
+[API CALL] [OK] GetProcessHeap
+
+[API CALL] [OK] HeapAlloc(94) -> 0x20000000
+
+[API CALL] [OK] GetVersionExA (Spoofed Win7)
+
+[API CALL] [OK] GetProcessHeap
+
+[API CALL] [OK] HeapFree
+
+[API CALL] [OK] HeapCreate
+[+] Dynamically linked Mock Plugin for GetModuleHandleA
+
+[API CALL] [JIT MOCK] Redirecting to KERNEL32.dll!GetModuleHandleA
+[mock_GetModuleHandleA] Requested module: kernel32.dll -> 0x76000000
+
+[API CALL] [UNKNOWN] Calling LLM API Compiler for KERNEL32.dll!GetProcAddress

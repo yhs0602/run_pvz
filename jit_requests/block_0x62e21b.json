@@ -1,0 +1,20 @@
+{
+  "address": "0x62e21b",
+  "size": 16,
+  "assembly": [
+    "movzx eax, byte ptr [ebp + 0xc]",
+    "mov ecx, dword ptr [ebp - 0xc]",
+    "mov dl, byte ptr [ebp + 0x14]",
+    "test byte ptr [ecx + eax + 0x1d], dl",
+    "jne 0x62e249"
+  ],
+  "live_in": [
+    "ebp",
+    "eflags"
+  ],
+  "live_out": [
+    "dl",
+    "eax",
+    "ecx"
+  ]
+}

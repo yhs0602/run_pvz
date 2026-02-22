@@ -1,0 +1,17 @@
+{
+  "address": "0x628f7b",
+  "size": 5,
+  "assembly": [
+    "inc eax",
+    "cmp eax, edi",
+    "jb 0x628f41"
+  ],
+  "live_in": [
+    "eax",
+    "edi"
+  ],
+  "live_out": [
+    "eax",
+    "eflags"
+  ]
+}

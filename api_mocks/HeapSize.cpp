@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <iostream>
 
 extern "C" void mock_HeapSize(APIContext* ctx) {
     const uint32_t hHeap = ctx->get_arg(0);
@@ -37,6 +38,8 @@ extern "C" void mock_HeapSize(APIContext* ctx) {
     }
 
     ctx->global_state["LastError"] = (result == INVALID_SIZE_T) ? ERROR_INVALID_ADDRESS : ERROR_SUCCESS;
+    
+    std::cout << "[mock_HeapSize] lpMem: 0x" << std::hex << lpMem << ", returned size: " << std::dec << result << " (0xFFFFFFFF = ERROR)\n";
     ctx->set_eax(result);
 
     uint32_t esp;

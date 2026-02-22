@@ -1,0 +1,18 @@
+{
+  "address": "0x62607f",
+  "size": 2,
+  "assembly": [
+    "rep stosd dword ptr es:[edi], eax"
+  ],
+  "live_in": [
+    "eax",
+    "ecx",
+    "edi",
+    "eflags",
+    "es"
+  ],
+  "live_out": [
+    "ecx",
+    "edi"
+  ]
+}

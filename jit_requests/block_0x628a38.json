@@ -1,0 +1,20 @@
+{
+  "address": "0x628a38",
+  "size": 5,
+  "assembly": [
+    "pop edi",
+    "mov eax, esi",
+    "pop esi",
+    "ret"
+  ],
+  "live_in": [
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "edi",
+    "esi",
+    "esp"
+  ]
+}

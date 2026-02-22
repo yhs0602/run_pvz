@@ -79,6 +79,11 @@ void WindowsEnvironment::setup_teb_peb() {
     
     uint32_t peb_base = PEB_BASE;
     uc_mem_write(uc, TEB_BASE + 0x30, &peb_base, 4);
+    
+    // 5. Pre-map module namespaces
+    uc_mem_map(uc, 0x76000000, 0x200000, UC_PROT_ALL); // kernel32.dll
+    uc_mem_map(uc, 0x75000000, 0x200000, UC_PROT_ALL); // user32.dll
+    uc_mem_map(uc, 0x77000000, 0x200000, UC_PROT_ALL); // ntdll.dll
 }
 
 void WindowsEnvironment::setup_system() {

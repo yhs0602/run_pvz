@@ -1,0 +1,19 @@
+{
+  "address": "0x64ff00",
+  "size": 14,
+  "assembly": [
+    "mov dword ptr [eax], 0",
+    "add eax, 0x14",
+    "sub ecx, 1",
+    "jns 0x64ff00"
+  ],
+  "live_in": [
+    "eax",
+    "ecx"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags"
+  ]
+}
