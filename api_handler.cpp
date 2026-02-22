@@ -61,11 +61,17 @@ const std::unordered_map<std::string, int> DummyAPIHandler::KNOWN_SIGNATURES = {
     {"USER32.dll!SystemParametersInfoA", 16},
     {"USER32.dll!GetSystemMetrics", 4},
     {"USER32.dll!LoadCursorA", 8},
+    {"USER32.dll!CreateCursor", 28},
+    {"USER32.dll!SetCursor", 4},
     {"USER32.dll!LoadIconA", 8},
     {"USER32.dll!RegisterClassA", 4},
     {"USER32.dll!RegisterClassExA", 4},
     {"USER32.dll!GetAsyncKeyState", 4},
     {"USER32.dll!MessageBoxA", 16},
+    {"USER32.dll!SetWindowLongA", 12},
+    {"USER32.dll!GetWindowLongA", 8},
+    {"USER32.dll!SetWindowTextA", 8},
+    {"USER32.dll!GetWindowTextA", 12},
     {"USER32.dll!GetDesktopWindow", 0},
     {"USER32.dll!GetDC", 4},
     {"USER32.dll!ReleaseDC", 8},
@@ -77,6 +83,9 @@ const std::unordered_map<std::string, int> DummyAPIHandler::KNOWN_SIGNATURES = {
     {"GDI32.dll!DeleteObject", 4},
     {"GDI32.dll!SetBkMode", 8},
     {"KERNEL32.dll!MulDiv", 12},
+    // DirectX / DirectDraw
+    {"KERNEL32.dll!DirectDrawCreate", 12},
+    {"KERNEL32.dll!DirectDrawCreateEx", 16},
     // Dynamic Resolution and Pointer HLE
     {"KERNEL32.dll!GetProcAddress", 8},
     {"KERNEL32.dll!EncodePointer", 4},
@@ -298,6 +307,7 @@ uint32_t DummyAPIHandler::create_fake_com_object(const std::string& class_name, 
     // 3. Register fake APIs for each method
     for (int i = 0; i < num_methods; i++) {
         std::string method_name = "DDRAW.dll!" + class_name + "_Method_" + std::to_string(i);
+        KNOWN_SIGNATURES[method_name] = 0; // Add to fast-path dynamically
         uint32_t api_addr = register_fake_api(method_name);
         // Write the API address into the VTable at index i
         uc_mem_write(ctx.uc, vtable_addr + (i * 4), &api_addr, 4);
@@ -712,6 +722,14 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uc_mem_write(handler->ctx.uc, shared_mem_ptr, &zero, 4); // Zero out the first dword so subsequent pointer reads fail safely
                 handler->ctx.set_eax(shared_mem_ptr); 
                 std::cout << "\n[API CALL] [OK] MapViewOfFile -> Dummy Shared Memory at 0x76002000\n";
+            } else if (name == "KERNEL32.dll!DirectDrawCreateEx" || name == "KERNEL32.dll!DirectDrawCreate") {
+                uint32_t lplpDD = handler->ctx.get_arg(1); // Arg 1 is out-pointer to interface
+                if (lplpDD) {
+                    uint32_t dummy_ddraw_obj = handler->create_fake_com_object("IDirectDraw7", 50);
+                    uc_mem_write(handler->ctx.uc, lplpDD, &dummy_ddraw_obj, 4);
+                }
+                handler->ctx.set_eax(0); // S_OK
+                std::cout << "\n[API CALL] [OK] Intercepted " << name << " -> Returned Dummy IDirectDraw7 Interface.\n";
             } else {
                 // For other trivial APIs, return 1 (Success) by default to avoid zero-checks failing
                 handler->ctx.set_eax(1);

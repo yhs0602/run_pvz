@@ -1,0 +1,5 @@
+{
+  "api_name": "DirectDrawCreateEx",
+  "module": "KERNEL32.dll",
+  "address": "0x76010960"
+}

@@ -6,6 +6,9 @@
 #include <iostream>
 #include "api_context.hpp"
 
+// Move to an actual dynamic map for late injection (e.g. COM Objects)
+extern std::unordered_map<std::string, int> KNOWN_SIGNATURES;
+
 class DummyAPIHandler {
 private:
     APIContext ctx;
@@ -14,7 +17,6 @@ private:
     std::unordered_map<std::string, void(*)(APIContext*)> dylib_funcs;
     uint32_t current_addr;
     
-    static const std::unordered_map<std::string, int> KNOWN_SIGNATURES;
 
 public:
     static constexpr uint32_t FAKE_API_BASE = 0x90000000;
