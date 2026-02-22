@@ -1,0 +1,5 @@
+{
+  "api_name": "Direct3DCreate8",
+  "module": "KERNEL32.dll",
+  "address": "0x76010970"
+}

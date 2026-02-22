@@ -25,9 +25,11 @@ struct Win32_MSG {
     int32_t pt_y;
 };
 
-const std::unordered_map<std::string, int> DummyAPIHandler::KNOWN_SIGNATURES = {
+// Modified KNOWN_SIGNATURES definition: removed 'const' and 'DummyAPIHandler::' scope
+std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"KERNEL32.dll!GetSystemTimeAsFileTime", 4},
     {"KERNEL32.dll!GetCurrentProcessId", 0},
+    {"KERNEL32.dll!GetCurrentProcess", 0},
     {"KERNEL32.dll!GetCurrentThreadId", 0},
     {"KERNEL32.dll!GetTickCount", 0},
     {"KERNEL32.dll!QueryPerformanceCounter", 4},
@@ -83,9 +85,10 @@ const std::unordered_map<std::string, int> DummyAPIHandler::KNOWN_SIGNATURES = {
     {"GDI32.dll!DeleteObject", 4},
     {"GDI32.dll!SetBkMode", 8},
     {"KERNEL32.dll!MulDiv", 12},
-    // DirectX / DirectDraw
+    // DirectX / DirectDraw / Direct3D
     {"KERNEL32.dll!DirectDrawCreate", 12},
     {"KERNEL32.dll!DirectDrawCreateEx", 16},
+    {"KERNEL32.dll!Direct3DCreate8", 4},
     // Dynamic Resolution and Pointer HLE
     {"KERNEL32.dll!GetProcAddress", 8},
     {"KERNEL32.dll!EncodePointer", 4},
@@ -127,6 +130,7 @@ const std::unordered_map<std::string, int> DummyAPIHandler::KNOWN_SIGNATURES = {
     {"KERNEL32.dll!SetHandleCount", 4},
     {"KERNEL32.dll!RaiseException", 16},
     {"KERNEL32.dll!SetUnhandledExceptionFilter", 4},
+    {"KERNEL32.dll!UnhandledExceptionFilter", 4},
     {"KERNEL32.dll!IsDebuggerPresent", 0},
     {"KERNEL32.dll!IsProcessorFeaturePresent", 4},
     {"KERNEL32.dll!ExitProcess", 4},
@@ -611,7 +615,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             return;
         }
 
-        bool known = (DummyAPIHandler::KNOWN_SIGNATURES.find(name) != DummyAPIHandler::KNOWN_SIGNATURES.end());
+        bool known = (KNOWN_SIGNATURES.find(name) != KNOWN_SIGNATURES.end());
         std::cout << "\n[DEBUG] hook_api_call name='" << name << "', known=" << known << "\n";
         
         if (known) {
@@ -730,6 +734,29 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
                 handler->ctx.set_eax(0); // S_OK
                 std::cout << "\n[API CALL] [OK] Intercepted " << name << " -> Returned Dummy IDirectDraw7 Interface.\n";
+            } else if (name == "KERNEL32.dll!Direct3DCreate8") {
+                uint32_t dummy_d3d_obj = handler->create_fake_com_object("IDirect3D8", 50);
+                handler->ctx.set_eax(dummy_d3d_obj); // Returns the interface pointer directly in EAX
+                std::cout << "\n[API CALL] [OK] Intercepted Direct3DCreate8 -> Returned Dummy IDirect3D8 Interface.\n";
+            } else if (name == "DDRAW.dll!IDirect3D8_Method_5") {
+                // HRESULT GetAdapterDisplayMode(UINT Adapter, D3DDISPLAYMODE *pMode)
+                uint32_t pMode = handler->ctx.get_arg(1);
+                if (pMode) {
+                    uint32_t mode_data[4] = {800, 600, 60, 22}; // Width=800, Height=600, RefreshRate=60, Format=D3DFMT_X8R8G8B8 (22)
+                    uc_mem_write(handler->ctx.uc, pMode, mode_data, 16);
+                }
+                handler->ctx.set_eax(0); // D3D_OK
+                std::cout << "\n[API CALL] [OK] IDirect3D8::GetAdapterDisplayMode spoofed 800x600.\n";
+            } else if (name == "KERNEL32.dll!GetCurrentProcess") {
+                handler->ctx.set_eax(-1); // Pseudo handle for current process
+                std::cout << "\n[API CALL] [OK] Intercepted call to " << name << "\n";
+            } else if (name == "KERNEL32.dll!TerminateProcess") {
+                uint32_t ret_addr = 0;
+                uint32_t esp;
+                uc_reg_read(handler->ctx.uc, UC_X86_REG_ESP, &esp);
+                uc_mem_read(handler->ctx.uc, esp, &ret_addr, 4);
+                std::cout << "\n[!] Engine called TerminateProcess! Return address (caller): 0x" << std::hex << ret_addr << std::dec << "\n";
+                handler->ctx.set_eax(1);
             } else {
                 // For other trivial APIs, return 1 (Success) by default to avoid zero-checks failing
                 handler->ctx.set_eax(1);

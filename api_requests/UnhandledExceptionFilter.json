@@ -1,0 +1,5 @@
+{
+  "api_name": "UnhandledExceptionFilter",
+  "module": "KERNEL32.dll",
+  "address": "0x760104b0"
+}
