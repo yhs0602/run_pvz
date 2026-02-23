@@ -1,0 +1,12 @@
+{
+  "address": "0x62bed7",
+  "size": 7,
+  "assembly": [
+    "jmp dword ptr [eax*4 + 0x62c6a9]"
+  ],
+  "live_in": [
+    "eax"
+  ],
+  "live_out": [
+  ]
+}

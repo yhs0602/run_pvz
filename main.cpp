@@ -9,6 +9,7 @@
 #include <string>
 #include <fstream>
 #include <iomanip>
+#include <filesystem>
 #include <SDL.h>
 
 #if defined(__APPLE__) && defined(__aarch64__)
@@ -384,6 +385,13 @@ int main(int argc, char **argv) {
         PEModule pe_module(argv[1]);
         WindowsEnvironment env(uc);
         DummyAPIHandler api_handler(uc);
+        std::error_code path_ec;
+        std::filesystem::path exe_path(argv[1]);
+        std::filesystem::path exe_abs = std::filesystem::absolute(exe_path, path_ec);
+        std::filesystem::path exe_dir = path_ec ? exe_path.parent_path() : exe_abs.parent_path();
+        if (exe_dir.empty()) exe_dir = std::filesystem::current_path();
+        api_handler.set_process_base_dir(exe_dir.string());
+        cout << "[*] Process base dir: " << exe_dir.string() << "\n";
         api_handler.set_sdl_window(window);
         api_handler.set_sdl_renderer(renderer);
         api_handler.set_sdl_texture(texture);

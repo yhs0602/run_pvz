@@ -31,6 +31,11 @@
 - `CreateFileA("C:\\Windows\\System32\\")` 요청을 가상 핸들로 흡수하도록 예외 케이스 추가.
 - 결과: 20초 샘플 런 기준 `NOT FOUND` 로그가 관측되지 않음.
 
+6. 상대경로 기준점 수정 (exe 디렉토리 우선)
+- `main.cpp`에서 실행 대상(`argv[1]`)의 절대 경로 부모를 계산해 `Process base dir`로 주입.
+- `api_handler.cpp`의 `CreateFileA` 경로 해석이 해당 베이스 디렉토리(예: `<repo>/pvz`)를 우선으로 사용하도록 변경.
+- 검증 로그: `[*] Process base dir: /Users/yanghyeonseo/Developer/pvz/pvz`
+
 ## 재현/검증 결과
 - 이전 상태:
   - `CreateFileA('images/blank.tga') -> NOT FOUND`

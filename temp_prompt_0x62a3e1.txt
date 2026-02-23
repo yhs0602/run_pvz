@@ -1,0 +1,40 @@
+
+You are an expert assembly translator for JIT compilers. Translate the following 32-bit x86 basic block into Apple Silicon ARM64 assembly.
+Requirements:
+1. ONLY return the ARM64 assembly instructions enclosed in a ```arm64 code block. No explanations.
+2. You must translate the logic preserving the Live-In and Live-Out registers.
+3. Use this STRICT register mapping:
+   eax -> w0
+   ecx -> w1
+   edx -> w2
+   ebx -> w3
+   esp -> w4
+   ebp -> w5
+   esi -> w6
+   edi -> w7
+   EIP (Instruction Pointer) -> w8
+4. CONTROL FLOW & EIP: 
+   - You MUST update w8 with the Next x86 Execution Address before returning!
+   - If the block ends with a Conditional Branch (e.g. jne 0x6312a8), evaluate the condition in ARM64:
+       If true, set w8 to the branch target (e.g., mov w8, #0x12a8; movk w8, #0x63, lsl #16).
+       If false, set w8 to the Fallthrough Address (Block Address + Size).
+       Use conditional moves (csel) to set w8!
+   - If there is no branch, simply set w8 to the Fallthrough Address (e.g., mov w8, #0x12ac; movk w8, #0x63, lsl #16).
+   - NEVER use ARM64 branch instructions (b, bl, b.ne) to jump to x86 addresses.
+5. For memory accesses, use the correct ARM64 addressing. Zero-extend to 64-bit if using it as a base address.
+
+JSON Context:
+{
+  "address": "0x62a3e1",
+  "size": 4,
+  "assembly": [
+    "test eax, eax",
+    "jne 0x62a411"
+  ],
+  "live_in": [
+    "eax"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

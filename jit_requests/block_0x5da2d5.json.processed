@@ -1,0 +1,17 @@
+{
+  "address": "0x5da2d5",
+  "size": 17,
+  "assembly": [
+    "mov ebp, dword ptr [esp + 0xc]",
+    "sub ebp, 1",
+    "mov dword ptr [esp + 0xc], ebp",
+    "jns 0x5da140"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "eflags"
+  ]
+}

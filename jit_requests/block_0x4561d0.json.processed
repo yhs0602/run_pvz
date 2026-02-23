@@ -1,0 +1,27 @@
+{
+  "address": "0x4561d0",
+  "size": 15,
+  "assembly": [
+    "sub esp, 8",
+    "push ebx",
+    "push ebp",
+    "push esi",
+    "mov esi, eax",
+    "cmp dword ptr [esi + 0x18], 0x10",
+    "push edi",
+    "jb 0x4561e4"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "ebx",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

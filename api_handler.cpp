@@ -108,7 +108,7 @@ static std::string resolve_case_insensitive_path(const std::string& raw_path) {
     return "";
 }
 
-static std::string resolve_guest_path_to_host(const std::string& guest_path_raw) {
+static std::string resolve_guest_path_to_host(const std::string& guest_path_raw, const std::string& process_base_dir) {
     if (guest_path_raw.empty()) return "";
     std::string p = guest_path_raw;
     std::replace(p.begin(), p.end(), '\\', '/');
@@ -156,11 +156,22 @@ static std::string resolve_guest_path_to_host(const std::string& guest_path_raw)
         add_basename_underscore_variant(variants[i]);
     }
 
-    std::vector<std::string> roots = {"", "pvz"};
+    std::vector<std::string> roots;
+    if (!process_base_dir.empty()) {
+        roots.push_back(process_base_dir);
+        std::filesystem::path base_path(process_base_dir);
+        if (base_path.has_parent_path()) {
+            roots.push_back(base_path.parent_path().string());
+        }
+    }
+    roots.push_back("");
+    roots.push_back("pvz");
     for (const auto& root : roots) {
         for (const auto& rel : variants) {
             if (rel.empty()) continue;
-            std::string candidate = root.empty() ? rel : (root + "/" + rel);
+            std::string candidate = root.empty()
+                ? rel
+                : (std::filesystem::path(root) / rel).string();
             std::error_code ec;
             if (std::filesystem::exists(candidate, ec) && !ec) return candidate;
             std::string ci = resolve_case_insensitive_path(candidate);
@@ -1295,7 +1306,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t lpFileName = handler->ctx.get_arg(0);
                 uint32_t creationDisposition = handler->ctx.get_arg(4);
                 std::string guest_path = read_guest_c_string(uc, lpFileName, 1024);
-                std::string host_path = resolve_guest_path_to_host(guest_path);
+                std::string host_path = resolve_guest_path_to_host(guest_path, handler->process_base_dir);
                 if (host_path.empty()) {
                     std::string normalized = guest_path;
                     std::replace(normalized.begin(), normalized.end(), '\\', '/');

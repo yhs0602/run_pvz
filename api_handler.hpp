@@ -16,6 +16,7 @@ private:
     std::unordered_map<std::string, void*> dylib_handles;
     std::unordered_map<std::string, void(*)(APIContext*)> dylib_funcs;
     uint32_t current_addr;
+    std::string process_base_dir;
     
 
 public:
@@ -29,6 +30,7 @@ public:
     void set_sdl_texture(void* texture) { ctx.sdl_texture = texture; }
     void set_guest_vram(uint32_t vram) { ctx.guest_vram = vram; }
     void set_host_vram(void* host_buffer) { ctx.host_vram = host_buffer; }
+    void set_process_base_dir(const std::string& base_dir) { process_base_dir = base_dir; }
     
     uint32_t register_fake_api(const std::string& full_name);
     uint32_t create_fake_com_object(const std::string& class_name, int num_methods);
