@@ -220,3 +220,29 @@
   - `known=0`: 0
   - `unknown API`: 0
   - `UC_ERR`: 0
+
+18. LLM 비용 절감 모드 고도화 (기본 OFF + 요청 예산)
+- 목적:
+  - LLM 대기 시간/비용을 기본 실행 경로에서 제거하고, 필요할 때만 명시적으로 활성화.
+- 코드 변경:
+  - `main.cpp`
+    - `PVZ_ENABLE_LLM` 기본 OFF 유지.
+    - `PVZ_MAX_JIT_REQUESTS` 도입(기본 `24`, `-1`이면 무제한).
+    - 예산 소진 시 추가 `jit_requests/*.json` 생성 중단.
+  - `api_handler.cpp/.hpp`
+    - `PVZ_MAX_API_REQUESTS` 도입(기본 `24`, `-1`이면 무제한).
+    - 미지 API LLM 요청 예산 소진 시 generic fallback(`EAX=1`, `LastError=0`)으로 자동 전환.
+    - 시작 로그에 LLM/dylib/API budget 상태 출력.
+  - 환경변수 파서 정리:
+    - `0/false/off/no`를 false로 해석.
+- 검증:
+  - 빌드: `cmake --build build -j8` 성공.
+  - 8초 런 (LLM OFF):
+    - 명령: `PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 ./build/runner pvz/main.exe`
+    - 로그: `[*] LLM pipeline disabled...`, `[*] API LLM mode: OFF, dylib mocks: OFF`
+    - 신규 파일: `new jit_requests=0`, `new api_requests=0`
+    - `[JIT MOCK]` 출력: 0건
+  - 8초 런 (LLM ON + dylib ON):
+    - 명령: `PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_ENABLE_LLM=1 PVZ_ENABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe`
+    - 로그: `API LLM mode: ON, dylib mocks: ON`
+    - 기존 mock 플러그인 경로는 정상 동작(`[JIT MOCK]` 관측)

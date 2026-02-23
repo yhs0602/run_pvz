@@ -7,8 +7,8 @@
 
 ## 🚀 파이프라인 구동 방법 (How to Run)
 
-전체 시스템은 **메인 C++ 에뮬레이터**와 **2개의 백그라운드 Python 데몬(LLM 번역 봇)**으로 구성되어 있습니다.
-터미널 창을 3개 열어서 아래 명령어들을 각각 실행해야 합니다.
+기본 모드는 **저비용/저지연(LLM OFF)** 입니다.  
+LLM 번역 파이프라인을 사용할 때만 아래 Python 데몬 2개를 함께 실행하세요.
 
 ### 1단계: JIT 어셈블리 번역 데몬 실행 (터미널 1)
 에뮬레이터가 자주 실행되는 병목 구간(Hotspot)을 발견하면 이 데몬이 ARM64 기계어로 실시간 번역합니다.
@@ -26,13 +26,16 @@ python api_compiler.py
 ```
 
 ### 3단계: C++ Core JIT 엔진 구동 (터미널 3)
-백그라운드 봇들이 켜져 있는 상태에서 메인 엔진을 구동하여 바이너리를 분석/실행합니다.
+메인 엔진 단독으로 실행해도 됩니다(기본: LLM OFF).
 ```bash
 # 이전에 컴파일된 캐시 파일들을 지우고 새로 처음부터 런타임을 감상하려면 아래 명령어로 정리하세요.
 rm -rf compiled_blocks/* llm_cache/* jit_requests/* api_requests/* api_mocks/*
 
 # 메인 실행
 ./build/runner pvz/main.exe
+
+# LLM 파이프라인 ON (필요할 때만)
+PVZ_ENABLE_LLM=1 PVZ_ENABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe
 ```
 
 ### (선택) 디버그/헤드리스 실행 옵션
@@ -49,6 +52,18 @@ PVZ_BOOT_TRACE=1 ./build/runner pvz/main.exe
 
 # JIT 동적 mock(.dylib) 비활성화 (내장 HLE만 사용)
 PVZ_DISABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe
+
+# LLM 파이프라인 활성화 (기본 OFF)
+PVZ_ENABLE_LLM=1 ./build/runner pvz/main.exe
+
+# 동적 API mock(.dylib) 로더 활성화 (기본 OFF)
+PVZ_ENABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe
+
+# LLM 요청 예산 제한 (비용 상한)
+PVZ_ENABLE_LLM=1 PVZ_MAX_JIT_REQUESTS=24 PVZ_MAX_API_REQUESTS=24 ./build/runner pvz/main.exe
+
+# 예산 무제한 (권장하지 않음)
+PVZ_ENABLE_LLM=1 PVZ_MAX_JIT_REQUESTS=-1 PVZ_MAX_API_REQUESTS=-1 ./build/runner pvz/main.exe
 
 # 특정 watchpoint 로그 활성화 (기본 OFF)
 PVZ_WATCHPOINT=1 ./build/runner pvz/main.exe
@@ -82,4 +97,4 @@ PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_DISABLE_DYLIB_MOCKS=1 ./build/runner
 
 즉, **자동차의 엔진과 번역기 AI는 세계 최고 수준으로 완성되었으나, 화면을 보여주는 '디스플레이 모니터'와 실제 핸들(키보드/마우스 훅) 부품이 아직 에뮬레이터에 장착되지 않은 상태**라고 보시면 됩니다. 
 
-현재 돌려보시면 엔진이 미지의 API들을 계속해서 마주치고, AI가 그것들을 실시간으로 C++로 짜주며 다음 단계로 무한히 돌파해 나가는 경이로운 JIT 파이프라인 과정을 콘솔 로그로 감상하실 수 있습니다!
+기본 실행은 내장 HLE 중심의 저비용 모드이며, `PVZ_ENABLE_LLM=1`을 켜면 기존의 실시간 LLM 보조 JIT/API 생성 파이프라인을 다시 사용할 수 있습니다.

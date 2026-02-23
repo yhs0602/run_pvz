@@ -10,6 +10,7 @@
 #include <cctype>
 #include <cstring>
 #include <cstdlib>
+#include <limits>
 
 // --- Win32 Message Mapping ---
 constexpr uint32_t WM_QUIT = 0x0012;
@@ -61,6 +62,24 @@ static std::string to_lower_ascii(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return s;
+}
+
+static bool env_truthy(const char* name) {
+    const char* v = std::getenv(name);
+    if (!v) return false;
+    std::string s = to_lower_ascii(v);
+    return !(s.empty() || s == "0" || s == "false" || s == "off" || s == "no");
+}
+
+static int env_int(const char* name, int default_value) {
+    const char* v = std::getenv(name);
+    if (!v || !*v) return default_value;
+    char* end = nullptr;
+    long parsed = std::strtol(v, &end, 10);
+    if (!end || *end != '\0') return default_value;
+    if (parsed > std::numeric_limits<int>::max()) return std::numeric_limits<int>::max();
+    if (parsed < std::numeric_limits<int>::min()) return std::numeric_limits<int>::min();
+    return static_cast<int>(parsed);
 }
 
 static std::string resolve_case_insensitive_path(const std::string& raw_path) {
@@ -466,6 +485,19 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
 };
 
 DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref), current_addr(FAKE_API_BASE) {
+    llm_pipeline_enabled = env_truthy("PVZ_ENABLE_LLM");
+    dylib_mocks_enabled = env_truthy("PVZ_ENABLE_DYLIB_MOCKS");
+    max_api_llm_requests = env_int("PVZ_MAX_API_REQUESTS", 24);
+    std::cout << "[*] API LLM mode: " << (llm_pipeline_enabled ? "ON" : "OFF")
+              << ", dylib mocks: " << (dylib_mocks_enabled ? "ON" : "OFF");
+    if (llm_pipeline_enabled) {
+        if (max_api_llm_requests < 0) {
+            std::cout << ", api budget: unlimited";
+        } else {
+            std::cout << ", api budget: " << max_api_llm_requests;
+        }
+    }
+    std::cout << "\n";
     ctx.backend = &backend;
     ctx.uc = backend.engine();
     std::filesystem::create_directories("api_requests");
@@ -600,8 +632,10 @@ uint32_t DummyAPIHandler::create_fake_com_object(const std::string& class_name, 
 }
 
 bool DummyAPIHandler::try_load_dylib(const std::string& api_name) {
-    const char* disable_env = std::getenv("PVZ_DISABLE_DYLIB_MOCKS");
-    if (disable_env && std::string(disable_env) != "0") {
+    if (!dylib_mocks_enabled) {
+        return false;
+    }
+    if (env_truthy("PVZ_DISABLE_DYLIB_MOCKS")) {
         return false;
     }
 
@@ -658,6 +692,18 @@ bool DummyAPIHandler::try_load_dylib(const std::string& api_name) {
 }
 
 void DummyAPIHandler::handle_unknown_api(const std::string& api_name, uint32_t address) {
+    if (!llm_pipeline_enabled) {
+        std::string key = "unknown_fallback_seen:" + api_name;
+        if (ctx.global_state.find(key) == ctx.global_state.end()) {
+            ctx.global_state[key] = 1;
+            std::cout << "[API CALL] [FALLBACK] Unknown API " << api_name
+                      << " -> LLM disabled, returning generic success.\n";
+        }
+        ctx.set_eax(1);
+        ctx.global_state["LastError"] = 0;
+        return;
+    }
+
     size_t excla = api_name.find('!');
     std::string func_name = (excla != std::string::npos) ? api_name.substr(excla + 1) : api_name;
     std::string module_name = (excla != std::string::npos) ? api_name.substr(0, excla) : "UNKNOWN";
@@ -666,6 +712,17 @@ void DummyAPIHandler::handle_unknown_api(const std::string& api_name, uint32_t a
     std::string dylib_path = "api_mocks/" + func_name + ".dylib";
 
     if (!std::filesystem::exists(dylib_path)) {
+        bool budget_ok = (max_api_llm_requests < 0) || (api_llm_requests_emitted < max_api_llm_requests);
+        if (!budget_ok) {
+            if (!api_budget_warned) {
+                api_budget_warned = true;
+                std::cout << "[*] API LLM request budget exhausted (" << max_api_llm_requests
+                          << "). Unknown APIs will use generic fallback.\n";
+            }
+            ctx.set_eax(1);
+            ctx.global_state["LastError"] = 0;
+            return;
+        }
         std::ofstream out(request_file);
         if (out.is_open()) {
             out << "{\n";
@@ -675,6 +732,7 @@ void DummyAPIHandler::handle_unknown_api(const std::string& api_name, uint32_t a
             out << "}\n";
             out.close(); // CRITICAL: Flush to disk so Python watchdog can read it!
         }
+        api_llm_requests_emitted++;
         std::cout << "[!] Emitted API generation request to " << request_file << "\n";
         std::cout << "[*] C++ Engine Paused: Waiting for LLM API Compiler...\n";
         

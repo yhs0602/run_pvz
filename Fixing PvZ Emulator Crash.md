@@ -923,6 +923,20 @@ for i in md.disasm(data, 0x54cce3):
 
 *User accepted the command `make -C build -j4 && ./build/runner pvz/main.exe > boot_trace.txt 2>&1 & sleep 3; pkill -9 -f runner; tail -n 80 boot_trace.txt`*
 
+---
+
+## Manual Update (2026-02-24)
+
+- LLM 비용 절감을 위해 실행 기본값을 "LLM OFF"로 고정하고, 명시적 opt-in만 허용하도록 정리했습니다.
+- 새 제어 플래그:
+  - `PVZ_ENABLE_LLM=1`
+  - `PVZ_ENABLE_DYLIB_MOCKS=1`
+  - `PVZ_MAX_JIT_REQUESTS` (기본 24, `-1` 무제한)
+  - `PVZ_MAX_API_REQUESTS` (기본 24, `-1` 무제한)
+- 검증 결과(8초 런):
+  - LLM OFF: `jit_requests/api_requests` 신규 생성 0건, `[JIT MOCK]` 0건
+  - LLM ON + dylib ON: `[JIT MOCK]` 출력 재확인
+
 *Edited relevant file*
 
 *Edited relevant file*

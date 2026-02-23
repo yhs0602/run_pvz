@@ -12,6 +12,8 @@
 #include <iomanip>
 #include <filesystem>
 #include <cstdlib>
+#include <cctype>
+#include <limits>
 #include <SDL.h>
 
 #if defined(__APPLE__) && defined(__aarch64__)
@@ -21,6 +23,25 @@
 #endif
 
 using namespace std;
+
+static bool env_truthy(const char* name) {
+    const char* v = std::getenv(name);
+    if (!v) return false;
+    std::string s(v);
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return !(s.empty() || s == "0" || s == "false" || s == "off" || s == "no");
+}
+
+static int env_int(const char* name, int default_value) {
+    const char* v = std::getenv(name);
+    if (!v || !*v) return default_value;
+    char* end = nullptr;
+    long parsed = std::strtol(v, &end, 10);
+    if (!end || *end != '\0') return default_value;
+    if (parsed > std::numeric_limits<int>::max()) return std::numeric_limits<int>::max();
+    if (parsed < std::numeric_limits<int>::min()) return std::numeric_limits<int>::min();
+    return static_cast<int>(parsed);
+}
 
 // Capstone handle for LVA
 csh cs_handle;
@@ -185,8 +206,12 @@ public:
 
 JITDispatcher* global_jit;
 bool g_enable_native_jit = true;
+bool g_enable_llm_pipeline = false;
 CpuBackend* g_backend = nullptr;
 bool g_watchpoint_enabled = false;
+int g_max_jit_llm_requests = 24;
+int g_jit_llm_requests_emitted = 0;
+bool g_jit_budget_warned = false;
 
 // ============================================
 
@@ -307,12 +332,21 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
     }
 
     // Dump payload when it hits the hot threshold
-    if (profile.execution_count == JIT_THRESHOLD) {
-        dump_jit_request(address, profile);
+    if (g_enable_llm_pipeline && profile.execution_count == JIT_THRESHOLD) {
+        bool budget_ok = (g_max_jit_llm_requests < 0) || (g_jit_llm_requests_emitted < g_max_jit_llm_requests);
+        if (budget_ok) {
+            dump_jit_request(address, profile);
+            g_jit_llm_requests_emitted++;
+        } else if (!g_jit_budget_warned) {
+            g_jit_budget_warned = true;
+            cout << "[*] JIT LLM request budget exhausted (" << g_max_jit_llm_requests
+                 << "). Further jit_requests emission is disabled.\n";
+        }
     }
     
     // Check if JIT translation has finished in the background (File `.bin` exists)
-    if (g_enable_native_jit && global_jit && profile.execution_count > JIT_THRESHOLD && !profile.is_jitted) {
+    if (g_enable_llm_pipeline && g_enable_native_jit && global_jit &&
+        profile.execution_count > JIT_THRESHOLD && !profile.is_jitted) {
         if (global_jit->load_compiled_block(address)) {
             profile.is_jitted = true;
             cout << "[+] JIT Dispatcher Linked ARM64 Block at 0x" << hex << address << dec << endl;
@@ -414,14 +448,16 @@ int main(int argc, char **argv) {
     cs_option(cs_handle, CS_OPT_DETAIL, CS_OPT_ON);
     trace("after cs_open");
 
-    const char* disable_jit_env = std::getenv("PVZ_DISABLE_NATIVE_JIT");
-    if (disable_jit_env && std::string(disable_jit_env) != "0") {
+    if (env_truthy("PVZ_DISABLE_NATIVE_JIT")) {
         g_enable_native_jit = false;
     }
-    const char* watchpoint_env = std::getenv("PVZ_WATCHPOINT");
-    if (watchpoint_env && std::string(watchpoint_env) != "0") {
+    if (env_truthy("PVZ_ENABLE_LLM")) {
+        g_enable_llm_pipeline = true;
+    }
+    if (env_truthy("PVZ_WATCHPOINT")) {
         g_watchpoint_enabled = true;
     }
+    g_max_jit_llm_requests = env_int("PVZ_MAX_JIT_REQUESTS", 24);
 
     // Initialize CPU backend (Unicorn for now)
     trace("before backend.open_x86_32");
@@ -444,6 +480,16 @@ int main(int argc, char **argv) {
         } else {
             global_jit = nullptr;
             cout << "[*] Native ARM64 JIT dispatcher disabled (PVZ_DISABLE_NATIVE_JIT).\n";
+        }
+        if (!g_enable_llm_pipeline) {
+            cout << "[*] LLM pipeline disabled (set PVZ_ENABLE_LLM=1 to enable).\n";
+        } else {
+            if (g_max_jit_llm_requests < 0) {
+                cout << "[*] LLM JIT request budget: unlimited (PVZ_MAX_JIT_REQUESTS < 0).\n";
+            } else {
+                cout << "[*] LLM JIT request budget: " << g_max_jit_llm_requests
+                     << " blocks (PVZ_MAX_JIT_REQUESTS).\n";
+            }
         }
         trace("after jit dispatcher init");
 

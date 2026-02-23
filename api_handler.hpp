@@ -13,6 +13,11 @@ class DummyAPIHandler {
 private:
     CpuBackend& backend;
     APIContext ctx;
+    bool llm_pipeline_enabled = false;
+    bool dylib_mocks_enabled = false;
+    int max_api_llm_requests = 24;
+    int api_llm_requests_emitted = 0;
+    bool api_budget_warned = false;
     std::unordered_map<uint32_t, std::string> fake_api_map;
     std::unordered_map<std::string, void*> dylib_handles;
     std::unordered_map<std::string, void(*)(APIContext*)> dylib_funcs;
