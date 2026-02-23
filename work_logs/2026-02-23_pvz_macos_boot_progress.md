@@ -285,3 +285,28 @@
     - 모드 확인: `API LLM mode: OFF, dylib mocks: ON`
 - 정책 반영:
   - API mocking은 제한하지 않도록 `PVZ_MAX_API_REQUESTS` 기본값을 `-1`(무제한)로 변경.
+
+21. 파일/레지스트리 루프 추적 및 HLE 보강
+- `PVZ_API_STATS_INTERVAL` 진단 모드 추가:
+  - 일정 호출마다 상위 API 카운트를 출력해 병목을 추적.
+  - 20초 샘플에서 주요 병목: `HeapAlloc/HeapFree`, `Enter/LeaveCriticalSection`.
+- 파일/레지스트리 API 실동작화:
+  - `GetCurrentDirectoryA`, `GetFullPathNameA`, `GetFileAttributesA`
+  - `RegOpenKeyExA`, `RegCreateKeyExA`, `RegSetValueExA`, `RegQueryValueExA`, `RegDeleteValueA`, `RegCloseKey`
+- 리소스 API 보강:
+  - `FindResourceA`, `LoadResource`, `LockResource`, `SizeofResource`, `FreeResource`
+  - placeholder resource handle/ptr/size 관리로 null dereference 유발 경로 완화.
+- DirectDraw 안정화:
+  - `DDRAW.dll!IDirectDraw7_Method_4` 시그니처/핸들러 보강.
+  - `try_load_dylib`에서 `DirectDrawCreateEx/Create`, `Direct3DCreate8`는 내장 HLE 우선.
+
+22. 렌더링 진입 근접 구간 검증 + null-page 호환 옵션
+- 관찰:
+  - DDRAW 경로가 `IDirectDraw7_Method_6(CreateSurface)`, `IDirectDrawSurface7_Method_0(QueryInterface)`, `IDirectDrawSurface7_Method_2`까지 반복 진입.
+  - null 근처 역참조로 `UC_ERR_READ_UNMAPPED`가 발생하는 케이스 확인.
+- 조치:
+  - `main.cpp`에 `PVZ_MAP_NULL_PAGE=1` 옵션 추가(기본 OFF).
+  - 활성화 시 0x00000000~0x0000FFFF를 호환 매핑.
+- 검증:
+  - 명령: `PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_ENABLE_DYLIB_MOCKS=1 PVZ_MAP_NULL_PAGE=1 ./build/runner pvz/main.exe`
+  - 결과: `UC_ERR` 없이 `Emulation cleanly finished at EIP = 0x0`.

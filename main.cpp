@@ -481,6 +481,12 @@ int main(int argc, char **argv) {
     backend.mem_map(guest_vram, 800 * 600 * 4, UC_PROT_ALL);
     trace("after guest_vram map");
 
+    if (env_truthy("PVZ_MAP_NULL_PAGE")) {
+        // Optional compatibility mode for binaries that transiently dereference low/null pointers.
+        backend.mem_map(0x0, 0x10000, UC_PROT_READ | UC_PROT_WRITE);
+        cout << "[*] Null-page compatibility mapping enabled (PVZ_MAP_NULL_PAGE).\n";
+    }
+
     try {
         trace("before jit dispatcher init");
         if (g_enable_native_jit) {

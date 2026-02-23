@@ -46,6 +46,19 @@ struct MappingHandle {
     uint32_t file_handle = 0xFFFFFFFFu; // INVALID_HANDLE_VALUE means page-file backed mapping
 };
 
+struct RegistryKeyHandle {
+    std::string path;
+};
+
+static std::unordered_map<std::string, std::vector<uint8_t>> g_registry_values;
+static std::unordered_map<std::string, uint32_t> g_registry_types;
+static std::unordered_map<uint32_t, uint32_t> g_heap_sizes;
+static std::unordered_map<uint32_t, uint32_t> g_resource_ptr_by_handle;
+static std::unordered_map<uint32_t, uint32_t> g_resource_size_by_handle;
+static uint32_t g_resource_handle_top = 0xB000;
+static uint32_t g_resource_heap_top = 0x36000000;
+static bool g_resource_heap_mapped = false;
+
 static std::string read_guest_c_string(APIContext& ctx, uint32_t guest_ptr, size_t max_len = 512) {
     if (guest_ptr == 0) return "";
     std::string out;
@@ -201,6 +214,64 @@ static std::string resolve_guest_path_to_host(const std::string& guest_path_raw,
     return "";
 }
 
+static std::string normalize_win_path(std::string p) {
+    if (p.empty()) return p;
+    std::replace(p.begin(), p.end(), '/', '\\');
+    std::vector<std::string> parts;
+    std::string drive;
+
+    size_t i = 0;
+    if (p.size() >= 2 && p[1] == ':') {
+        drive = p.substr(0, 2);
+        i = 2;
+    }
+
+    while (i < p.size() && (p[i] == '\\' || p[i] == '/')) i++;
+    std::string cur;
+    for (; i <= p.size(); ++i) {
+        if (i == p.size() || p[i] == '\\' || p[i] == '/') {
+            if (!cur.empty() && cur != ".") {
+                if (cur == "..") {
+                    if (!parts.empty()) parts.pop_back();
+                } else {
+                    parts.push_back(cur);
+                }
+            }
+            cur.clear();
+        } else {
+            cur.push_back(p[i]);
+        }
+    }
+
+    std::string out = drive;
+    if (!out.empty()) out += "\\";
+    for (size_t n = 0; n < parts.size(); ++n) {
+        out += parts[n];
+        if (n + 1 < parts.size()) out += "\\";
+    }
+    if (out.empty()) return ".";
+    return out;
+}
+
+static std::string root_hkey_name(uint32_t hkey) {
+    switch (hkey) {
+        case 0x80000000u: return "HKCR";
+        case 0x80000001u: return "HKCU";
+        case 0x80000002u: return "HKLM";
+        case 0x80000003u: return "HKU";
+        default: return "";
+    }
+}
+
+static std::string resolve_registry_path(APIContext& ctx, uint32_t hkey) {
+    std::string root = root_hkey_name(hkey);
+    if (!root.empty()) return root;
+    auto it = ctx.handle_map.find("reg_" + std::to_string(hkey));
+    if (it == ctx.handle_map.end()) return "";
+    auto* rk = static_cast<RegistryKeyHandle*>(it->second);
+    return rk ? rk->path : "";
+}
+
 // Modified KNOWN_SIGNATURES definition: removed 'const' and 'DummyAPIHandler::' scope
 std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"KERNEL32.dll!GetSystemTimeAsFileTime", 4},
@@ -256,6 +327,7 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"USER32.dll!GetWindowLongA", 8},
     {"USER32.dll!SetWindowTextA", 8},
     {"USER32.dll!GetWindowTextA", 12},
+    {"USER32.dll!MoveWindow", 24},
     {"USER32.dll!GetDesktopWindow", 0},
     {"USER32.dll!GetActiveWindow", 0},
     {"USER32.dll!GetDC", 4},
@@ -297,6 +369,7 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"DDRAW.dll!IDirectDraw7_Method_0", 12},
     {"DDRAW.dll!IDirectDraw7_Method_1", 4},
     {"DDRAW.dll!IDirectDraw7_Method_2", 4},
+    {"DDRAW.dll!IDirectDraw7_Method_4", 16},
     {"DDRAW.dll!IDirectDraw7_Method_6", 16},
     {"DDRAW.dll!IDirectDraw7_Method_20", 12},
     {"DDRAW.dll!IDirectDraw7_Method_21", 24},
@@ -462,6 +535,11 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"KERNEL32.dll!WriteFile", 20},
     {"KERNEL32.dll!SetFilePointer", 16},
     {"KERNEL32.dll!GetFileSize", 8},
+    {"KERNEL32.dll!FindResourceA", 12},
+    {"KERNEL32.dll!LoadResource", 8},
+    {"KERNEL32.dll!LockResource", 4},
+    {"KERNEL32.dll!SizeofResource", 8},
+    {"KERNEL32.dll!FreeResource", 4},
     {"KERNEL32.dll!GetFileTime", 16},
     {"KERNEL32.dll!SetFileTime", 16},
     {"KERNEL32.dll!FileTimeToSystemTime", 8},
@@ -477,6 +555,7 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"ADVAPI32.dll!RegQueryValueExA", 24},
     {"ADVAPI32.dll!RegCreateKeyExA", 36},
     {"ADVAPI32.dll!RegSetValueExA", 24},
+    {"ADVAPI32.dll!RegDeleteValueA", 8},
     {"ADVAPI32.dll!RegCloseKey", 4},
     // COM (OLE32/OLEAUT32)
     {"ole32.dll!CoInitialize", 4},
@@ -488,6 +567,7 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
     llm_pipeline_enabled = env_truthy("PVZ_ENABLE_LLM");
     dylib_mocks_enabled = env_truthy("PVZ_ENABLE_DYLIB_MOCKS");
     max_api_llm_requests = env_int("PVZ_MAX_API_REQUESTS", -1);
+    api_stats_interval = static_cast<uint64_t>(std::max(0, env_int("PVZ_API_STATS_INTERVAL", 0)));
     std::cout << "[*] API LLM mode: " << (llm_pipeline_enabled ? "ON" : "OFF")
               << ", dylib mocks: " << (dylib_mocks_enabled ? "ON" : "OFF");
     if (llm_pipeline_enabled) {
@@ -574,6 +654,20 @@ DummyAPIHandler::~DummyAPIHandler() {
     }
 }
 
+void DummyAPIHandler::maybe_print_api_stats() {
+    if (api_stats_interval == 0 || api_call_total == 0 || (api_call_total % api_stats_interval) != 0) {
+        return;
+    }
+    std::vector<std::pair<std::string, uint64_t>> items(api_call_counts.begin(), api_call_counts.end());
+    std::sort(items.begin(), items.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+    std::cout << "\n[API STATS] total_calls=" << api_call_total << " top:";
+    size_t limit = std::min<size_t>(12, items.size());
+    for (size_t i = 0; i < limit; ++i) {
+        std::cout << " [" << items[i].second << "] " << items[i].first;
+    }
+    std::cout << "\n";
+}
+
 uint32_t DummyAPIHandler::register_fake_api(const std::string& full_name) {
     uint32_t api_addr = 0;
     
@@ -649,6 +743,9 @@ bool DummyAPIHandler::try_load_dylib(const std::string& api_name) {
         is_core("!loadlibraryw") ||
         is_core("!getmodulehandlea") ||
         is_core("!getmodulehandlew") ||
+        is_core("!directdrawcreateex") ||
+        is_core("!directdrawcreate") ||
+        is_core("!direct3dcreate8") ||
         is_core("!interlockedincrement") ||
         is_core("!interlockeddecrement") ||
         is_core("!interlockedexchange") ||
@@ -756,6 +853,9 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
     auto it = handler->fake_api_map.find(address);
     if (it != handler->fake_api_map.end()) {
         const std::string& name = it->second;
+        handler->api_call_total++;
+        handler->api_call_counts[name]++;
+        handler->maybe_print_api_stats();
         
         // --- HARDCODED HLE INTERCEPTS ---
         if (name == "USER32.dll!CreateWindowExA" || name == "USER32.dll!CreateWindowExW") {
@@ -1384,6 +1484,219 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
                 handler->ctx.set_eax(len);
                 handler->ctx.global_state["LastError"] = 0;
+            } else if (name == "KERNEL32.dll!GetCurrentDirectoryA") {
+                uint32_t nBufferLength = handler->ctx.get_arg(0);
+                uint32_t lpBuffer = handler->ctx.get_arg(1);
+                std::string cwd = handler->process_base_dir.empty()
+                    ? std::filesystem::current_path().string()
+                    : handler->process_base_dir;
+                if (cwd.rfind("/", 0) == 0) cwd = "C:" + cwd;
+                cwd = normalize_win_path(cwd);
+                uint32_t len = static_cast<uint32_t>(cwd.size());
+                if (lpBuffer != 0 && nBufferLength > 0) {
+                    uint32_t to_copy = std::min<uint32_t>(len, nBufferLength - 1);
+                    handler->backend.mem_write(lpBuffer, cwd.data(), to_copy);
+                    char nul = '\0';
+                    handler->backend.mem_write(lpBuffer + to_copy, &nul, 1);
+                }
+                handler->ctx.set_eax(len);
+                handler->ctx.global_state["LastError"] = 0;
+            } else if (name == "KERNEL32.dll!GetFullPathNameA") {
+                uint32_t lpFileName = handler->ctx.get_arg(0);
+                uint32_t nBufferLength = handler->ctx.get_arg(1);
+                uint32_t lpBuffer = handler->ctx.get_arg(2);
+                uint32_t lpFilePartPtr = handler->ctx.get_arg(3);
+
+                std::string in = read_guest_c_string(handler->ctx, lpFileName, 1024);
+                std::string cwd = handler->process_base_dir.empty()
+                    ? std::filesystem::current_path().string()
+                    : handler->process_base_dir;
+                if (cwd.rfind("/", 0) == 0) cwd = "C:" + cwd;
+                cwd = normalize_win_path(cwd);
+
+                std::string full;
+                if (in.empty()) {
+                    full = cwd;
+                } else {
+                    std::replace(in.begin(), in.end(), '/', '\\');
+                    bool absolute = (in.size() >= 2 && in[1] == ':');
+                    if (absolute) {
+                        full = normalize_win_path(in);
+                    } else {
+                        std::string joined = cwd;
+                        if (!joined.empty() && joined.back() != '\\') joined += "\\";
+                        joined += in;
+                        full = normalize_win_path(joined);
+                    }
+                }
+
+                uint32_t len = static_cast<uint32_t>(full.size());
+                if (lpBuffer != 0 && nBufferLength > 0) {
+                    uint32_t to_copy = std::min<uint32_t>(len, nBufferLength - 1);
+                    handler->backend.mem_write(lpBuffer, full.data(), to_copy);
+                    char nul = '\0';
+                    handler->backend.mem_write(lpBuffer + to_copy, &nul, 1);
+
+                    if (lpFilePartPtr != 0) {
+                        size_t slash = full.find_last_of('\\');
+                        uint32_t file_part = (slash == std::string::npos)
+                            ? lpBuffer
+                            : (lpBuffer + static_cast<uint32_t>(slash + 1));
+                        handler->backend.mem_write(lpFilePartPtr, &file_part, 4);
+                    }
+                }
+                handler->ctx.set_eax(len);
+                handler->ctx.global_state["LastError"] = 0;
+            } else if (name == "KERNEL32.dll!GetFileAttributesA") {
+                uint32_t lpFileName = handler->ctx.get_arg(0);
+                std::string guest_path = read_guest_c_string(handler->ctx, lpFileName, 1024);
+                std::string host_path = resolve_guest_path_to_host(guest_path, handler->process_base_dir);
+                if (host_path.empty()) {
+                    handler->ctx.set_eax(0xFFFFFFFFu); // INVALID_FILE_ATTRIBUTES
+                    handler->ctx.global_state["LastError"] = 2; // ERROR_FILE_NOT_FOUND
+                } else {
+                    std::error_code ec;
+                    bool is_dir = std::filesystem::is_directory(host_path, ec);
+                    uint32_t attrs = is_dir ? 0x10u : 0x80u; // DIRECTORY or NORMAL
+                    handler->ctx.set_eax(attrs);
+                    handler->ctx.global_state["LastError"] = 0;
+                }
+            } else if (name == "ADVAPI32.dll!RegOpenKeyExA") {
+                uint32_t hKey = handler->ctx.get_arg(0);
+                uint32_t lpSubKey = handler->ctx.get_arg(1);
+                uint32_t phkResult = handler->ctx.get_arg(4);
+                std::string base = resolve_registry_path(handler->ctx, hKey);
+                std::string sub = read_guest_c_string(handler->ctx, lpSubKey, 512);
+                std::replace(sub.begin(), sub.end(), '/', '\\');
+                if (!base.empty() && !sub.empty()) base += "\\" + sub;
+                if (base.empty()) {
+                    handler->ctx.set_eax(6); // ERROR_INVALID_HANDLE
+                    handler->ctx.global_state["LastError"] = 6;
+                } else {
+                    uint32_t handle = 0xA000;
+                    if (handler->ctx.global_state.find("RegHandleTop") != handler->ctx.global_state.end()) {
+                        handle = static_cast<uint32_t>(handler->ctx.global_state["RegHandleTop"]);
+                    }
+                    handler->ctx.global_state["RegHandleTop"] = handle + 4;
+                    auto* rk = new RegistryKeyHandle();
+                    rk->path = base;
+                    handler->ctx.handle_map["reg_" + std::to_string(handle)] = rk;
+                    if (phkResult) handler->backend.mem_write(phkResult, &handle, 4);
+                    handler->ctx.set_eax(0); // ERROR_SUCCESS
+                    handler->ctx.global_state["LastError"] = 0;
+                }
+            } else if (name == "ADVAPI32.dll!RegCreateKeyExA") {
+                uint32_t hKey = handler->ctx.get_arg(0);
+                uint32_t lpSubKey = handler->ctx.get_arg(1);
+                uint32_t phkResult = handler->ctx.get_arg(7);
+                uint32_t lpdwDisposition = handler->ctx.get_arg(8);
+                std::string base = resolve_registry_path(handler->ctx, hKey);
+                std::string sub = read_guest_c_string(handler->ctx, lpSubKey, 512);
+                std::replace(sub.begin(), sub.end(), '/', '\\');
+                if (!base.empty() && !sub.empty()) base += "\\" + sub;
+                if (base.empty()) {
+                    handler->ctx.set_eax(6);
+                    handler->ctx.global_state["LastError"] = 6;
+                } else {
+                    uint32_t handle = 0xA000;
+                    if (handler->ctx.global_state.find("RegHandleTop") != handler->ctx.global_state.end()) {
+                        handle = static_cast<uint32_t>(handler->ctx.global_state["RegHandleTop"]);
+                    }
+                    handler->ctx.global_state["RegHandleTop"] = handle + 4;
+                    auto* rk = new RegistryKeyHandle();
+                    rk->path = base;
+                    handler->ctx.handle_map["reg_" + std::to_string(handle)] = rk;
+                    if (phkResult) handler->backend.mem_write(phkResult, &handle, 4);
+                    if (lpdwDisposition) {
+                        uint32_t disp = 1; // REG_CREATED_NEW_KEY
+                        handler->backend.mem_write(lpdwDisposition, &disp, 4);
+                    }
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 0;
+                }
+            } else if (name == "ADVAPI32.dll!RegSetValueExA") {
+                uint32_t hKey = handler->ctx.get_arg(0);
+                uint32_t lpValueName = handler->ctx.get_arg(1);
+                uint32_t dwType = handler->ctx.get_arg(3);
+                uint32_t lpData = handler->ctx.get_arg(4);
+                uint32_t cbData = handler->ctx.get_arg(5);
+                std::string key_path = resolve_registry_path(handler->ctx, hKey);
+                if (key_path.empty()) {
+                    handler->ctx.set_eax(6);
+                    handler->ctx.global_state["LastError"] = 6;
+                } else {
+                    std::string value_name = to_lower_ascii(read_guest_c_string(handler->ctx, lpValueName, 256));
+                    std::string value_key = to_lower_ascii(key_path) + "|" + value_name;
+                    std::vector<uint8_t> data;
+                    if (lpData && cbData) {
+                        data.resize(cbData);
+                        handler->backend.mem_read(lpData, data.data(), cbData);
+                    }
+                    g_registry_values[value_key] = std::move(data);
+                    g_registry_types[value_key] = dwType;
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 0;
+                }
+            } else if (name == "ADVAPI32.dll!RegDeleteValueA") {
+                uint32_t hKey = handler->ctx.get_arg(0);
+                uint32_t lpValueName = handler->ctx.get_arg(1);
+                std::string key_path = resolve_registry_path(handler->ctx, hKey);
+                std::string value_name = to_lower_ascii(read_guest_c_string(handler->ctx, lpValueName, 256));
+                if (!key_path.empty()) {
+                    std::string value_key = to_lower_ascii(key_path) + "|" + value_name;
+                    g_registry_values.erase(value_key);
+                    g_registry_types.erase(value_key);
+                }
+                handler->ctx.set_eax(0); // ERROR_SUCCESS
+                handler->ctx.global_state["LastError"] = 0;
+            } else if (name == "ADVAPI32.dll!RegQueryValueExA") {
+                uint32_t hKey = handler->ctx.get_arg(0);
+                uint32_t lpValueName = handler->ctx.get_arg(1);
+                uint32_t lpType = handler->ctx.get_arg(3);
+                uint32_t lpData = handler->ctx.get_arg(4);
+                uint32_t lpcbData = handler->ctx.get_arg(5);
+                std::string key_path = resolve_registry_path(handler->ctx, hKey);
+                if (key_path.empty()) {
+                    handler->ctx.set_eax(6);
+                    handler->ctx.global_state["LastError"] = 6;
+                } else {
+                    std::string value_name = to_lower_ascii(read_guest_c_string(handler->ctx, lpValueName, 256));
+                    std::string value_key = to_lower_ascii(key_path) + "|" + value_name;
+                    auto itv = g_registry_values.find(value_key);
+                    if (itv == g_registry_values.end()) {
+                        uint32_t zero = 0;
+                        if (lpcbData) handler->backend.mem_write(lpcbData, &zero, 4);
+                        handler->ctx.set_eax(2); // ERROR_FILE_NOT_FOUND
+                        handler->ctx.global_state["LastError"] = 2;
+                    } else {
+                        const std::vector<uint8_t>& data = itv->second;
+                        uint32_t type = 1; // REG_SZ default
+                        auto itt = g_registry_types.find(value_key);
+                        if (itt != g_registry_types.end()) type = itt->second;
+                        if (lpType) handler->backend.mem_write(lpType, &type, 4);
+
+                        uint32_t inout = 0;
+                        if (lpcbData) handler->backend.mem_read(lpcbData, &inout, 4);
+                        uint32_t required = static_cast<uint32_t>(data.size());
+                        if (lpcbData) handler->backend.mem_write(lpcbData, &required, 4);
+
+                        if (lpData != 0) {
+                            uint32_t to_copy = std::min<uint32_t>(inout, required);
+                            if (to_copy > 0) handler->backend.mem_write(lpData, data.data(), to_copy);
+                        }
+                        handler->ctx.set_eax(0);
+                        handler->ctx.global_state["LastError"] = 0;
+                    }
+                }
+            } else if (name == "ADVAPI32.dll!RegCloseKey") {
+                uint32_t hKey = handler->ctx.get_arg(0);
+                auto it = handler->ctx.handle_map.find("reg_" + std::to_string(hKey));
+                if (it != handler->ctx.handle_map.end()) {
+                    delete static_cast<RegistryKeyHandle*>(it->second);
+                    handler->ctx.handle_map.erase(it);
+                }
+                handler->ctx.set_eax(0);
+                handler->ctx.global_state["LastError"] = 0;
             } else if (name == "KERNEL32.dll!GetProcessHeap") {
                 handler->ctx.set_eax(0x11000000); // Dummy Heap Handle
                 std::cout << "\n[API CALL] [OK] GetProcessHeap" << std::endl;
@@ -1391,7 +1704,6 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 handler->ctx.set_eax(0x11000000); 
                 std::cout << "\n[API CALL] [OK] HeapCreate" << std::endl;
             } else if (name == "KERNEL32.dll!HeapAlloc") {
-                uint32_t hHeap = handler->ctx.get_arg(0);
                 uint32_t dwFlags = handler->ctx.get_arg(1);
                 uint32_t dwBytes = handler->ctx.get_arg(2);
                 
@@ -1412,14 +1724,16 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
                 
                 handler->ctx.set_eax(ptr);
-                handler->ctx.global_state["heap_size_" + std::to_string(ptr)] = dwBytes;
+                g_heap_sizes[ptr] = dwBytes;
             } else if (name == "KERNEL32.dll!HeapFree") {
+                uint32_t lpMem = handler->ctx.get_arg(2);
+                g_heap_sizes.erase(lpMem);
                 handler->ctx.set_eax(1); // Success
             } else if (name == "KERNEL32.dll!HeapSize") {
                 uint32_t lpMem = handler->ctx.get_arg(2);
-                auto it = handler->ctx.global_state.find("heap_size_" + std::to_string(lpMem));
-                if (it != handler->ctx.global_state.end()) {
-                    handler->ctx.set_eax(static_cast<uint32_t>(it->second));
+                auto it = g_heap_sizes.find(lpMem);
+                if (it != g_heap_sizes.end()) {
+                    handler->ctx.set_eax(it->second);
                     handler->ctx.global_state["LastError"] = 0;
                 } else {
                     handler->ctx.set_eax(0xFFFFFFFFu); // (SIZE_T)-1 on failure
@@ -1443,19 +1757,19 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     uint32_t ptr = static_cast<uint32_t>(handler->ctx.global_state["HeapTop"]);
                     uint32_t aligned = (dwBytes + 15) & ~15u;
                     handler->ctx.global_state["HeapTop"] = ptr + aligned;
-                    handler->ctx.global_state["heap_size_" + std::to_string(ptr)] = dwBytes;
+                    g_heap_sizes[ptr] = dwBytes;
                     handler->ctx.set_eax(ptr);
                     handler->ctx.global_state["LastError"] = 0;
                 } else {
-                    auto it = handler->ctx.global_state.find("heap_size_" + std::to_string(lpMem));
-                    if (it == handler->ctx.global_state.end()) {
+                    auto it = g_heap_sizes.find(lpMem);
+                    if (it == g_heap_sizes.end()) {
                         handler->ctx.set_eax(0);
                         handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
                     } else {
-                        uint32_t old_size = static_cast<uint32_t>(it->second);
+                        uint32_t old_size = it->second;
                         if (dwBytes <= old_size) {
                             // Shrink in-place
-                            handler->ctx.global_state["heap_size_" + std::to_string(lpMem)] = dwBytes;
+                            g_heap_sizes[lpMem] = dwBytes;
                             handler->ctx.set_eax(lpMem);
                             handler->ctx.global_state["LastError"] = 0;
                         } else {
@@ -1477,7 +1791,8 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                                 handler->backend.mem_write(new_ptr + old_size, zeros.data(), zeros.size());
                             }
 
-                            handler->ctx.global_state["heap_size_" + std::to_string(new_ptr)] = dwBytes;
+                            g_heap_sizes.erase(lpMem);
+                            g_heap_sizes[new_ptr] = dwBytes;
                             handler->ctx.set_eax(new_ptr);
                             handler->ctx.global_state["LastError"] = 0;
                         }
@@ -1628,6 +1943,52 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     handler->ctx.set_eax(static_cast<uint32_t>(fh->pos));
                     handler->ctx.global_state["LastError"] = 0;
                 }
+            } else if (name == "KERNEL32.dll!FindResourceA") {
+                if (!g_resource_heap_mapped) {
+                    handler->backend.mem_map(g_resource_heap_top, 0x00100000, UC_PROT_ALL); // 1MB
+                    g_resource_heap_mapped = true;
+                }
+                uint32_t handle = g_resource_handle_top;
+                g_resource_handle_top += 4;
+                uint32_t ptr = g_resource_heap_top;
+                g_resource_heap_top += 512; // minimal placeholder blob
+                g_resource_ptr_by_handle[handle] = ptr;
+                g_resource_size_by_handle[handle] = 512;
+                handler->ctx.set_eax(handle);
+                handler->ctx.global_state["LastError"] = 0;
+            } else if (name == "KERNEL32.dll!LoadResource") {
+                uint32_t hResInfo = handler->ctx.get_arg(1);
+                if (g_resource_ptr_by_handle.find(hResInfo) != g_resource_ptr_by_handle.end()) {
+                    handler->ctx.set_eax(hResInfo);
+                    handler->ctx.global_state["LastError"] = 0;
+                } else {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 1812;
+                }
+            } else if (name == "KERNEL32.dll!LockResource") {
+                uint32_t hResData = handler->ctx.get_arg(0);
+                auto it = g_resource_ptr_by_handle.find(hResData);
+                if (it != g_resource_ptr_by_handle.end()) {
+                    handler->ctx.set_eax(it->second);
+                    handler->ctx.global_state["LastError"] = 0;
+                } else {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 1812;
+                }
+            } else if (name == "KERNEL32.dll!SizeofResource") {
+                uint32_t hResInfo = handler->ctx.get_arg(1);
+                auto it = g_resource_size_by_handle.find(hResInfo);
+                if (it != g_resource_size_by_handle.end()) {
+                    handler->ctx.set_eax(it->second);
+                    handler->ctx.global_state["LastError"] = 0;
+                } else {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 1812;
+                }
+            } else if (name == "KERNEL32.dll!FreeResource") {
+                // Win32 compatibility: always succeeds for 32-bit apps.
+                handler->ctx.set_eax(1);
+                handler->ctx.global_state["LastError"] = 0;
             } else if (name == "KERNEL32.dll!CreateEventA" || name == "KERNEL32.dll!CreateEventW") {
                 uint32_t bManualReset = handler->ctx.get_arg(1);
                 uint32_t bInitialState = handler->ctx.get_arg(2);
@@ -2072,6 +2433,17 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
                 handler->ctx.set_eax(0); // D3D_OK
                 std::cout << "\n[API CALL] [OK] IDirect3D7::CreateDevice -> Returned Dummy IDirect3DDevice7 object.\n";
+            } else if (name == "DDRAW.dll!IDirectDraw7_Method_4") {
+                // Expected by many titles as CreateClipper-style method.
+                // COM call stack includes `this` as arg0, so out pointer may be arg3.
+                uint32_t arg1 = handler->ctx.get_arg(1);
+                uint32_t out_obj2 = handler->ctx.get_arg(2);
+                uint32_t out_obj3 = handler->ctx.get_arg(3);
+                uint32_t dummy_clipper = handler->create_fake_com_object("IDirectDrawClipper", 20);
+                if (arg1 > 0x10000u) handler->backend.mem_write(arg1, &dummy_clipper, 4);
+                if (out_obj2) handler->backend.mem_write(out_obj2, &dummy_clipper, 4);
+                if (out_obj3) handler->backend.mem_write(out_obj3, &dummy_clipper, 4);
+                handler->ctx.set_eax(0); // DD_OK
             } else if (name == "DDRAW.dll!IDirectDraw7_Method_6") {
                 // HRESULT CreateSurface(LPDDSURFACEDESC2, LPDIRECTDRAWSURFACE7*, IUnknown*)
                 uint32_t lplpDDSurface = handler->ctx.get_arg(2);
@@ -2198,6 +2570,18 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
                 handler->ctx.set_eax(0); // D3D_OK
                 std::cout << "\n[API CALL] [OK] IDirect3D8::GetAdapterDisplayMode spoofed 800x600.\n";
+            } else if (name == "USER32.dll!MoveWindow") {
+                uint32_t x = handler->ctx.get_arg(1);
+                uint32_t y = handler->ctx.get_arg(2);
+                uint32_t w = handler->ctx.get_arg(3);
+                uint32_t h = handler->ctx.get_arg(4);
+                if (handler->ctx.sdl_window && w > 0 && h > 0) {
+                    SDL_SetWindowPosition(static_cast<SDL_Window*>(handler->ctx.sdl_window),
+                                          static_cast<int>(x), static_cast<int>(y));
+                    SDL_SetWindowSize(static_cast<SDL_Window*>(handler->ctx.sdl_window),
+                                      static_cast<int>(w), static_cast<int>(h));
+                }
+                handler->ctx.set_eax(1); // BOOL success
             } else if (name == "KERNEL32.dll!GetCurrentProcess") {
                 handler->ctx.set_eax(-1); // Pseudo handle for current process
                 std::cout << "\n[API CALL] [OK] Intercepted call to " << name << "\n";

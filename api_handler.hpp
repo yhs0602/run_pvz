@@ -21,6 +21,9 @@ private:
     std::unordered_map<uint32_t, std::string> fake_api_map;
     std::unordered_map<std::string, void*> dylib_handles;
     std::unordered_map<std::string, void(*)(APIContext*)> dylib_funcs;
+    std::unordered_map<std::string, uint64_t> api_call_counts;
+    uint64_t api_call_total = 0;
+    uint64_t api_stats_interval = 0;
     uint32_t current_addr;
     std::string process_base_dir;
     
@@ -40,6 +43,7 @@ public:
     
     uint32_t register_fake_api(const std::string& full_name);
     uint32_t create_fake_com_object(const std::string& class_name, int num_methods);
+    void maybe_print_api_stats();
     
     static void hook_api_call(uc_engine* uc, uint64_t address, uint32_t size, void* user_data);
     void handle_unknown_api(const std::string& api_name, uint32_t address);

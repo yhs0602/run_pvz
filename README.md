@@ -65,6 +65,12 @@ PVZ_ENABLE_LLM=1 PVZ_MAX_JIT_REQUESTS=24 PVZ_MAX_API_REQUESTS=200 ./build/runner
 # 예산 무제한
 PVZ_ENABLE_LLM=1 PVZ_MAX_JIT_REQUESTS=-1 PVZ_MAX_API_REQUESTS=-1 ./build/runner pvz/main.exe
 
+# API 호출 상위 통계 출력(루프 병목 추적)
+PVZ_API_STATS_INTERVAL=50000 ./build/runner pvz/main.exe
+
+# null-page 호환 매핑(특정 null 근처 역참조 우회)
+PVZ_MAP_NULL_PAGE=1 ./build/runner pvz/main.exe
+
 # 특정 watchpoint 로그 활성화 (기본 OFF)
 PVZ_WATCHPOINT=1 ./build/runner pvz/main.exe
 
