@@ -487,7 +487,7 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
 DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref), current_addr(FAKE_API_BASE) {
     llm_pipeline_enabled = env_truthy("PVZ_ENABLE_LLM");
     dylib_mocks_enabled = env_truthy("PVZ_ENABLE_DYLIB_MOCKS");
-    max_api_llm_requests = env_int("PVZ_MAX_API_REQUESTS", 24);
+    max_api_llm_requests = env_int("PVZ_MAX_API_REQUESTS", -1);
     std::cout << "[*] API LLM mode: " << (llm_pipeline_enabled ? "ON" : "OFF")
               << ", dylib mocks: " << (dylib_mocks_enabled ? "ON" : "OFF");
     if (llm_pipeline_enabled) {

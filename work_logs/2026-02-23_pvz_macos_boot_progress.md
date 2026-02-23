@@ -263,3 +263,25 @@
   - `build-fex/runner` 6초 스모크:
     - `[*] CPU backend: fexcore`
     - `[*] FEX bridge unavailable. Falling back to Unicorn backend.`
+
+20. API mock 재생성/재컴파일 파이프라인 정비 + 완전 검증
+- `api_compiler.py` 재작성:
+  - 최신 `APIContext` 규약 반영(`ctx->backend->reg_read/mem_read/reg_write` 사용 지침).
+  - LLM 캐시 추가: `llm_cache/api_mocks/<api>.cpp`.
+  - 기존 소스 우선 재사용(이미 생성된 `api_mocks/<api>.cpp`는 LLM 호출 생략).
+  - 운영 모드 추가:
+    - `--rebuild-all`: `api_mocks/*.cpp` 일괄 재컴파일
+    - `--once`: 현재 요청만 처리 후 종료
+    - `--no-llm`: 캐시/기존 소스만 사용
+- 요청 처리:
+  - 누락 API 6개(`Direct3DCreate8`, `GetActiveWindow`, `RegCreateKeyExA`, `mixerOpen`, `mixerSetControlDetails`, `timeGetTime`)를 LLM으로 생성 후 컴파일 완료.
+  - 처리 후 `api_requests/*.json` 잔여 0개.
+- 런타임 검증(12초):
+  - 명령: `PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_ENABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe`
+  - 결과:
+    - `[JIT MOCK]` 522건 관측
+    - 동적 mock 로딩 성공 로그 39건
+    - mock 로드 실패/심볼 에러 0건
+    - 모드 확인: `API LLM mode: OFF, dylib mocks: ON`
+- 정책 반영:
+  - API mocking은 제한하지 않도록 `PVZ_MAX_API_REQUESTS` 기본값을 `-1`(무제한)로 변경.

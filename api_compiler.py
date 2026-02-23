@@ -1,13 +1,17 @@
-import os
+import argparse
 import json
-import time
-import subprocess
+import os
 import re
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+import subprocess
+import time
+from pathlib import Path
 
-API_REQUESTS_DIR = "api_requests"
-API_MOCKS_DIR = "api_mocks"
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
+
+API_REQUESTS_DIR = Path("api_requests")
+API_MOCKS_DIR = Path("api_mocks")
+API_CACHE_DIR = Path("llm_cache/api_mocks")
 
 PROMPT_TEMPLATE = """
 You are an expert C++ Windows API reverse engineer.
@@ -18,108 +22,182 @@ Requirements:
    extern "C" void mock_{api_name}(APIContext* ctx)
 2. You must `#include "api_context.hpp"`.
 3. Inside the function, retrieve arguments using `ctx->get_arg(index)` where index 0 is the first argument.
-4. Set the return value (usually in EAX) using `ctx->set_eax(value)`.
-5. Emulate the `stdcall` return by popping arguments off the stack and manually setting EIP. You MUST use this EXACT snippet, replacing <ARGS_BYTES> with the total byte size of the arguments:
+4. Set return value in EAX using `ctx->set_eax(value)`.
+5. Emulate stdcall return by popping arguments and manually setting EIP using backend APIs:
    uint32_t esp;
-   uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
+   ctx->backend->reg_read(UC_X86_REG_ESP, &esp);
    uint32_t ret_addr;
-   uc_mem_read(ctx->uc, esp, &ret_addr, 4);
-   esp += <ARGS_BYTES> + 4; // Add arg size + 4 bytes for the return address itself
-   uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-   uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
-
-6. For example, TlsGetValue takes 1 arg (4 bytes) -> <ARGS_BYTES> is 4. GetModuleHandleA takes 1 arg -> <ARGS_BYTES> is 4.
-7. Return realistic values. If you need dynamic allocation or persistent state, use `ctx->global_state` or `ctx->handle_map`.
-   Example: GetModuleHandleA(NULL) should return 0x400000 (ImageBase).
-8. RETURN ONLY THE C++ SOURCE CODE inside a ```cpp block. No explanations or markdown.
+   ctx->backend->mem_read(esp, &ret_addr, 4);
+   esp += <ARGS_BYTES> + 4;
+   ctx->backend->reg_write(UC_X86_REG_ESP, &esp);
+   ctx->backend->reg_write(UC_X86_REG_EIP, &ret_addr);
+6. Use realistic values and preserve state via `ctx->global_state` / `ctx->handle_map` if needed.
+7. Return only C++ code in a ```cpp block.
 """
 
+
+def backend_define() -> str:
+    selected = os.environ.get("PVZ_CPU_BACKEND", "unicorn").strip().lower()
+    if selected == "fexcore":
+        return "-DPVZ_CPU_BACKEND_FEXCORE=1"
+    return "-DPVZ_CPU_BACKEND_UNICORN=1"
+
+
+def compile_mock(cpp_path: Path, dylib_path: Path) -> None:
+    pkg_cflags = subprocess.check_output(["pkg-config", "--cflags", "unicorn"]).decode().strip().split()
+    compile_cmd = [
+        "clang++",
+        "-dynamiclib",
+        "-std=c++20",
+        backend_define(),
+        "-I.",
+        "-undefined",
+        "dynamic_lookup",
+    ] + pkg_cflags + [str(cpp_path), "-o", str(dylib_path)]
+    subprocess.run(compile_cmd, check=True)
+
+
+def parse_cpp_block(llm_response: str) -> str:
+    match = re.search(r"```(?:cpp|c\+\+|c)?\n(.*?)\n```", llm_response, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return llm_response.strip()
+
+
+def llm_generate(api_name: str, module: str) -> str:
+    prompt = PROMPT_TEMPLATE.format(api_name=api_name, module=module)
+    prompt_file = Path(f"temp_prompt_api_{api_name}.txt")
+    output_file = Path(f"temp_out_api_{api_name}.txt")
+
+    prompt_file.write_text(prompt)
+    try:
+        cmd = ["codex", "exec", "--ephemeral", "-o", str(output_file)]
+        with prompt_file.open("r") as p_in:
+            subprocess.run(cmd, stdin=p_in, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        llm_response = output_file.read_text()
+    finally:
+        if prompt_file.exists():
+            prompt_file.unlink()
+        if output_file.exists():
+            output_file.unlink()
+    return parse_cpp_block(llm_response)
+
+
+def ensure_dirs() -> None:
+    API_REQUESTS_DIR.mkdir(parents=True, exist_ok=True)
+    API_MOCKS_DIR.mkdir(parents=True, exist_ok=True)
+    API_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def load_request(filepath: Path) -> dict:
+    for _ in range(10):
+        if filepath.exists() and filepath.stat().st_size > 0:
+            break
+        time.sleep(0.2)
+    return json.loads(filepath.read_text())
+
+
 class APICompilerHandler(FileSystemEventHandler):
-    def process_request(self, filepath):
+    def __init__(self, allow_llm: bool) -> None:
+        super().__init__()
+        self.allow_llm = allow_llm
+
+    def process_request(self, filepath: Path) -> None:
         print(f"[*] Processing API request: {filepath}")
         try:
-            for _ in range(10):
-                if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
-                    break
-                time.sleep(0.2)
-                
-            with open(filepath, "r") as f:
-                data = json.load(f)
-            
+            data = load_request(filepath)
             api_name = data["api_name"]
-            prompt = PROMPT_TEMPLATE.format(api_name=api_name, module=data.get("module", "UNKNOWN"))
-            
-            print(f"[*] Sending {api_name} to Codex LLM...")
-            
-            prompt_file = f"temp_prompt_api_{api_name}.txt"
-            output_file = f"temp_out_api_{api_name}.txt"
-            with open(prompt_file, "w") as f:
-                f.write(prompt)
-                
-            cmd = ["codex", "exec", "--ephemeral", "-o", output_file]
-            with open(prompt_file, "r") as p_in:
-                subprocess.run(cmd, stdin=p_in, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            
-            with open(output_file, "r") as f:
-                llm_response = f.read()
-                
-            os.remove(prompt_file)
-            os.remove(output_file)
-            
-            match = re.search(r'```(?:cpp|c\+\+|c)?\n(.*?)\n```', llm_response, re.DOTALL)
-            if match:
-                cpp_source = match.group(1).strip()
+            module = data.get("module", "UNKNOWN")
+
+            cpp_filepath = API_MOCKS_DIR / f"{api_name}.cpp"
+            dylib_filepath = API_MOCKS_DIR / f"{api_name}.dylib"
+            cache_cpp = API_CACHE_DIR / f"{api_name}.cpp"
+
+            if cpp_filepath.exists():
+                print(f"[*] Reusing existing mock source: {cpp_filepath}")
+                cpp_source = cpp_filepath.read_text()
+            elif cache_cpp.exists():
+                print(f"[*] Cache hit for {api_name}: {cache_cpp}")
+                cpp_source = cache_cpp.read_text()
+                cpp_filepath.write_text(cpp_source)
+            elif self.allow_llm:
+                print(f"[*] Sending {api_name} to Codex LLM...")
+                cpp_source = llm_generate(api_name, module)
+                cpp_filepath.write_text(cpp_source)
+                cache_cpp.write_text(cpp_source)
             else:
-                cpp_source = llm_response.strip()
-                
-            cpp_filepath = os.path.join(API_MOCKS_DIR, f"{api_name}.cpp")
-            dylib_filepath = os.path.join(API_MOCKS_DIR, f"{api_name}.dylib")
-            
-            with open(cpp_filepath, "w") as f:
-                f.write(cpp_source)
-                
-            print(f"[*] Compiling {cpp_filepath} to {dylib_filepath}...")
-            # Compile command for macOS dynamic library
-            pkg_cflags = subprocess.check_output(["pkg-config", "--cflags", "unicorn"]).decode().strip().split()
-            compile_cmd = [
-                "clang++", "-dynamiclib", "-std=c++20",
-                "-I.", "-undefined", "dynamic_lookup"
-            ] + pkg_cflags + [cpp_filepath, "-o", dylib_filepath]
-            
-            subprocess.run(compile_cmd, check=True)
-            
+                raise RuntimeError(f"Missing source for {api_name} and LLM disabled")
+
+            print(f"[*] Compiling {cpp_filepath} -> {dylib_filepath}")
+            compile_mock(cpp_filepath, dylib_filepath)
             print(f"[+] Successfully compiled API Mock plugin: {dylib_filepath}\n")
-            
-            # Rename the request file to mark as processed
-            os.rename(filepath, filepath + ".processed")
-            
+
+            processed = filepath.with_suffix(filepath.suffix + ".processed")
+            if filepath.exists():
+                filepath.rename(processed)
         except Exception as e:
             print(f"[!] Error processing {filepath}: {e}")
 
-    def on_created(self, event):
-        if not event.is_directory and event.src_path.endswith(".json"):
+    def on_created(self, event) -> None:
+        if event.is_directory:
+            return
+        path = Path(event.src_path)
+        if path.suffix == ".json":
             time.sleep(0.1)
-            self.process_request(event.src_path)
+            self.process_request(path)
 
-if __name__ == "__main__":
-    os.makedirs(API_REQUESTS_DIR, exist_ok=True)
-    os.makedirs(API_MOCKS_DIR, exist_ok=True)
-    
-    event_handler = APICompilerHandler()
-    
+
+def rebuild_all_mocks() -> None:
+    print("[*] Rebuilding all api_mocks/*.cpp -> *.dylib ...")
+    rebuilt = 0
+    failed = 0
+    for cpp in sorted(API_MOCKS_DIR.glob("*.cpp")):
+        dylib = cpp.with_suffix(".dylib")
+        try:
+            compile_mock(cpp, dylib)
+            rebuilt += 1
+        except Exception as e:
+            failed += 1
+            print(f"[!] Rebuild failed: {cpp} ({e})")
+    print(f"[*] Rebuild summary: ok={rebuilt}, failed={failed}")
+
+
+def drain_existing_requests(handler: APICompilerHandler) -> None:
     print("[*] Checking for existing API mock requests...")
-    for filename in os.listdir(API_REQUESTS_DIR):
-        if filename.endswith(".json"):
-            event_handler.process_request(os.path.join(API_REQUESTS_DIR, filename))
+    for json_file in sorted(API_REQUESTS_DIR.glob("*.json")):
+        handler.process_request(json_file)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="API mock generator/compiler")
+    parser.add_argument("--once", action="store_true", help="Process existing requests then exit")
+    parser.add_argument("--rebuild-all", action="store_true", help="Recompile all api_mocks/*.cpp before request handling")
+    parser.add_argument("--no-llm", action="store_true", help="Disable LLM generation (cache/source reuse only)")
+    args = parser.parse_args()
+
+    ensure_dirs()
+    handler = APICompilerHandler(allow_llm=not args.no_llm)
+
+    if args.rebuild_all:
+        rebuild_all_mocks()
+    drain_existing_requests(handler)
+
+    if args.once:
+        return
 
     observer = Observer()
-    observer.schedule(event_handler, API_REQUESTS_DIR, recursive=False)
+    observer.schedule(handler, str(API_REQUESTS_DIR), recursive=False)
     observer.start()
     print(f"[*] LLM API Compiler Bot listening on {API_REQUESTS_DIR}/")
-    
+
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
+
+
+if __name__ == "__main__":
+    main()
+
