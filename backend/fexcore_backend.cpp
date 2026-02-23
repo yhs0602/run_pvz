@@ -1,14 +1,49 @@
 #include "fexcore_backend.hpp"
 
+#include <mach-o/dyld.h>
 #include <dlfcn.h>
+#include <cctype>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
+#include <limits.h>
+#include <string>
 #include <vector>
 
 namespace {
 template <typename T>
 T load_sym(void* handle, const char* name) {
     return reinterpret_cast<T>(dlsym(handle, name));
+}
+
+bool env_truthy(const char* name) {
+    const char* v = std::getenv(name);
+    if (!v || !*v) return false;
+    std::string s(v);
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return !(s == "0" || s == "false" || s == "off" || s == "no");
+}
+
+std::string executable_dir() {
+    char local[PATH_MAX];
+    uint32_t size = sizeof(local);
+    std::vector<char> dynamic_buf;
+    char* raw = local;
+    if (_NSGetExecutablePath(local, &size) != 0) {
+        dynamic_buf.assign(size + 1, '\0');
+        if (_NSGetExecutablePath(dynamic_buf.data(), &size) != 0) {
+            return {};
+        }
+        raw = dynamic_buf.data();
+    }
+
+    std::error_code ec;
+    std::filesystem::path exe_path(raw);
+    std::filesystem::path normalized = std::filesystem::weakly_canonical(exe_path, ec);
+    if (ec) {
+        normalized = exe_path;
+    }
+    return normalized.parent_path().string();
 }
 }
 
@@ -22,9 +57,32 @@ bool FexCoreBackend::open_bridge() {
     }
 
     const char* env_path = std::getenv("PVZ_FEXCORE_BRIDGE_PATH");
-    bridge_path_ = (env_path && *env_path) ? env_path : "libpvz_fexcore_bridge.dylib";
+    std::vector<std::string> candidates;
+    if (env_path && *env_path) {
+        candidates.emplace_back(env_path);
+    } else {
+        candidates.emplace_back("libpvz_fexcore_bridge.dylib");
 
-    bridge_.handle = dlopen(bridge_path_.c_str(), RTLD_NOW | RTLD_LOCAL);
+        std::string exe_dir = executable_dir();
+        if (!exe_dir.empty()) {
+            candidates.emplace_back((std::filesystem::path(exe_dir) / "libpvz_fexcore_bridge.dylib").string());
+        }
+
+        std::error_code ec;
+        std::filesystem::path cwd = std::filesystem::current_path(ec);
+        if (!ec) {
+            candidates.emplace_back((cwd / "libpvz_fexcore_bridge.dylib").string());
+        }
+    }
+
+    for (const std::string& candidate : candidates) {
+        bridge_.handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (bridge_.handle) {
+            bridge_path_ = candidate;
+            break;
+        }
+    }
+
     if (!bridge_.handle) {
         return false;
     }
@@ -40,6 +98,7 @@ bool FexCoreBackend::open_bridge() {
     bridge_.emu_stop = load_sym<uc_err (*)(void*)>(bridge_.handle, "pvz_fex_emu_stop");
     bridge_.hook_add = load_sym<uc_err (*)(void*, uc_hook*, int, void*, void*, uint64_t, uint64_t)>(bridge_.handle, "pvz_fex_hook_add");
     bridge_.strerror = load_sym<const char* (*)(uc_err)>(bridge_.handle, "pvz_fex_strerror");
+    bridge_.backend_name = load_sym<const char* (*)()>(bridge_.handle, "pvz_fex_bridge_backend_name");
 
     const bool complete =
         bridge_.open_x86_32 &&
@@ -61,6 +120,21 @@ bool FexCoreBackend::open_bridge() {
     }
 
     std::cout << "[*] FEX bridge loaded: " << bridge_path_ << "\n";
+    if (bridge_.backend_name) {
+        const char* impl = bridge_.backend_name();
+        if (impl && *impl) {
+            std::cout << "[*] FEX bridge backend implementation: " << impl << "\n";
+        }
+    }
+
+    if (env_truthy("PVZ_FEXCORE_STRICT")) {
+        const char* impl = bridge_.backend_name ? bridge_.backend_name() : nullptr;
+        if (!impl || std::string(impl) != "fexcore") {
+            std::cerr << "[!] PVZ_FEXCORE_STRICT=1 but bridge backend is not 'fexcore'.\n";
+            close_bridge();
+            return false;
+        }
+    }
     return true;
 }
 
@@ -78,6 +152,8 @@ void FexCoreBackend::close_bridge() {
 }
 
 bool FexCoreBackend::open_x86_32() {
+    const bool strict_mode = env_truthy("PVZ_FEXCORE_STRICT");
+
     if (using_bridge_) {
         return true;
     }
@@ -90,9 +166,18 @@ bool FexCoreBackend::open_x86_32() {
             using_bridge_ = true;
             return true;
         }
+        if (strict_mode) {
+            std::cerr << "[!] PVZ_FEXCORE_STRICT=1 and bridge open failed.\n";
+            close_bridge();
+            return false;
+        }
         std::cerr << "[!] FEX bridge open failed. Falling back to Unicorn backend.\n";
         close_bridge();
     } else {
+        if (strict_mode) {
+            std::cerr << "[!] PVZ_FEXCORE_STRICT=1 and FEX bridge could not be loaded.\n";
+            return false;
+        }
         std::cerr << "[*] FEX bridge unavailable. Falling back to Unicorn backend.\n";
     }
 
@@ -161,4 +246,3 @@ const char* FexCoreBackend::strerror(uc_err err) const {
     if (using_bridge_) return bridge_.strerror(err);
     return unicorn_fallback_ ? unicorn_fallback_->strerror(err) : "backend not initialized";
 }
-

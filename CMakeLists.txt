@@ -54,3 +54,13 @@ add_executable(
 target_include_directories(runner PRIVATE ${CAPSTONE_INCLUDE_DIRS} ${UNICORN_INCLUDE_DIRS} ${SDL2_INCLUDE_DIRS})
 target_link_directories(runner PRIVATE ${CAPSTONE_LIBRARY_DIRS} ${UNICORN_LIBRARY_DIRS} ${SDL2_LIBRARY_DIRS})
 target_link_libraries(runner LIEF::LIEF capstone unicorn ${SDL2_LIBRARIES})
+
+add_library(
+    pvz_fexcore_bridge
+    SHARED
+    bridge/pvz_fexcore_bridge.cpp
+)
+target_include_directories(pvz_fexcore_bridge PRIVATE ${UNICORN_INCLUDE_DIRS})
+target_link_directories(pvz_fexcore_bridge PRIVATE ${UNICORN_LIBRARY_DIRS})
+target_link_libraries(pvz_fexcore_bridge unicorn)
+set_target_properties(pvz_fexcore_bridge PROPERTIES OUTPUT_NAME "pvz_fexcore_bridge")

@@ -44,6 +44,7 @@ private:
         uc_err (*emu_stop)(void*) = nullptr;
         uc_err (*hook_add)(void*, uc_hook*, int, void*, void*, uint64_t, uint64_t) = nullptr;
         const char* (*strerror)(uc_err) = nullptr;
+        const char* (*backend_name)() = nullptr;
     };
 
     BridgeAPI bridge_;
@@ -53,4 +54,3 @@ private:
     std::unique_ptr<UnicornBackend> unicorn_fallback_;
     std::string bridge_path_;
 };
-
