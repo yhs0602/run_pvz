@@ -50,3 +50,5 @@ build/
 __pycache__
 qemu
 boot_trace.txt
+api_requests/*.json.processed
+llm_cache/api_mocks/
