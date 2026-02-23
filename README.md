@@ -38,6 +38,32 @@ rm -rf compiled_blocks/* llm_cache/* jit_requests/* api_requests/* api_mocks/*
 PVZ_ENABLE_LLM=1 PVZ_ENABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe
 ```
 
+### 4단계: `PVZ_CPU_BACKEND=fexcore` 빌드/실행 (full mode)
+`fexcore` 백엔드 경로를 타려면 전용 빌드 디렉토리를 사용하세요.
+```bash
+# fexcore 백엔드 빌드
+cmake -S . -B build-fex -DPVZ_CPU_BACKEND=fexcore
+cmake --build build-fex -j8
+
+# full mode 실행 (headless 아님)
+DYLD_LIBRARY_PATH="$PWD:/usr/local/lib:/opt/homebrew/lib" \
+PVZ_DISABLE_NATIVE_JIT=1 \
+PVZ_ENABLE_DYLIB_MOCKS=1 \
+PVZ_MAP_NULL_PAGE=1 \
+./build-fex/runner pvz/main.exe
+```
+
+`build-fex/libpvz_fexcore_bridge.dylib`가 자동 빌드되며, 실행 로그에 아래가 보이면 브리지 경유입니다.
+- `[*] CPU backend: fexcore`
+- `[*] FEX bridge loaded: ...`
+- `[*] FEX bridge backend implementation: ...`
+
+실제 libfexcore 구현만 강제하려면 아래처럼 strict 모드를 사용하세요.
+```bash
+PVZ_FEXCORE_STRICT=1 ./build-fex/runner pvz/main.exe
+```
+이때 브리지 구현명이 `fexcore`가 아니면 즉시 종료됩니다.
+
 ### (선택) 디버그/헤드리스 실행 옵션
 디스플레이가 없는 환경이나 코어 부팅 추적이 필요할 때 사용합니다.
 ```bash

@@ -310,3 +310,33 @@
 - 검증:
   - 명령: `PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_ENABLE_DYLIB_MOCKS=1 PVZ_MAP_NULL_PAGE=1 ./build/runner pvz/main.exe`
   - 결과: `UC_ERR` 없이 `Emulation cleanly finished at EIP = 0x0`.
+
+23. `build-fex` 브리지 실체화 + full mode(fexcore 경로) 실행 검증
+- 구현:
+  - `bridge/pvz_fexcore_bridge.cpp` 추가.
+  - `CMakeLists.txt`에 `pvz_fexcore_bridge` shared library 타깃 추가.
+  - 출력물: `build-fex/libpvz_fexcore_bridge.dylib`.
+  - 현재 브리지 구현체는 `unicorn-shim`이며, ABI는 `pvz_fex_*` 시그니처를 준수.
+- `FexCoreBackend` 개선:
+  - 브리지 탐색 경로 확장:
+    - `PVZ_FEXCORE_BRIDGE_PATH`
+    - 실행 파일 디렉토리의 `libpvz_fexcore_bridge.dylib`
+    - 현재 작업 디렉토리의 `libpvz_fexcore_bridge.dylib`
+  - 선택된 브리지 구현명을 로그로 출력:
+    - `[*] FEX bridge backend implementation: ...`
+  - `PVZ_FEXCORE_STRICT=1` 추가:
+    - 브리지 구현명이 `fexcore`가 아니거나 브리지 로드 실패 시 fallback 없이 즉시 종료.
+- 빌드/실행 검증:
+  - 빌드:
+    - `cmake -S . -B build-fex -DPVZ_CPU_BACKEND=fexcore`
+    - `cmake --build build-fex -j8`
+  - full mode 런(15초 샘플):
+    - `DYLD_LIBRARY_PATH="/Users/yanghyeonseo/Developer/pvz:/usr/local/lib:/opt/homebrew/lib" PVZ_DISABLE_NATIVE_JIT=1 PVZ_ENABLE_DYLIB_MOCKS=1 PVZ_MAP_NULL_PAGE=1 ./build-fex/runner pvz/main.exe`
+    - 로그 확인:
+      - `[*] CPU backend: fexcore`
+      - `[*] FEX bridge loaded: libpvz_fexcore_bridge.dylib`
+      - `[*] FEX bridge backend implementation: unicorn-shim`
+      - `[*] Starting C++ Engine Emulation...` 이후 API 흐름 정상 진행
+  - strict 모드 검증:
+    - `PVZ_FEXCORE_STRICT=1 ./build-fex/runner pvz/main.exe`
+    - 기대대로 `backend is not 'fexcore'`로 종료(무의식 fallback 방지).
