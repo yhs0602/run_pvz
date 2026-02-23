@@ -1,9 +1,9 @@
 #pragma once
 
 // CPU backend compatibility entrypoint.
-// Today this project runs on Unicorn; future backends (e.g. libfexcore)
-// should be adapted behind this header first.
-#if defined(PVZ_CPU_BACKEND_UNICORN)
+// We keep Unicorn ABI types (`uc_err`, register ids, hook ids) as the
+// stable API surface across backend implementations.
+#if defined(PVZ_CPU_BACKEND_UNICORN) || defined(PVZ_CPU_BACKEND_FEXCORE)
 #include <unicorn/unicorn.h>
 #else
 #error "No CPU backend selected."

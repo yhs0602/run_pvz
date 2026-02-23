@@ -246,3 +246,20 @@
     - 명령: `PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_ENABLE_LLM=1 PVZ_ENABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe`
     - 로그: `API LLM mode: ON, dylib mocks: ON`
     - 기존 mock 플러그인 경로는 정상 동작(`[JIT MOCK]` 관측)
+
+19. `PVZ_CPU_BACKEND=fexcore` 실제 런타임 경로 추가
+- 구현:
+  - `backend/fexcore_backend.hpp/.cpp` 추가.
+  - `FexCoreBackend`는 우선 `libpvz_fexcore_bridge.dylib`(또는 `PVZ_FEXCORE_BRIDGE_PATH`)를 동적 로딩해 실행 엔진을 연결.
+  - 브리지 미존재/실패 시 Unicorn으로 자동 fallback 하도록 설계(런타임 중단 방지).
+- 빌드 시스템:
+  - `CMakeLists.txt`에서 `PVZ_CPU_BACKEND=unicorn|fexcore` 둘 다 허용.
+  - `PVZ_CPU_BACKEND=fexcore` 빌드 시 `PVZ_CPU_BACKEND_FEXCORE` 정의.
+- 실행 선택:
+  - `main.cpp`에서 컴파일 타임 선택으로 `UnicornBackend`/`FexCoreBackend` 인스턴스 연결.
+- 검증:
+  - `cmake -S . -B build && cmake --build build -j8` 성공.
+  - `cmake -S . -B build-fex -DPVZ_CPU_BACKEND=fexcore && cmake --build build-fex -j8` 성공.
+  - `build-fex/runner` 6초 스모크:
+    - `[*] CPU backend: fexcore`
+    - `[*] FEX bridge unavailable. Falling back to Unicorn backend.`

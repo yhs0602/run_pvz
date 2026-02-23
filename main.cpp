@@ -2,6 +2,7 @@
 #include "windows_env.hpp"
 #include "api_handler.hpp"
 #include "backend/unicorn_backend.hpp"
+#include "backend/fexcore_backend.hpp"
 #include <capstone/capstone.h>
 #include <iostream>
 #include <set>
@@ -459,10 +460,17 @@ int main(int argc, char **argv) {
     }
     g_max_jit_llm_requests = env_int("PVZ_MAX_JIT_REQUESTS", 24);
 
-    // Initialize CPU backend (Unicorn for now)
+    // Initialize CPU backend
     trace("before backend.open_x86_32");
+    #if defined(PVZ_CPU_BACKEND_FEXCORE)
+    FexCoreBackend fexcore_backend;
+    CpuBackend& backend = fexcore_backend;
+    cout << "[*] CPU backend: fexcore\n";
+    #else
     UnicornBackend unicorn_backend;
     CpuBackend& backend = unicorn_backend;
+    cout << "[*] CPU backend: unicorn\n";
+    #endif
     g_backend = &backend;
     if (!backend.open_x86_32()) return 1;
     trace("after backend.open_x86_32");
