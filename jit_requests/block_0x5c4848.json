@@ -1,0 +1,21 @@
+{
+  "address": "0x5c4848",
+  "size": 11,
+  "assembly": [
+    "add eax, 2",
+    "add ecx, 2",
+    "sub edx, 1",
+    "jne 0x5c4840"
+  ],
+  "live_in": [
+    "eax",
+    "ecx",
+    "edx"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "edx",
+    "eflags"
+  ]
+}

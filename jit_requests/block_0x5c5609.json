@@ -1,0 +1,26 @@
+{
+  "address": "0x5c5609",
+  "size": 21,
+  "assembly": [
+    "mov dword ptr [eax - 0x2c04], ebx",
+    "fst qword ptr [ecx]",
+    "mov dword ptr [eax], ebx",
+    "add ecx, 8",
+    "add eax, 4",
+    "sub edx, 1",
+    "jne 0x5c5609"
+  ],
+  "live_in": [
+    "eax",
+    "ebx",
+    "ecx",
+    "edx"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "edx",
+    "eflags",
+    "fpsw"
+  ]
+}

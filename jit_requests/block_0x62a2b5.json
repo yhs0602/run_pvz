@@ -1,0 +1,21 @@
+{
+  "address": "0x62a2b5",
+  "size": 20,
+  "assembly": [
+    "mov edx, dword ptr [ecx + 0xc8]",
+    "movzx eax, bl",
+    "movzx eax, byte ptr [edx + eax*2]",
+    "and eax, 8",
+    "test eax, eax",
+    "je 0x62a2ce"
+  ],
+  "live_in": [
+    "bl",
+    "ecx"
+  ],
+  "live_out": [
+    "eax",
+    "edx",
+    "eflags"
+  ]
+}

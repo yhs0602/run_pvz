@@ -1,0 +1,21 @@
+{
+  "address": "0x5a2384",
+  "size": 37,
+  "assembly": [
+    "xor ebx, ebx",
+    "cmp dword ptr [esp + 0x134], 8",
+    "mov dword ptr [esp + 0xe0], 0xf",
+    "mov dword ptr [esp + 0xdc], ebx",
+    "mov byte ptr [esp + 0xcc], bl",
+    "jb 0x5a23b9"
+  ],
+  "live_in": [
+    "bl",
+    "ebx",
+    "esp"
+  ],
+  "live_out": [
+    "ebx",
+    "eflags"
+  ]
+}

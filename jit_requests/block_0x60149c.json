@@ -1,0 +1,16 @@
+{
+  "address": "0x60149c",
+  "size": 8,
+  "assembly": [
+    "add eax, 1",
+    "cmp eax, 0x10",
+    "jle 0x601472"
+  ],
+  "live_in": [
+    "eax"
+  ],
+  "live_out": [
+    "eax",
+    "eflags"
+  ]
+}

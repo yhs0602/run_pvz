@@ -1,0 +1,26 @@
+{
+  "address": "0x404132",
+  "size": 15,
+  "assembly": [
+    "push ebx",
+    "push eax",
+    "mov eax, dword ptr [ebp + 8]",
+    "lea edx, [esi + 1]",
+    "push edx",
+    "push eax",
+    "call 0x61be1b"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "ebx",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "edx",
+    "esp"
+  ]
+}

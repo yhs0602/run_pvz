@@ -1,0 +1,22 @@
+{
+  "address": "0x41e380",
+  "size": 21,
+  "assembly": [
+    "mov ecx, dword ptr [esp + 0x38]",
+    "push -1",
+    "push ebx",
+    "push ecx",
+    "lea ecx, [esp + 0x14]",
+    "mov dword ptr [esp + 0x38], ebx",
+    "call 0x41dc70"
+  ],
+  "live_in": [
+    "ebx",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "esp"
+  ]
+}

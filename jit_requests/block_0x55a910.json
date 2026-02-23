@@ -1,0 +1,30 @@
+{
+  "address": "0x55a910",
+  "size": 19,
+  "assembly": [
+    "push ebx",
+    "mov ebx, dword ptr [esp + 0xc]",
+    "push ebp",
+    "mov ebp, dword ptr [esp + 0xc]",
+    "cmp dword ptr [ebp + 0x14], ebx",
+    "push esi",
+    "push edi",
+    "mov esi, ecx",
+    "jae 0x55a928"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "ecx",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "ebx",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

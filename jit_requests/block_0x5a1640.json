@@ -1,0 +1,20 @@
+{
+  "address": "0x5a1640",
+  "size": 29,
+  "assembly": [
+    "sub esp, 0x104",
+    "mov eax, dword ptr [0x699fe8]",
+    "xor eax, esp",
+    "mov dword ptr [esp + 0x100], eax",
+    "cmp dword ptr [0x6a9f70], 0",
+    "jne 0x5a16bd"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "eflags",
+    "esp"
+  ]
+}

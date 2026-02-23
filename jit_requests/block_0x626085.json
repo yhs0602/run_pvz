@@ -1,0 +1,20 @@
+{
+  "address": "0x626085",
+  "size": 10,
+  "assembly": [
+    "mov byte ptr [edi], al",
+    "add edi, 1",
+    "sub edx, 1",
+    "jne 0x626085"
+  ],
+  "live_in": [
+    "al",
+    "edi",
+    "edx"
+  ],
+  "live_out": [
+    "edi",
+    "edx",
+    "eflags"
+  ]
+}

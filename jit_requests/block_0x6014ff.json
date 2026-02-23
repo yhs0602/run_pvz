@@ -1,0 +1,32 @@
+{
+  "address": "0x6014ff",
+  "size": 38,
+  "assembly": [
+    "mov ecx, dword ptr [esp + 0x14]",
+    "lea esi, [edx + ecx + 0x490]",
+    "lea edx, [ecx + edx*4 + 0x90]",
+    "mov dword ptr [edx], edi",
+    "mov cl, byte ptr [ebp]",
+    "mov byte ptr [esi], cl",
+    "sub eax, 1",
+    "add edx, 4",
+    "add esi, 1",
+    "test eax, eax",
+    "jg 0x601511"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "edi",
+    "edx",
+    "esp"
+  ],
+  "live_out": [
+    "cl",
+    "eax",
+    "ecx",
+    "edx",
+    "eflags",
+    "esi"
+  ]
+}

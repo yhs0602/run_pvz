@@ -1,0 +1,16 @@
+{
+  "address": "0x5bba44",
+  "size": 8,
+  "assembly": [
+    "mov edi, dword ptr [esp + 0x2c]",
+    "test edi, edi",
+    "je 0x5bba68"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "edi",
+    "eflags"
+  ]
+}

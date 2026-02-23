@@ -1,0 +1,14 @@
+{
+  "address": "0x5c11d3",
+  "size": 6,
+  "assembly": [
+    "cmp byte ptr [esi + 0x35], 0",
+    "je 0x5c11a0"
+  ],
+  "live_in": [
+    "esi"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

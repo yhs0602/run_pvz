@@ -1,0 +1,14 @@
+{
+  "address": "0x62a469",
+  "size": 7,
+  "assembly": [
+    "push 0x69a6f0",
+    "jmp 0x62a471"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "esp"
+  ]
+}

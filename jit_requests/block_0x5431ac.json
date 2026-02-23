@@ -1,0 +1,28 @@
+{
+  "address": "0x5431ac",
+  "size": 26,
+  "assembly": [
+    "add eax, -1",
+    "mov dword ptr [edi + 4], eax",
+    "mov esi, dword ptr [edi + 4]",
+    "neg esi",
+    "sbb esi, esi",
+    "not esi",
+    "lea ecx, [esp + 8]",
+    "and esi, edi",
+    "call 0x60b59b"
+  ],
+  "live_in": [
+    "eax",
+    "edi",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

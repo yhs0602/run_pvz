@@ -1,0 +1,23 @@
+{
+  "address": "0x514a00",
+  "size": 21,
+  "assembly": [
+    "mov dword ptr [edx + 4], ecx",
+    "mov edx, dword ptr [ecx + 4]",
+    "mov dword ptr [eax + 4], edx",
+    "mov edx, dword ptr [esp + 4]",
+    "mov edx, dword ptr [edx + 4]",
+    "cmp ecx, dword ptr [edx + 4]",
+    "jne 0x514a20"
+  ],
+  "live_in": [
+    "eax",
+    "ecx",
+    "edx",
+    "esp"
+  ],
+  "live_out": [
+    "edx",
+    "eflags"
+  ]
+}

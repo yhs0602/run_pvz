@@ -1,0 +1,20 @@
+{
+  "address": "0x60af8c",
+  "size": 12,
+  "assembly": [
+    "mov eax, dword ptr [edi + 8]",
+    "dec esi",
+    "lea eax, [eax + esi*4]",
+    "cmp dword ptr [eax], 0",
+    "je 0x60afab"
+  ],
+  "live_in": [
+    "edi",
+    "esi"
+  ],
+  "live_out": [
+    "eax",
+    "eflags",
+    "esi"
+  ]
+}

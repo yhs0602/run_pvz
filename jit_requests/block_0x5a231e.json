@@ -1,0 +1,22 @@
+{
+  "address": "0x5a231e",
+  "size": 29,
+  "assembly": [
+    "mov esi, eax",
+    "lea edx, [esp + 0x154]",
+    "lea ecx, [esp + 0x11c]",
+    "mov byte ptr [esp + 0x180], 0x27",
+    "call 0x5b1460"
+  ],
+  "live_in": [
+    "eax",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "edx",
+    "esi",
+    "esp"
+  ]
+}

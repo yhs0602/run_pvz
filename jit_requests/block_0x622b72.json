@@ -1,0 +1,18 @@
+{
+  "address": "0x622b72",
+  "size": 6,
+  "assembly": [
+    "add ebx, 0x10",
+    "dec ebp",
+    "jne 0x622b50"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx"
+  ],
+  "live_out": [
+    "ebp",
+    "ebx",
+    "eflags"
+  ]
+}

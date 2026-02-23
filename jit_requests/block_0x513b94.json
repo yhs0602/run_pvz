@@ -1,0 +1,18 @@
+{
+  "address": "0x513b94",
+  "size": 11,
+  "assembly": [
+    "setl al",
+    "test al, al",
+    "mov byte ptr [esp + 0x10], al",
+    "je 0x513ba3"
+  ],
+  "live_in": [
+    "eflags",
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "eflags"
+  ]
+}

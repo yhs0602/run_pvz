@@ -1,0 +1,26 @@
+{
+  "address": "0x403eb1",
+  "size": 15,
+  "assembly": [
+    "lea eax, [esi + 4]",
+    "pop edi",
+    "mov byte ptr [eax], 0",
+    "mov eax, esi",
+    "pop esi",
+    "pop ebp",
+    "pop ebx",
+    "ret 0xc"
+  ],
+  "live_in": [
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ebx",
+    "edi",
+    "esi",
+    "esp"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "address": "0x403f4b",
+  "size": 23,
+  "assembly": [
+    "sub eax, edi",
+    "push eax",
+    "mov eax, dword ptr [esp + 0x18]",
+    "add eax, ebx",
+    "add eax, edi",
+    "push eax",
+    "sub ecx, ebx",
+    "push ecx",
+    "add edx, ebx",
+    "push edx",
+    "call 0x61be96"
+  ],
+  "live_in": [
+    "eax",
+    "ebx",
+    "ecx",
+    "edi",
+    "edx",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "edx",
+    "eflags",
+    "esp"
+  ]
+}

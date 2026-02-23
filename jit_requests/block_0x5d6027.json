@@ -1,0 +1,21 @@
+{
+  "address": "0x5d6027",
+  "size": 16,
+  "assembly": [
+    "mov ecx, dword ptr [esp + 0x30]",
+    "mov eax, esi",
+    "sub eax, dword ptr [ecx]",
+    "cmp edx, 0xd800",
+    "jl 0x5d603f"
+  ],
+  "live_in": [
+    "edx",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "address": "0x5a212b",
+  "size": 13,
+  "assembly": [
+    "mov byte ptr [esp + 0x10], 1",
+    "test bl, bl",
+    "je 0x5a1f60"
+  ],
+  "live_in": [
+    "bl",
+    "esp"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

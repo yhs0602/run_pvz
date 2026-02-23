@@ -1,0 +1,19 @@
+{
+  "address": "0x5bdb00",
+  "size": 8,
+  "assembly": [
+    "test esi, esi",
+    "mov eax, esi",
+    "mov ecx, edi",
+    "jbe 0x5bdb21"
+  ],
+  "live_in": [
+    "edi",
+    "esi"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags"
+  ]
+}

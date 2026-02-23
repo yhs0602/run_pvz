@@ -1,0 +1,29 @@
+{
+  "address": "0x444b80",
+  "size": 19,
+  "assembly": [
+    "mov eax, dword ptr [edi + 4]",
+    "sub esp, 0xc",
+    "push ebx",
+    "mov ebx, dword ptr [esp + 0x18]",
+    "test ebx, ebx",
+    "push ebp",
+    "push esi",
+    "mov esi, dword ptr [eax]",
+    "je 0x444b97"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebx",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

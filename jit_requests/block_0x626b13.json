@@ -1,0 +1,31 @@
+{
+  "address": "0x626b13",
+  "size": 29,
+  "assembly": [
+    "lea edi, [edi + eax + 1]",
+    "mov eax, dword ptr [ebp - 4]",
+    "mov dword ptr [eax], edi",
+    "mov eax, dword ptr [ebp - 0xc]",
+    "push dword ptr [eax + 0x30]",
+    "mov eax, ebx",
+    "sub eax, edi",
+    "add eax, dword ptr [ebp - 8]",
+    "push eax",
+    "push edi",
+    "call 0x6283f8"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "ebx",
+    "edi",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "edi",
+    "eflags",
+    "esp"
+  ]
+}

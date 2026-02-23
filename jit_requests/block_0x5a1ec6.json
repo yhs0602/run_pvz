@@ -1,0 +1,18 @@
+{
+  "address": "0x5a1ec6",
+  "size": 8,
+  "assembly": [
+    "mov esi, dword ptr [eax]",
+    "push eax",
+    "call 0x61c19a"
+  ],
+  "live_in": [
+    "eax",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "esi",
+    "esp"
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "api_name": "mixerSetControlDetails",
+  "module": "WINMM.dll",
+  "address": "0x900005c0"
+}

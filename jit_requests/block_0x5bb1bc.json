@@ -1,0 +1,17 @@
+{
+  "address": "0x5bb1bc",
+  "size": 6,
+  "assembly": [
+    "mov al, 1",
+    "pop ecx",
+    "ret 8"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "ecx",
+    "esp"
+  ]
+}

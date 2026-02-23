@@ -1,0 +1,17 @@
+{
+  "address": "0x5d405a",
+  "size": 11,
+  "assembly": [
+    "movzx ecx, byte ptr [esp + 0x27]",
+    "push ecx",
+    "call 0x61ca95"
+  ],
+  "live_in": [
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "esp"
+  ]
+}

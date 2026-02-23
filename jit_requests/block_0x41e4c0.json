@@ -1,0 +1,27 @@
+{
+  "address": "0x41e4c0",
+  "size": 13,
+  "assembly": [
+    "mov byte ptr [ebx + edi], 0",
+    "pop ebp",
+    "pop edi",
+    "mov eax, esi",
+    "pop esi",
+    "pop ebx",
+    "ret 8"
+  ],
+  "live_in": [
+    "ebx",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ebx",
+    "edi",
+    "esi",
+    "esp"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "address": "0x560890",
+  "size": 11,
+  "assembly": [
+    "mov ecx, dword ptr [esp + 4]",
+    "sub esp, 0xc",
+    "test ecx, ecx",
+    "ja 0x5608ad"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

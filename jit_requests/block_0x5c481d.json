@@ -1,0 +1,17 @@
+{
+  "address": "0x5c481d",
+  "size": 6,
+  "assembly": [
+    "cmp esi, edi",
+    "mov edx, esi",
+    "jb 0x5c4825"
+  ],
+  "live_in": [
+    "edi",
+    "esi"
+  ],
+  "live_out": [
+    "edx",
+    "eflags"
+  ]
+}

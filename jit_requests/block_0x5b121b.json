@@ -1,0 +1,21 @@
+{
+  "address": "0x5b121b",
+  "size": 18,
+  "assembly": [
+    "lea eax, [ebx + 4]",
+    "mov al, byte ptr [eax + ebp]",
+    "cmp al, 0x26",
+    "mov byte ptr [esp + 0x14], al",
+    "jne 0x5b1421"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "eax",
+    "eflags"
+  ]
+}

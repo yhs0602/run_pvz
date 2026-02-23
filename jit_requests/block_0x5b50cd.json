@@ -1,0 +1,19 @@
+{
+  "address": "0x5b50cd",
+  "size": 11,
+  "assembly": [
+    "test ebx, ebx",
+    "mov ecx, dword ptr [edi + 4]",
+    "mov dword ptr [esp + 0x1c], ecx",
+    "je 0x5b50dc"
+  ],
+  "live_in": [
+    "ebx",
+    "edi",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "eflags"
+  ]
+}

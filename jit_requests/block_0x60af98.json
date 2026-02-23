@@ -1,0 +1,17 @@
+{
+  "address": "0x60af98",
+  "size": 7,
+  "assembly": [
+    "mov ecx, dword ptr [eax]",
+    "call 0x543190"
+  ],
+  "live_in": [
+    "eax",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "esp"
+  ]
+}

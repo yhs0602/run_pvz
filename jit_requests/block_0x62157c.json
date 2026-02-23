@@ -1,0 +1,23 @@
+{
+  "address": "0x62157c",
+  "size": 16,
+  "assembly": [
+    "mov ecx, esi",
+    "sub ecx, eax",
+    "sar ecx, 5",
+    "add ecx, 0x10",
+    "push ecx",
+    "call 0x62cf60"
+  ],
+  "live_in": [
+    "eax",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

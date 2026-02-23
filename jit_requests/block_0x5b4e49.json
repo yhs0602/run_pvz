@@ -1,0 +1,23 @@
+{
+  "address": "0x5b4e49",
+  "size": 24,
+  "assembly": [
+    "mov ebx, dword ptr [esp + 0x48]",
+    "test bl, 4",
+    "mov ecx, dword ptr [esp + 0x14]",
+    "mov byte ptr [ecx + 0xd1], al",
+    "mov esi, 0x10",
+    "je 0x5b4e8c"
+  ],
+  "live_in": [
+    "al",
+    "bl",
+    "esp"
+  ],
+  "live_out": [
+    "ebx",
+    "ecx",
+    "eflags",
+    "esi"
+  ]
+}

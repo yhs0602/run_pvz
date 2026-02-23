@@ -1,0 +1,20 @@
+{
+  "address": "0x5b45da",
+  "size": 14,
+  "assembly": [
+    "add esp, 4",
+    "xor ebx, ebx",
+    "cmp byte ptr [esp + 0x90], bl",
+    "jne 0x5b4667"
+  ],
+  "live_in": [
+    "bl",
+    "ebx",
+    "esp"
+  ],
+  "live_out": [
+    "ebx",
+    "eflags",
+    "esp"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "address": "0x5b527e",
+  "size": 4,
+  "assembly": [
+    "cmp ebx, edi",
+    "je 0x5b5287"
+  ],
+  "live_in": [
+    "ebx",
+    "edi"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

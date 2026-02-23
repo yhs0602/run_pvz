@@ -1,0 +1,17 @@
+{
+  "address": "0x41e440",
+  "size": 7,
+  "assembly": [
+    "lea ecx, [eax + ebp]",
+    "cmp ecx, eax",
+    "jae 0x41e44c"
+  ],
+  "live_in": [
+    "eax",
+    "ebp"
+  ],
+  "live_out": [
+    "ecx",
+    "eflags"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "address": "0x62a39e",
+  "size": 8,
+  "assembly": [
+    "mov eax, dword ptr [ebp + 0x18]",
+    "dec edi",
+    "test al, 8",
+    "jne 0x62a3c6"
+  ],
+  "live_in": [
+    "al",
+    "ebp",
+    "edi"
+  ],
+  "live_out": [
+    "eax",
+    "edi",
+    "eflags"
+  ]
+}

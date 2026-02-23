@@ -1,0 +1,14 @@
+{
+  "address": "0x5b4761",
+  "size": 15,
+  "assembly": [
+    "mov dword ptr [edi], 0x6753a0",
+    "mov dword ptr [edi + 4], 1",
+    "jmp 0x5b4772"
+  ],
+  "live_in": [
+    "edi"
+  ],
+  "live_out": [
+  ]
+}

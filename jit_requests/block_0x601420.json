@@ -1,0 +1,24 @@
+{
+  "address": "0x601420",
+  "size": 22,
+  "assembly": [
+    "movsx ecx, byte ptr [esp + esi + 0x431]",
+    "mov dword ptr [esp + esi*4 + 0x2c], edi",
+    "add esi, 1",
+    "add edi, 1",
+    "cmp ecx, ebp",
+    "je 0x601420"
+  ],
+  "live_in": [
+    "ebp",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "edi",
+    "eflags",
+    "esi"
+  ]
+}

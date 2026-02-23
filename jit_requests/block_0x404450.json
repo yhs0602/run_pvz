@@ -1,0 +1,35 @@
+{
+  "address": "0x404450",
+  "size": 41,
+  "assembly": [
+    "mov edx, dword ptr [esp + 4]",
+    "push esi",
+    "mov esi, ecx",
+    "mov eax, edx",
+    "push edi",
+    "mov dword ptr [esi + 0x18], 0xf",
+    "mov dword ptr [esi + 0x14], 0",
+    "mov byte ptr [esi + 4], 0",
+    "lea edi, [eax + 1]",
+    "nop",
+    "mov cl, byte ptr [eax]",
+    "add eax, 1",
+    "test cl, cl",
+    "jne 0x404470"
+  ],
+  "live_in": [
+    "ecx",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "cl",
+    "eax",
+    "edi",
+    "edx",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

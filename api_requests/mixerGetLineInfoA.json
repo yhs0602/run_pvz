@@ -1,0 +1,5 @@
+{
+  "api_name": "mixerGetLineInfoA",
+  "module": "WINMM.dll",
+  "address": "0x90000600"
+}

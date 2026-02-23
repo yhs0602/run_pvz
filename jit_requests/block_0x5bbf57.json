@@ -1,0 +1,31 @@
+{
+  "address": "0x5bbf57",
+  "size": 23,
+  "assembly": [
+    "lea eax, [esi + 0x28]",
+    "mov ecx, dword ptr [esp + 0x70]",
+    "mov dword ptr fs:[0], ecx",
+    "pop ecx",
+    "pop edi",
+    "pop esi",
+    "pop ebp",
+    "pop ebx",
+    "add esp, 0x68",
+    "ret"
+  ],
+  "live_in": [
+    "esi",
+    "esp",
+    "fs"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ebx",
+    "ecx",
+    "edi",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

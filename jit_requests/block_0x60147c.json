@@ -1,0 +1,27 @@
+{
+  "address": "0x60147c",
+  "size": 25,
+  "assembly": [
+    "mov edi, ecx",
+    "sub edi, dword ptr [esp + ecx*4 + 0x2c]",
+    "mov dword ptr [edx + eax*4 + 0x48], edi",
+    "movzx esi, byte ptr [eax + esi]",
+    "add ecx, esi",
+    "mov esi, dword ptr [esp + ecx*4 + 0x28]",
+    "mov dword ptr [edx + eax*4], esi",
+    "jmp 0x60149c"
+  ],
+  "live_in": [
+    "eax",
+    "ecx",
+    "edx",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "edi",
+    "eflags",
+    "esi"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "address": "0x620892",
+  "size": 3,
+  "assembly": [
+    "pop ecx",
+    "pop ecx",
+    "ret"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "esp"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "address": "0x4043ad",
+  "size": 4,
+  "assembly": [
+    "mov eax, dword ptr [ebx]",
+    "jmp 0x4043cd"
+  ],
+  "live_in": [
+    "ebx"
+  ],
+  "live_out": [
+    "eax"
+  ]
+}

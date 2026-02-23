@@ -1,0 +1,21 @@
+{
+  "address": "0x5da58c",
+  "size": 5,
+  "assembly": [
+    "pop edi",
+    "xor al, al",
+    "pop esi",
+    "ret"
+  ],
+  "live_in": [
+    "al",
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "edi",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

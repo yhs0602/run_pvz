@@ -4,6 +4,11 @@
 #include <dlfcn.h>
 #include <unistd.h>
 #include <SDL.h>
+#include <algorithm>
+#include <vector>
+#include <iterator>
+#include <cctype>
+#include <cstring>
 
 // --- Win32 Message Mapping ---
 constexpr uint32_t WM_QUIT = 0x0012;
@@ -25,6 +30,146 @@ struct Win32_MSG {
     int32_t pt_y;
 };
 
+struct HostFileHandle {
+    std::vector<uint8_t> data;
+    size_t pos = 0;
+};
+
+struct EventHandle {
+    bool manual_reset = false;
+    bool signaled = false;
+};
+
+struct MappingHandle {
+    uint32_t file_handle = 0xFFFFFFFFu; // INVALID_HANDLE_VALUE means page-file backed mapping
+};
+
+static std::string read_guest_c_string(uc_engine* uc, uint32_t guest_ptr, size_t max_len = 512) {
+    if (guest_ptr == 0) return "";
+    std::string out;
+    out.reserve(64);
+    for (size_t i = 0; i < max_len; ++i) {
+        char ch = 0;
+        if (uc_mem_read(uc, guest_ptr + i, &ch, 1) != UC_ERR_OK || ch == '\0') break;
+        out.push_back(ch);
+    }
+    return out;
+}
+
+static std::string to_lower_ascii(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+static std::string resolve_case_insensitive_path(const std::string& raw_path) {
+    if (raw_path.empty()) return "";
+
+    std::filesystem::path in(raw_path);
+    std::filesystem::path current = in.is_absolute() ? in.root_path() : std::filesystem::path(".");
+
+    for (const auto& part : in.relative_path()) {
+        std::string needle = part.string();
+        if (needle.empty() || needle == ".") continue;
+        if (needle == "..") {
+            current = current.parent_path();
+            continue;
+        }
+
+        std::filesystem::path exact = current / needle;
+        std::error_code ec;
+        if (std::filesystem::exists(exact, ec) && !ec) {
+            current = exact;
+            continue;
+        }
+
+        if (!std::filesystem::exists(current, ec) || ec || !std::filesystem::is_directory(current, ec)) {
+            return "";
+        }
+
+        const std::string needle_lower = to_lower_ascii(needle);
+        bool matched = false;
+        for (const auto& entry : std::filesystem::directory_iterator(current, ec)) {
+            if (ec) break;
+            std::string filename = entry.path().filename().string();
+            if (to_lower_ascii(filename) == needle_lower) {
+                current = entry.path();
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) return "";
+    }
+
+    std::error_code ec;
+    if (std::filesystem::exists(current, ec) && !ec) {
+        return current.string();
+    }
+    return "";
+}
+
+static std::string resolve_guest_path_to_host(const std::string& guest_path_raw) {
+    if (guest_path_raw.empty()) return "";
+    std::string p = guest_path_raw;
+    std::replace(p.begin(), p.end(), '\\', '/');
+
+    // Normalize "C:/foo/bar" to "foo/bar" for local lookup.
+    if (p.size() >= 2 && p[1] == ':') {
+        p = p.substr(2);
+        while (!p.empty() && (p[0] == '/' || p[0] == '\\')) p.erase(p.begin());
+    }
+
+    std::vector<std::string> variants;
+    if (!p.empty()) variants.push_back(p);
+    if (p.rfind("./", 0) == 0) variants.push_back(p.substr(2));
+    if (!p.empty() && p[0] == '/') variants.push_back(p.substr(1));
+
+    auto add_image_extension_variants = [&](const std::string& src) {
+        if (src.size() <= 4) return;
+        std::string lower = to_lower_ascii(src);
+        auto add_ext = [&](const char* ext) {
+            variants.push_back(src.substr(0, src.size() - 4) + ext);
+        };
+        if (lower.rfind(".tga") == lower.size() - 4) {
+            add_ext(".png");
+            add_ext(".jpg");
+        } else if (lower.rfind(".png") == lower.size() - 4) {
+            add_ext(".tga");
+            add_ext(".jpg");
+        } else if (lower.rfind(".jpg") == lower.size() - 4) {
+            add_ext(".png");
+            add_ext(".tga");
+        }
+    };
+
+    auto add_basename_underscore_variant = [&](const std::string& src) {
+        size_t slash = src.find_last_of('/');
+        std::string dir = (slash == std::string::npos) ? "" : src.substr(0, slash + 1);
+        std::string base = (slash == std::string::npos) ? src : src.substr(slash + 1);
+        if (!base.empty() && base[0] == '_') {
+            variants.push_back(dir + base.substr(1));
+        }
+    };
+
+    for (size_t i = 0; i < variants.size(); ++i) {
+        add_image_extension_variants(variants[i]);
+        add_basename_underscore_variant(variants[i]);
+    }
+
+    std::vector<std::string> roots = {"", "pvz"};
+    for (const auto& root : roots) {
+        for (const auto& rel : variants) {
+            if (rel.empty()) continue;
+            std::string candidate = root.empty() ? rel : (root + "/" + rel);
+            std::error_code ec;
+            if (std::filesystem::exists(candidate, ec) && !ec) return candidate;
+            std::string ci = resolve_case_insensitive_path(candidate);
+            if (!ci.empty()) return ci;
+        }
+    }
+    return "";
+}
+
 // Modified KNOWN_SIGNATURES definition: removed 'const' and 'DummyAPIHandler::' scope
 std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"KERNEL32.dll!GetSystemTimeAsFileTime", 4},
@@ -43,6 +188,12 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"KERNEL32.dll!GetLastError", 0},
     {"KERNEL32.dll!SetLastError", 4},
     {"KERNEL32.dll!CloseHandle", 4},
+    {"KERNEL32.dll!CreateEventA", 16},
+    {"KERNEL32.dll!CreateEventW", 16},
+    {"KERNEL32.dll!CreateThread", 24},
+    {"KERNEL32.dll!SetEvent", 4},
+    {"KERNEL32.dll!ResetEvent", 4},
+    {"KERNEL32.dll!WaitForSingleObject", 8},
     // User32 Trivial APIs (to bypass LLM overhead)
     {"USER32.dll!DestroyWindow", 4},
     {"USER32.dll!DefWindowProcA", 16},
@@ -75,6 +226,7 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"USER32.dll!SetWindowTextA", 8},
     {"USER32.dll!GetWindowTextA", 12},
     {"USER32.dll!GetDesktopWindow", 0},
+    {"USER32.dll!GetActiveWindow", 0},
     {"USER32.dll!GetDC", 4},
     {"USER32.dll!ReleaseDC", 8},
     {"GDI32.dll!GetSystemPaletteEntries", 16},
@@ -85,10 +237,32 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"GDI32.dll!DeleteObject", 4},
     {"GDI32.dll!SetBkMode", 8},
     {"KERNEL32.dll!MulDiv", 12},
+    {"WINMM.dll!mixerOpen", 20},
+    {"WINMM.dll!mixerClose", 4},
+    {"WINMM.dll!mixerGetDevCapsA", 12},
+    {"WINMM.dll!mixerGetDevCapsW", 12},
+    {"WINMM.dll!mixerGetLineInfoA", 12},
+    {"WINMM.dll!mixerGetLineInfoW", 12},
+    {"WINMM.dll!mixerGetLineControlsA", 12},
+    {"WINMM.dll!mixerGetLineControlsW", 12},
+    {"WINMM.dll!mixerGetControlDetailsA", 12},
+    {"WINMM.dll!mixerGetControlDetailsW", 12},
+    {"WINMM.dll!mixerSetControlDetails", 12},
+    {"WINMM.dll!mixerGetNumDevs", 0},
     // DirectX / DirectDraw / Direct3D
     {"KERNEL32.dll!DirectDrawCreate", 12},
     {"KERNEL32.dll!DirectDrawCreateEx", 16},
     {"KERNEL32.dll!Direct3DCreate8", 4},
+    {"KERNEL32.dll!DirectSoundCreate", 12},
+    {"DSOUND.dll!DirectSoundCreate", 12},
+    {"KERNEL32.dll!BASS_Init", 20},
+    {"KERNEL32.dll!BASS_SetConfig", 8},
+    {"KERNEL32.dll!BASS_Start", 0},
+    {"KERNEL32.dll!BASS_Free", 0},
+    {"BASS.dll!BASS_Init", 20},
+    {"BASS.dll!BASS_SetConfig", 8},
+    {"BASS.dll!BASS_Start", 0},
+    {"BASS.dll!BASS_Free", 0},
     {"DDRAW.dll!IDirectDraw7_Method_0", 12},
     {"DDRAW.dll!IDirectDraw7_Method_1", 4},
     {"DDRAW.dll!IDirectDraw7_Method_2", 4},
@@ -96,12 +270,17 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"DDRAW.dll!IDirectDraw7_Method_20", 12},
     {"DDRAW.dll!IDirectDraw7_Method_21", 24},
     {"DDRAW.dll!IDirectDraw7_Method_23", 16},
+    {"DDRAW.dll!IDirectDraw_Method_4", 16}, // CreateClipper(this, flags, outClipper, unkOuter)
+    {"DDRAW.dll!IDirectDraw_Method_5", 20}, // CreatePalette(this, flags, colorTable, outPalette, unkOuter)
+    {"DDRAW.dll!IDirectDraw_Method_15", 8}, // GetMonitorFrequency(this, outHz)
     {"DDRAW.dll!IDirectDraw2_Method_20", 12}, // SetCooperativeLevel
     {"DDRAW.dll!IDirectDraw2_Method_21", 24}, // SetDisplayMode
     {"DDRAW.dll!IDirectDrawSurface2_Method_22", 8}, // GetSurfaceDesc
     {"DDRAW.dll!IDirect3D7_Method_4", 16},
     {"DDRAW.dll!IDirect3DDevice7_Method_0", 12},
     {"DDRAW.dll!IDirect3DDevice7_Method_1", 4},
+    {"DDRAW.dll!IDirectDraw_Method_10", 4}, // FlipToGDISurface (takes 1 arg: THIS)
+    {"DDRAW.dll!IDirectDraw_Method_8", 16}, // EnumDisplayModes (takes 4 args: THIS, dwFlags, lpDDSurfaceDesc, lpContext, lpEnumCallback)
     {"DDRAW.dll!IDirect3DDevice7_Method_2", 4},
     {"DDRAW.dll!IDirect3DDevice7_Method_4", 12},
     {"DDRAW.dll!IDirect3D8_Method_0", 12},
@@ -112,6 +291,26 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"DDRAW.dll!IDirect3D8_Method_15", 28},
     {"DDRAW.dll!IDirectDrawSurface7_Method_25", 20}, // Lock
     {"DDRAW.dll!IDirectDrawSurface7_Method_32", 8},  // Unlock
+    {"DDRAW.dll!IDDSurface_Method_28", 8}, // SetClipper(this, clipper)
+    {"DDRAW.dll!IDDSurface_Method_31", 8}, // SetPalette(this, palette)
+    {"DDRAW.dll!IDirectDrawSurface2_Method_28", 8},
+    {"DDRAW.dll!IDirectDrawSurface2_Method_31", 8},
+    {"DDRAW.dll!IDirectDrawClipper_Method_4", 8},  // GetHWnd(this, outHwnd)
+    {"DDRAW.dll!IDirectDrawClipper_Method_8", 12}, // SetHWnd(this, flags, hwnd)
+    {"DDRAW.dll!IDirectSound_Method_3", 16},       // CreateSoundBuffer
+    {"DDRAW.dll!IDirectSound_Method_6", 12},       // SetCooperativeLevel
+    {"DDRAW.dll!IDirectSoundBuffer_Method_3", 8},   // GetCaps
+    {"DDRAW.dll!IDirectSoundBuffer_Method_4", 12},  // GetCurrentPosition
+    {"DDRAW.dll!IDirectSoundBuffer_Method_9", 8},   // GetStatus
+    {"DDRAW.dll!IDirectSoundBuffer_Method_11", 32}, // Lock
+    {"DDRAW.dll!IDirectSoundBuffer_Method_12", 16}, // Play
+    {"DDRAW.dll!IDirectSoundBuffer_Method_13", 8},  // SetCurrentPosition
+    {"DDRAW.dll!IDirectSoundBuffer_Method_14", 8},  // SetFormat
+    {"DDRAW.dll!IDirectSoundBuffer_Method_15", 8},  // SetVolume
+    {"DDRAW.dll!IDirectSoundBuffer_Method_16", 8},  // SetPan
+    {"DDRAW.dll!IDirectSoundBuffer_Method_17", 8},  // SetFrequency
+    {"DDRAW.dll!IDirectSoundBuffer_Method_18", 4},  // Stop
+    {"DDRAW.dll!IDirectSoundBuffer_Method_19", 20}, // Unlock
     // Dynamic Resolution and Pointer HLE
     {"KERNEL32.dll!GetProcAddress", 8},
     {"KERNEL32.dll!EncodePointer", 4},
@@ -129,6 +328,9 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"KERNEL32.dll!FlsGetValue", 4},
     {"KERNEL32.dll!FlsSetValue", 8},
     {"KERNEL32.dll!TlsSetValue", 8},
+    {"KERNEL32.dll!GetModuleHandleA", 4},
+    {"KERNEL32.dll!TlsAlloc", 0},
+    {"KERNEL32.dll!TlsGetValue", 4},
     {"KERNEL32.dll!InterlockedIncrement", 4},
     {"KERNEL32.dll!InterlockedDecrement", 4},
     {"KERNEL32.dll!InterlockedExchange", 8},
@@ -141,6 +343,23 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"KERNEL32.dll!LCMapStringW", 24},
     {"KERNEL32.dll!LCMapStringA", 24},
     {"KERNEL32.dll!MultiByteToWideChar", 24},
+    {"KERNEL32.dll!WideCharToMultiByte", 32},
+    {"KERNEL32.dll!HeapSize", 12},
+    {"KERNEL32.dll!HeapReAlloc", 16},
+    {"KERNEL32.dll!GetStdHandle", 4},
+    {"KERNEL32.dll!GetFileType", 4},
+    {"KERNEL32.dll!GetCommandLineA", 0},
+    {"KERNEL32.dll!GetEnvironmentStrings", 0},
+    {"KERNEL32.dll!GetEnvironmentStringsW", 0},
+    {"KERNEL32.dll!FreeEnvironmentStringsA", 4},
+    {"KERNEL32.dll!FreeEnvironmentStringsW", 4},
+    {"KERNEL32.dll!GetACP", 0},
+    {"KERNEL32.dll!GetCPInfo", 8},
+    {"KERNEL32.dll!IsValidCodePage", 4},
+    {"KERNEL32.dll!RaiseException", 16},
+    {"KERNEL32.dll!SetHandleCount", 4},
+    {"KERNEL32.dll!SetUnhandledExceptionFilter", 4},
+    {"KERNEL32.dll!EnumSystemLocalesA", 8},
     {"KERNEL32.dll!WideCharToMultiByte", 32},
     {"KERNEL32.dll!GetCPInfo", 8},
     {"KERNEL32.dll!GetACP", 0},
@@ -162,6 +381,7 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"KERNEL32.dll!IsProcessorFeaturePresent", 4},
     {"KERNEL32.dll!ExitProcess", 4},
     {"KERNEL32.dll!TerminateProcess", 8},
+    {"KERNEL32.dll!CorExitProcess", 4},
     // IPC and Memory
     {"KERNEL32.dll!CreateFileMappingA", 24},
     {"KERNEL32.dll!OpenFileMappingA", 12},
@@ -227,8 +447,10 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"ADVAPI32.dll!RegCreateKeyExA", 36},
     {"ADVAPI32.dll!RegSetValueExA", 24},
     {"ADVAPI32.dll!RegCloseKey", 4},
-    // COM (OLE32)
-    {"ole32.dll!CoInitialize", 4}
+    // COM (OLE32/OLEAUT32)
+    {"ole32.dll!CoInitialize", 4},
+    {"OLEAUT32.dll!Ordinal_9", 4}, // SysFreeString
+    {"mscoree.dll!CorExitProcess", 4}
 };
 
 DummyAPIHandler::DummyAPIHandler(uc_engine* engine) : current_addr(FAKE_API_BASE) {
@@ -454,6 +676,26 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             return;
         }
 
+        if (name == "USER32.dll!MessageBoxA") {
+            uint32_t lpText = handler->ctx.get_arg(1);
+            uint32_t lpCaption = handler->ctx.get_arg(2);
+            char text[256] = {0};
+            char caption[256] = {0};
+            if (lpText) uc_mem_read(uc, lpText, text, 255);
+            if (lpCaption) uc_mem_read(uc, lpCaption, caption, 255);
+            std::cout << "\n[API CALL] [ERROR BOX] MessageBoxA: caption='" << caption << "', text='" << text << "'\n";
+            handler->ctx.set_eax(1); // IDOK
+            
+            uint32_t esp;
+            uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+            uint32_t ret_addr;
+            uc_mem_read(uc, esp, &ret_addr, 4);
+            esp += 4 + 16; 
+            uc_reg_write(uc, UC_X86_REG_ESP, &esp);
+            uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+            return;
+        }
+
         if (name == "USER32.dll!RegisterClassA" || name == "USER32.dll!RegisterClassW" ||
             name == "USER32.dll!RegisterClassExA" || name == "USER32.dll!RegisterClassExW") {
             handler->ctx.set_eax(0xC000); // Dummy ATOM
@@ -501,6 +743,12 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             return;
         }
 
+        if (name == "USER32.dll!GetActiveWindow") {
+            handler->ctx.set_eax(0x12345678); // Dummy HWND
+            handler->ctx.pop_args(0);
+            return;
+        }
+
         // --- DIRECTDRAW HLE INTERCEPTS ---
         if (name == "DDRAW.dll!DirectDrawCreate" || name == "DDRAW.dll!DirectDrawCreateEx") {
             int is_ex = (name.find("Ex") != std::string::npos) ? 1 : 0;
@@ -525,13 +773,44 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(4);
                 return;
-            } else if (method_idx == 20) { // SetDisplayMode
+            } else if (method_idx == 4) { // CreateClipper
+                uint32_t lplpClipper = handler->ctx.get_arg(2);
+                if (lplpClipper != 0) {
+                    uint32_t pClipper = handler->create_fake_com_object("IDirectDrawClipper", 20);
+                    uc_mem_write(uc, lplpClipper, &pClipper, 4);
+                }
                 handler->ctx.set_eax(0);
-                handler->ctx.pop_args(6);
+                handler->ctx.pop_args(4); // this, flags, outClipper, unkOuter
                 return;
-            } else if (method_idx == 21) { // SetCooperativeLevel
+            } else if (method_idx == 5) { // CreatePalette
+                uint32_t lplpPalette = handler->ctx.get_arg(3);
+                if (lplpPalette != 0) {
+                    uint32_t pPalette = handler->create_fake_com_object("IDirectDrawPalette", 20);
+                    uc_mem_write(uc, lplpPalette, &pPalette, 4);
+                }
                 handler->ctx.set_eax(0);
-                handler->ctx.pop_args(3);
+                handler->ctx.pop_args(5); // this, flags, colorTable, outPalette, unkOuter
+                return;
+            } else if (method_idx == 10) { // FlipToGDISurface
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(1);
+                return;
+            } else if (method_idx == 15) { // GetMonitorFrequency
+                uint32_t out_hz = handler->ctx.get_arg(1);
+                if (out_hz != 0) {
+                    uint32_t hz = 60;
+                    uc_mem_write(uc, out_hz, &hz, 4);
+                }
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(2);
+                return;
+            } else if (method_idx == 20) { // SetCooperativeLevel for DD1? Actually SetCooperativeLevel is method 20 in DD1, SetDisplayMode is 21.
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(3); // HWND, flags + this
+                return;
+            } else if (method_idx == 21) { // SetDisplayMode
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(4); // width, height, bpp + this
                 return;
             } else if (method_idx == 1 || method_idx == 2) { // AddRef, Release
                 handler->ctx.set_eax(0);
@@ -539,19 +818,51 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 return;
             } else {
                 std::cout << "[HLE DDRAW] Unhandled IDirectDraw method " << method_idx << "\n";
-                // Let it crash naturally to discover the exact args
+                handler->ctx.set_eax(0);
+                auto it = KNOWN_SIGNATURES.find(name);
+                if (it != KNOWN_SIGNATURES.end() && it->second > 0) {
+                    handler->ctx.pop_args(it->second / 4);
+                } else {
+                    // Fallback guessing it's 1 arg (THIS) if not in signatures
+                    handler->ctx.pop_args(1);
+                }
+                return;
             }
         }
 
-        if (name.find("DDRAW.dll!IDDSurface_Method_") != std::string::npos) {
+        if (name.find("DDRAW.dll!IDDSurface_Method_") != std::string::npos ||
+            name.find("DDRAW.dll!IDirectDrawSurface2_Method_") != std::string::npos) {
             int method_idx = std::stoi(name.substr(name.find_last_of('_') + 1));
             
             if (method_idx == 25 || method_idx == 20) { // Lock
                 uint32_t lpDDSurfaceDesc = handler->ctx.get_arg(2);
                 if (lpDDSurfaceDesc != 0) {
+                    uint32_t ddsd_size = 124;
+                    uint32_t ddsd_flags = 0x100F; // CAPS|HEIGHT|WIDTH|PITCH|PIXELFORMAT
+                    uint32_t height = 600;
+                    uint32_t width = 800;
                     uint32_t pitch = 800 * 4;
+                    uint32_t pf_size = 32;
+                    uint32_t pf_flags = 0x40; // DDPF_RGB
+                    uint32_t bpp = 32;
+                    uint32_t r_mask = 0x00FF0000;
+                    uint32_t g_mask = 0x0000FF00;
+                    uint32_t b_mask = 0x000000FF;
+                    uint32_t a_mask = 0x00000000;
+                    uc_mem_write(uc, lpDDSurfaceDesc + 0, &ddsd_size, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 4, &ddsd_flags, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 8, &height, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 12, &width, 4);
                     uc_mem_write(uc, lpDDSurfaceDesc + 16, &pitch, 4); 
-                    uc_mem_write(uc, lpDDSurfaceDesc + 36, &handler->ctx.guest_vram, 4); 
+                    uc_mem_write(uc, lpDDSurfaceDesc + 36, &handler->ctx.guest_vram, 4);
+                    // DDPIXELFORMAT at +72
+                    uc_mem_write(uc, lpDDSurfaceDesc + 72, &pf_size, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 76, &pf_flags, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 84, &bpp, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 88, &r_mask, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 92, &g_mask, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 96, &b_mask, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 100, &a_mask, 4);
                 }
                 std::cout << "[HLE DDRAW] Surface Lock Intercepted\n";
                 handler->ctx.set_eax(0);
@@ -577,15 +888,237 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             } else if (method_idx == 22 || method_idx == 17) { // GetSurfaceDesc
                 uint32_t lpDDSurfaceDesc = handler->ctx.get_arg(1);
                 if (lpDDSurfaceDesc != 0) {
+                    uint32_t ddsd_size = 124;
+                    uint32_t ddsd_flags = 0x100F; // CAPS|HEIGHT|WIDTH|PITCH|PIXELFORMAT
+                    uint32_t height = 600;
+                    uint32_t width = 800;
                     uint32_t pitch = 800 * 4;
+                    uint32_t pf_size = 32;
+                    uint32_t pf_flags = 0x40; // DDPF_RGB
+                    uint32_t bpp = 32;
+                    uint32_t r_mask = 0x00FF0000;
+                    uint32_t g_mask = 0x0000FF00;
+                    uint32_t b_mask = 0x000000FF;
+                    uint32_t a_mask = 0x00000000;
+                    uc_mem_write(uc, lpDDSurfaceDesc + 0, &ddsd_size, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 4, &ddsd_flags, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 8, &height, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 12, &width, 4);
                     uc_mem_write(uc, lpDDSurfaceDesc + 16, &pitch, 4); 
-                    uc_mem_write(uc, lpDDSurfaceDesc + 36, &handler->ctx.guest_vram, 4); 
+                    uc_mem_write(uc, lpDDSurfaceDesc + 36, &handler->ctx.guest_vram, 4);
+                    // DDPIXELFORMAT at +72
+                    uc_mem_write(uc, lpDDSurfaceDesc + 72, &pf_size, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 76, &pf_flags, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 84, &bpp, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 88, &r_mask, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 92, &g_mask, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 96, &b_mask, 4);
+                    uc_mem_write(uc, lpDDSurfaceDesc + 100, &a_mask, 4);
                 }
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(2);
+                return;
+            } else if (method_idx == 12) { // GetAttachedSurface
+                uint32_t pSurfaceOut = handler->ctx.get_arg(2);
+                if (pSurfaceOut != 0) {
+                    uint32_t this_surface = handler->ctx.get_arg(0);
+                    // Return self as a stable attached surface for now.
+                    uc_mem_write(uc, pSurfaceOut, &this_surface, 4);
+                }
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(3);
+                return;
+            } else if (method_idx == 21) { // GetPixelFormat
+                uint32_t lpPixelFormat = handler->ctx.get_arg(1);
+                if (lpPixelFormat != 0) {
+                    uint32_t pf_size = 32;
+                    uint32_t pf_flags = 0x40; // DDPF_RGB
+                    uint32_t bpp = 32;
+                    uint32_t r_mask = 0x00FF0000;
+                    uint32_t g_mask = 0x0000FF00;
+                    uint32_t b_mask = 0x000000FF;
+                    uint32_t a_mask = 0x00000000;
+                    uc_mem_write(uc, lpPixelFormat + 0, &pf_size, 4);
+                    uc_mem_write(uc, lpPixelFormat + 4, &pf_flags, 4);
+                    uc_mem_write(uc, lpPixelFormat + 12, &bpp, 4);
+                    uc_mem_write(uc, lpPixelFormat + 16, &r_mask, 4);
+                    uc_mem_write(uc, lpPixelFormat + 20, &g_mask, 4);
+                    uc_mem_write(uc, lpPixelFormat + 24, &b_mask, 4);
+                    uc_mem_write(uc, lpPixelFormat + 28, &a_mask, 4);
+                }
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(2);
+                return;
+            } else if (method_idx == 28 || method_idx == 31) { // SetClipper / SetPalette
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(2);
                 return;
             } else {
                 std::cout << "[HLE DDRAW] Unhandled IDDSurface method " << method_idx << "\n";
+                handler->ctx.set_eax(0);
+                auto it = KNOWN_SIGNATURES.find(name);
+                if (it != KNOWN_SIGNATURES.end() && it->second > 0) {
+                    handler->ctx.pop_args(it->second / 4);
+                } else {
+                    handler->ctx.pop_args(1);
+                }
+                return;
+            }
+        }
+
+        if (name.find("DDRAW.dll!IDirectDrawClipper_Method_") != std::string::npos) {
+            int method_idx = std::stoi(name.substr(name.find_last_of('_') + 1));
+            if (method_idx == 1 || method_idx == 2) { // AddRef / Release
+                handler->ctx.set_eax(1);
+                handler->ctx.pop_args(1);
+                return;
+            } else if (method_idx == 4) { // GetHWnd
+                uint32_t out_hwnd = handler->ctx.get_arg(1);
+                if (out_hwnd != 0) {
+                    uint32_t hwnd = 0x12345678;
+                    uc_mem_write(uc, out_hwnd, &hwnd, 4);
+                }
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(2);
+                return;
+            } else if (method_idx == 8) { // SetHWnd
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(3);
+                return;
+            } else {
+                std::cout << "[HLE DDRAW] Unhandled IDirectDrawClipper method " << method_idx << "\n";
+                handler->ctx.set_eax(0);
+                auto it = KNOWN_SIGNATURES.find(name);
+                if (it != KNOWN_SIGNATURES.end() && it->second > 0) {
+                    handler->ctx.pop_args(it->second / 4);
+                } else {
+                    handler->ctx.pop_args(1);
+                }
+                return;
+            }
+        }
+
+        if (name.find("DDRAW.dll!IDirectSound_Method_") != std::string::npos) {
+            int method_idx = std::stoi(name.substr(name.find_last_of('_') + 1));
+            if (method_idx == 1 || method_idx == 2) { // AddRef / Release
+                handler->ctx.set_eax(1);
+                handler->ctx.pop_args(1);
+                return;
+            } else if (method_idx == 6) { // SetCooperativeLevel
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(3);
+                return;
+            } else if (method_idx == 3) { // CreateSoundBuffer
+                uint32_t out_ds_buffer = handler->ctx.get_arg(2);
+                if (out_ds_buffer != 0) {
+                    uint32_t ds_buf = handler->create_fake_com_object("IDirectSoundBuffer", 40);
+                    uc_mem_write(uc, out_ds_buffer, &ds_buf, 4);
+                }
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(4);
+                return;
+            } else {
+                std::cout << "[HLE DSOUND] Unhandled IDirectSound method " << method_idx << "\n";
+                handler->ctx.set_eax(0);
+                auto it = KNOWN_SIGNATURES.find(name);
+                if (it != KNOWN_SIGNATURES.end() && it->second > 0) {
+                    handler->ctx.pop_args(it->second / 4);
+                } else {
+                    handler->ctx.pop_args(1);
+                }
+                return;
+            }
+        }
+
+        if (name.find("DDRAW.dll!IDirectSoundBuffer_Method_") != std::string::npos) {
+            int method_idx = std::stoi(name.substr(name.find_last_of('_') + 1));
+            if (method_idx == 1 || method_idx == 2) { // AddRef / Release
+                handler->ctx.set_eax(1);
+                handler->ctx.pop_args(1);
+                return;
+            } else if (method_idx == 3) { // GetCaps
+                uint32_t lpCaps = handler->ctx.get_arg(1);
+                if (lpCaps != 0) {
+                    uint32_t size = 0;
+                    uc_mem_read(uc, lpCaps, &size, 4);
+                    if (size >= 8) {
+                        uint32_t flags = 0;
+                        uc_mem_write(uc, lpCaps + 4, &flags, 4);
+                    }
+                }
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(2);
+                return;
+            } else if (method_idx == 4) { // GetCurrentPosition
+                uint32_t pPlay = handler->ctx.get_arg(1);
+                uint32_t pWrite = handler->ctx.get_arg(2);
+                uint32_t zero = 0;
+                if (pPlay) uc_mem_write(uc, pPlay, &zero, 4);
+                if (pWrite) uc_mem_write(uc, pWrite, &zero, 4);
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(3);
+                return;
+            } else if (method_idx == 9) { // GetStatus
+                uint32_t pStatus = handler->ctx.get_arg(1);
+                uint32_t status = 0;
+                if (pStatus) uc_mem_write(uc, pStatus, &status, 4);
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(2);
+                return;
+            } else if (method_idx == 11) { // Lock
+                uint32_t write_cursor = handler->ctx.get_arg(1);
+                uint32_t write_bytes = handler->ctx.get_arg(2);
+                uint32_t ppv1 = handler->ctx.get_arg(3);
+                uint32_t pbytes1 = handler->ctx.get_arg(4);
+                uint32_t ppv2 = handler->ctx.get_arg(5);
+                uint32_t pbytes2 = handler->ctx.get_arg(6);
+                if (handler->ctx.global_state.find("DirectSoundHeap") == handler->ctx.global_state.end()) {
+                    handler->ctx.global_state["DirectSoundHeap"] = 0x34000000;
+                    uc_mem_map(uc, 0x34000000, 0x01000000, UC_PROT_ALL);
+                }
+                uint32_t base = static_cast<uint32_t>(handler->ctx.global_state["DirectSoundHeap"]);
+                uint32_t ptr1 = base + (write_cursor & 0xFFFFF);
+                uint32_t bytes1 = write_bytes;
+                uint32_t ptr2 = 0;
+                uint32_t bytes2 = 0;
+                if (ppv1) uc_mem_write(uc, ppv1, &ptr1, 4);
+                if (pbytes1) uc_mem_write(uc, pbytes1, &bytes1, 4);
+                if (ppv2) uc_mem_write(uc, ppv2, &ptr2, 4);
+                if (pbytes2) uc_mem_write(uc, pbytes2, &bytes2, 4);
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(8);
+                return;
+            } else if (method_idx == 12) { // Play
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(4);
+                return;
+            } else if (method_idx == 13) { // SetCurrentPosition
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(2);
+                return;
+            } else if (method_idx == 14 || method_idx == 15 ||
+                       method_idx == 16 || method_idx == 17) { // SetFormat/SetVolume/SetPan/SetFrequency
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(2);
+                return;
+            } else if (method_idx == 18) { // Stop
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(1);
+                return;
+            } else if (method_idx == 19) { // Unlock
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(5);
+                return;
+            } else {
+                std::cout << "[HLE DSOUND] Unhandled IDirectSoundBuffer method " << method_idx << "\n";
+                handler->ctx.set_eax(0);
+                auto it = KNOWN_SIGNATURES.find(name);
+                if (it != KNOWN_SIGNATURES.end() && it->second > 0) {
+                    handler->ctx.pop_args(it->second / 4);
+                } else {
+                    handler->ctx.pop_args(1);
+                }
+                return;
             }
         }
 
@@ -660,6 +1193,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
         }
 
         bool known = (KNOWN_SIGNATURES.find(name) != KNOWN_SIGNATURES.end());
+        if (name.find("GetProcAddress") != std::string::npos) known = true;
         std::cout << "\n[DEBUG] hook_api_call name='" << name << "', known=" << known << "\n";
         
         if (handler->try_load_dylib(name)) {
@@ -692,6 +1226,38 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
                 handler->ctx.set_eax(1);
                 std::cout << "\n[API CALL] [OK] GetVersionExA (Spoofed Win7)" << std::endl;
+            } else if (name == "KERNEL32.dll!GetSystemDirectoryA" || name == "KERNEL32.dll!GetWindowsDirectoryA") {
+                uint32_t lpBuffer = handler->ctx.get_arg(0);
+                uint32_t uSize = handler->ctx.get_arg(1);
+                const char* value = (name == "KERNEL32.dll!GetSystemDirectoryA")
+                    ? "C:\\Windows\\System32"
+                    : "C:\\Windows";
+                uint32_t len = static_cast<uint32_t>(std::strlen(value));
+                if (lpBuffer != 0 && uSize > 0) {
+                    uint32_t to_copy = std::min<uint32_t>(len, uSize - 1);
+                    uc_mem_write(uc, lpBuffer, value, to_copy);
+                    char nul = '\0';
+                    uc_mem_write(uc, lpBuffer + to_copy, &nul, 1);
+                }
+                handler->ctx.set_eax(len);
+                handler->ctx.global_state["LastError"] = 0;
+            } else if (name == "KERNEL32.dll!GetSystemDirectoryW" || name == "KERNEL32.dll!GetWindowsDirectoryW") {
+                uint32_t lpBuffer = handler->ctx.get_arg(0);
+                uint32_t uSize = handler->ctx.get_arg(1); // WCHAR count
+                const char* ascii = (name == "KERNEL32.dll!GetSystemDirectoryW")
+                    ? "C:\\Windows\\System32"
+                    : "C:\\Windows";
+                std::u16string wide;
+                for (const char* p = ascii; *p; ++p) wide.push_back(static_cast<char16_t>(*p));
+                uint32_t len = static_cast<uint32_t>(wide.size());
+                if (lpBuffer != 0 && uSize > 0) {
+                    uint32_t to_copy = std::min<uint32_t>(len, uSize - 1);
+                    uc_mem_write(uc, lpBuffer, wide.data(), to_copy * 2);
+                    uint16_t nul = 0;
+                    uc_mem_write(uc, lpBuffer + to_copy * 2, &nul, 2);
+                }
+                handler->ctx.set_eax(len);
+                handler->ctx.global_state["LastError"] = 0;
             } else if (name == "KERNEL32.dll!GetProcessHeap") {
                 handler->ctx.set_eax(0x11000000); // Dummy Heap Handle
                 std::cout << "\n[API CALL] [OK] GetProcessHeap" << std::endl;
@@ -725,6 +1291,247 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             } else if (name == "KERNEL32.dll!HeapFree") {
                 handler->ctx.set_eax(1); // Success
                 std::cout << "\n[API CALL] [OK] HeapFree" << std::endl;
+            } else if (name == "KERNEL32.dll!CreateFileA") {
+                uint32_t lpFileName = handler->ctx.get_arg(0);
+                uint32_t creationDisposition = handler->ctx.get_arg(4);
+                std::string guest_path = read_guest_c_string(uc, lpFileName, 1024);
+                std::string host_path = resolve_guest_path_to_host(guest_path);
+                if (host_path.empty()) {
+                    std::string normalized = guest_path;
+                    std::replace(normalized.begin(), normalized.end(), '\\', '/');
+                    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                    // Some PvZ builds probe adlist/popc registry files that may not exist yet.
+                    bool allow_virtual = (normalized == "adlist.txt" ||
+                                          normalized == "vhwb.dat" ||
+                                          normalized == "vhw.dat" ||
+                                          normalized == "../popcreg.dat" ||
+                                          normalized == "popcreg.dat" ||
+                                          normalized == "c:/windows/system32/" ||
+                                          normalized == "windows/system32/");
+                    // CREATE_NEW(1), CREATE_ALWAYS(2), OPEN_ALWAYS(4) can create a backing file.
+                    if (creationDisposition == 1 || creationDisposition == 2 || creationDisposition == 4) {
+                        allow_virtual = true;
+                    }
+
+                    if (allow_virtual) {
+                        auto* fh = new HostFileHandle();
+                        fh->pos = 0;
+                        uint32_t handle = 0x5000;
+                        if (handler->ctx.global_state.find("FileHandleTop") == handler->ctx.global_state.end()) {
+                            handler->ctx.global_state["FileHandleTop"] = handle;
+                        } else {
+                            handle = static_cast<uint32_t>(handler->ctx.global_state["FileHandleTop"]);
+                        }
+                        handler->ctx.global_state["FileHandleTop"] = handle + 4;
+                        handler->ctx.handle_map["file_" + std::to_string(handle)] = fh;
+                        handler->ctx.set_eax(handle);
+                        handler->ctx.global_state["LastError"] = 0;
+                        std::cout << "\n[API CALL] [FILE] CreateFileA('" << guest_path
+                                  << "') -> virtual empty file handle=0x"
+                                  << std::hex << handle << std::dec
+                                  << " (disp=" << creationDisposition << ")\n";
+                    } else {
+                        handler->ctx.set_eax(0xFFFFFFFFu); // INVALID_HANDLE_VALUE
+                        handler->ctx.global_state["LastError"] = 2; // ERROR_FILE_NOT_FOUND
+                        std::cout << "\n[API CALL] [FILE] CreateFileA('" << guest_path << "') -> NOT FOUND\n";
+                    }
+                } else {
+                    auto* fh = new HostFileHandle();
+                    std::ifstream in(host_path, std::ios::binary);
+                    fh->data.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+                    fh->pos = 0;
+
+                    uint32_t handle = 0x5000;
+                    if (handler->ctx.global_state.find("FileHandleTop") == handler->ctx.global_state.end()) {
+                        handler->ctx.global_state["FileHandleTop"] = handle;
+                    } else {
+                        handle = static_cast<uint32_t>(handler->ctx.global_state["FileHandleTop"]);
+                    }
+                    handler->ctx.global_state["FileHandleTop"] = handle + 4;
+                    handler->ctx.handle_map["file_" + std::to_string(handle)] = fh;
+
+                    handler->ctx.set_eax(handle);
+                    handler->ctx.global_state["LastError"] = 0;
+                    std::cout << "\n[API CALL] [FILE] CreateFileA('" << guest_path << "') -> handle=0x"
+                              << std::hex << handle << std::dec << " (" << fh->data.size() << " bytes)\n";
+                }
+            } else if (name == "KERNEL32.dll!ReadFile") {
+                uint32_t hFile = handler->ctx.get_arg(0);
+                uint32_t lpBuffer = handler->ctx.get_arg(1);
+                uint32_t nBytesToRead = handler->ctx.get_arg(2);
+                uint32_t lpBytesRead = handler->ctx.get_arg(3);
+                auto key = "file_" + std::to_string(hFile);
+                auto itf = handler->ctx.handle_map.find(key);
+                if (itf == handler->ctx.handle_map.end()) {
+                    uint32_t zero = 0;
+                    if (lpBytesRead) uc_mem_write(uc, lpBytesRead, &zero, 4);
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
+                } else {
+                    auto* fh = static_cast<HostFileHandle*>(itf->second);
+                    size_t remaining = (fh->pos < fh->data.size()) ? (fh->data.size() - fh->pos) : 0;
+                    uint32_t to_read = static_cast<uint32_t>(std::min<size_t>(remaining, nBytesToRead));
+                    if (to_read > 0) {
+                        uc_mem_write(uc, lpBuffer, fh->data.data() + fh->pos, to_read);
+                        fh->pos += to_read;
+                    }
+                    if (lpBytesRead) uc_mem_write(uc, lpBytesRead, &to_read, 4);
+                    handler->ctx.set_eax(1);
+                    handler->ctx.global_state["LastError"] = 0;
+                }
+            } else if (name == "KERNEL32.dll!WriteFile") {
+                uint32_t hFile = handler->ctx.get_arg(0);
+                uint32_t lpBuffer = handler->ctx.get_arg(1);
+                uint32_t nBytesToWrite = handler->ctx.get_arg(2);
+                uint32_t lpBytesWritten = handler->ctx.get_arg(3);
+                auto key = "file_" + std::to_string(hFile);
+                auto itf = handler->ctx.handle_map.find(key);
+                if (itf == handler->ctx.handle_map.end()) {
+                    uint32_t zero = 0;
+                    if (lpBytesWritten) uc_mem_write(uc, lpBytesWritten, &zero, 4);
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
+                } else {
+                    auto* fh = static_cast<HostFileHandle*>(itf->second);
+                    if (fh->pos > fh->data.size()) fh->data.resize(fh->pos, 0);
+                    if (nBytesToWrite > 0) {
+                        if (fh->pos + nBytesToWrite > fh->data.size()) fh->data.resize(fh->pos + nBytesToWrite);
+                        uc_mem_read(uc, lpBuffer, fh->data.data() + fh->pos, nBytesToWrite);
+                        fh->pos += nBytesToWrite;
+                    }
+                    if (lpBytesWritten) uc_mem_write(uc, lpBytesWritten, &nBytesToWrite, 4);
+                    handler->ctx.set_eax(1);
+                    handler->ctx.global_state["LastError"] = 0;
+                }
+            } else if (name == "KERNEL32.dll!GetFileSize") {
+                uint32_t hFile = handler->ctx.get_arg(0);
+                auto key = "file_" + std::to_string(hFile);
+                auto itf = handler->ctx.handle_map.find(key);
+                if (itf == handler->ctx.handle_map.end()) {
+                    handler->ctx.set_eax(0xFFFFFFFFu);
+                    handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
+                } else {
+                    auto* fh = static_cast<HostFileHandle*>(itf->second);
+                    handler->ctx.set_eax(static_cast<uint32_t>(fh->data.size()));
+                    handler->ctx.global_state["LastError"] = 0;
+                }
+            } else if (name == "KERNEL32.dll!SetFilePointer") {
+                uint32_t hFile = handler->ctx.get_arg(0);
+                int32_t distance = static_cast<int32_t>(handler->ctx.get_arg(1));
+                uint32_t moveMethod = handler->ctx.get_arg(3); // FILE_BEGIN=0, FILE_CURRENT=1, FILE_END=2
+                auto key = "file_" + std::to_string(hFile);
+                auto itf = handler->ctx.handle_map.find(key);
+                if (itf == handler->ctx.handle_map.end()) {
+                    handler->ctx.set_eax(0xFFFFFFFFu);
+                    handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
+                } else {
+                    auto* fh = static_cast<HostFileHandle*>(itf->second);
+                    int64_t base = 0;
+                    if (moveMethod == 1) base = static_cast<int64_t>(fh->pos);
+                    else if (moveMethod == 2) base = static_cast<int64_t>(fh->data.size());
+                    int64_t next = base + static_cast<int64_t>(distance);
+                    if (next < 0) next = 0;
+                    fh->pos = static_cast<size_t>(next);
+                    handler->ctx.set_eax(static_cast<uint32_t>(fh->pos));
+                    handler->ctx.global_state["LastError"] = 0;
+                }
+            } else if (name == "KERNEL32.dll!CreateEventA" || name == "KERNEL32.dll!CreateEventW") {
+                uint32_t bManualReset = handler->ctx.get_arg(1);
+                uint32_t bInitialState = handler->ctx.get_arg(2);
+                auto* ev = new EventHandle();
+                ev->manual_reset = (bManualReset != 0);
+                ev->signaled = (bInitialState != 0);
+
+                uint32_t handle = 0x7000;
+                if (handler->ctx.global_state.find("EventHandleTop") == handler->ctx.global_state.end()) {
+                    handler->ctx.global_state["EventHandleTop"] = handle;
+                } else {
+                    handle = static_cast<uint32_t>(handler->ctx.global_state["EventHandleTop"]);
+                }
+                handler->ctx.global_state["EventHandleTop"] = handle + 4;
+                handler->ctx.handle_map["event_" + std::to_string(handle)] = ev;
+                handler->ctx.set_eax(handle);
+                handler->ctx.global_state["LastError"] = 0;
+            } else if (name == "KERNEL32.dll!CreateThread") {
+                uint32_t lpThreadId = handler->ctx.get_arg(5);
+                uint32_t handle = 0x8000;
+                if (handler->ctx.global_state.find("ThreadHandleTop") == handler->ctx.global_state.end()) {
+                    handler->ctx.global_state["ThreadHandleTop"] = handle;
+                } else {
+                    handle = static_cast<uint32_t>(handler->ctx.global_state["ThreadHandleTop"]);
+                }
+                handler->ctx.global_state["ThreadHandleTop"] = handle + 4;
+                if (lpThreadId != 0) {
+                    uint32_t tid = 1;
+                    uc_mem_write(uc, lpThreadId, &tid, 4);
+                }
+                handler->ctx.set_eax(handle);
+                handler->ctx.global_state["LastError"] = 0;
+            } else if (name == "KERNEL32.dll!SetEvent") {
+                uint32_t h = handler->ctx.get_arg(0);
+                auto it = handler->ctx.handle_map.find("event_" + std::to_string(h));
+                if (it != handler->ctx.handle_map.end()) {
+                    static_cast<EventHandle*>(it->second)->signaled = true;
+                    handler->ctx.set_eax(1);
+                    handler->ctx.global_state["LastError"] = 0;
+                } else {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 6;
+                }
+            } else if (name == "KERNEL32.dll!ResetEvent") {
+                uint32_t h = handler->ctx.get_arg(0);
+                auto it = handler->ctx.handle_map.find("event_" + std::to_string(h));
+                if (it != handler->ctx.handle_map.end()) {
+                    static_cast<EventHandle*>(it->second)->signaled = false;
+                    handler->ctx.set_eax(1);
+                    handler->ctx.global_state["LastError"] = 0;
+                } else {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 6;
+                }
+            } else if (name == "KERNEL32.dll!WaitForSingleObject") {
+                uint32_t h = handler->ctx.get_arg(0);
+                auto it = handler->ctx.handle_map.find("event_" + std::to_string(h));
+                if (it != handler->ctx.handle_map.end()) {
+                    auto* ev = static_cast<EventHandle*>(it->second);
+                    handler->ctx.set_eax(0); // WAIT_OBJECT_0
+                    if (!ev->manual_reset) ev->signaled = false;
+                    handler->ctx.global_state["LastError"] = 0;
+                } else {
+                    // Treat non-event handles as already-signaled for compatibility.
+                    handler->ctx.set_eax(0); // WAIT_OBJECT_0
+                    handler->ctx.global_state["LastError"] = 0;
+                }
+            } else if (name == "KERNEL32.dll!CloseHandle") {
+                uint32_t h = handler->ctx.get_arg(0);
+                auto itf = handler->ctx.handle_map.find("file_" + std::to_string(h));
+                if (itf != handler->ctx.handle_map.end()) {
+                    delete static_cast<HostFileHandle*>(itf->second);
+                    handler->ctx.handle_map.erase(itf);
+                    handler->ctx.set_eax(1);
+                    handler->ctx.global_state["LastError"] = 0;
+                } else {
+                    auto itm = handler->ctx.handle_map.find("mapping_" + std::to_string(h));
+                    if (itm != handler->ctx.handle_map.end()) {
+                        delete static_cast<MappingHandle*>(itm->second);
+                        handler->ctx.handle_map.erase(itm);
+                        handler->ctx.set_eax(1);
+                        handler->ctx.global_state["LastError"] = 0;
+                        return;
+                    }
+                    auto ite = handler->ctx.handle_map.find("event_" + std::to_string(h));
+                    if (ite != handler->ctx.handle_map.end()) {
+                        delete static_cast<EventHandle*>(ite->second);
+                        handler->ctx.handle_map.erase(ite);
+                        handler->ctx.set_eax(1);
+                        handler->ctx.global_state["LastError"] = 0;
+                    } else {
+                        // Non-file handles are currently treated as success for compatibility.
+                        handler->ctx.set_eax(1);
+                        handler->ctx.global_state["LastError"] = 0;
+                    }
+                }
             } else if (name == "KERNEL32.dll!GetProcAddress") {
                 uint32_t hModule = handler->ctx.get_arg(0);
                 uint32_t lpProcName = handler->ctx.get_arg(1);
@@ -738,7 +1545,22 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     procName = "Ordinal_" + std::to_string(lpProcName);
                 }
                 
-                std::string full_name = "KERNEL32.dll!" + procName;
+                std::string module_name = "KERNEL32.dll";
+                switch (hModule) {
+                    case 0x76000000: module_name = "KERNEL32.dll"; break;
+                    case 0x77000000: module_name = "ntdll.dll"; break;
+                    case 0x75000000: module_name = "USER32.dll"; break;
+                    case 0x74000000: module_name = "ole32.dll"; break;
+                    case 0x74100000: module_name = "OLEAUT32.dll"; break;
+                    case 0x73000000: module_name = "DDRAW.dll"; break;
+                    case 0x73100000: module_name = "GDI32.dll"; break;
+                    case 0x73200000: module_name = "WINMM.dll"; break;
+                    case 0x73300000: module_name = "DSOUND.dll"; break;
+                    case 0x73400000: module_name = "BASS.dll"; break;
+                    case 0x78000000: module_name = "mscoree.dll"; break;
+                    default: break;
+                }
+                std::string full_name = module_name + "!" + procName;
                 
                 uint32_t found_addr = 0;
                 for (const auto& pair : handler->fake_api_map) {
@@ -755,10 +1577,54 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 
                 handler->ctx.set_eax(found_addr);
                 handler->ctx.global_state["LastError"] = 0;
+            } else if (name == "mscoree.dll!CorExitProcess" || name == "KERNEL32.dll!CorExitProcess") {
+                uint32_t exit_code = handler->ctx.get_arg(0);
+                std::cout << "\n[API CALL] [OK] Intercepted call to " << name
+                          << " (exit_code=" << exit_code
+                          << ") -> stopping emulation.\n";
+                uint32_t finished_eip = 0;
+                uc_reg_write(handler->ctx.uc, UC_X86_REG_EIP, &finished_eip);
+                uc_emu_stop(handler->ctx.uc);
+                return;
             } else if (name == "KERNEL32.dll!EncodePointer" || name == "KERNEL32.dll!DecodePointer") {
                 uint32_t ptr = handler->ctx.get_arg(0);
                 handler->ctx.set_eax(ptr);
                 std::cout << "\n[API CALL] [OK] " << name << "(0x" << std::hex << ptr << std::dec << ") returning unchanged.\n";
+            } else if (name == "KERNEL32.dll!InterlockedExchange") {
+                uint32_t target_ptr = handler->ctx.get_arg(0);
+                uint32_t val = handler->ctx.get_arg(1);
+                uint32_t prev = 0;
+                uc_mem_read(uc, target_ptr, &prev, 4);
+                uc_mem_write(uc, target_ptr, &val, 4);
+                handler->ctx.set_eax(prev);
+                std::cout << "\n[API CALL] [OK] InterlockedExchange(" << std::hex << target_ptr << ") = " << prev << "\n";
+            } else if (name == "KERNEL32.dll!InterlockedCompareExchange") {
+                uint32_t target_ptr = handler->ctx.get_arg(0);
+                uint32_t xchg = handler->ctx.get_arg(1);
+                uint32_t comp = handler->ctx.get_arg(2);
+                uint32_t prev = 0;
+                uc_mem_read(uc, target_ptr, &prev, 4);
+                if (prev == comp) {
+                    uc_mem_write(uc, target_ptr, &xchg, 4);
+                }
+                handler->ctx.set_eax(prev);
+            } else if (name == "KERNEL32.dll!InterlockedIncrement") {
+                uint32_t target_ptr = handler->ctx.get_arg(0);
+                uint32_t val = 0;
+                uc_mem_read(uc, target_ptr, &val, 4);
+                val++;
+                uc_mem_write(uc, target_ptr, &val, 4);
+                handler->ctx.set_eax(val);
+            } else if (name == "KERNEL32.dll!InterlockedDecrement") {
+                uint32_t target_ptr = handler->ctx.get_arg(0);
+                uint32_t val = 0;
+                uc_mem_read(uc, target_ptr, &val, 4);
+                val--;
+                uc_mem_write(uc, target_ptr, &val, 4);
+                handler->ctx.set_eax(val);
+            } else if (name == "OLEAUT32.dll!Ordinal_9") {
+                handler->ctx.set_eax(0);
+                std::cout << "\n[API CALL] [OK] Intercepted SysFreeString.\n";
             } else if (name == "KERNEL32.dll!FlsGetValue" || name == "KERNEL32.dll!TlsGetValue" || name == "KERNEL32.dll!GetLastError" ||
                        name == "KERNEL32.dll!GetFileVersionInfoSizeA" || name == "KERNEL32.dll!GetFileVersionInfoA" || name == "KERNEL32.dll!VerQueryValueA") {
                 handler->ctx.set_eax(0);
@@ -766,13 +1632,168 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             } else if (name == "KERNEL32.dll!GetEnvironmentStringsW" || name == "KERNEL32.dll!GetCommandLineA" || name == "KERNEL32.dll!GetCommandLineW") {
                 handler->ctx.set_eax(0x76001500); // Pointing to guaranteed zeroed memory in our fake PE header
                 std::cout << "\n[API CALL] [OK] Intercepted call to " << name << " returning static empty string.\n";
+            } else if (name == "KERNEL32.dll!CreateFileMappingA") {
+                uint32_t hFile = handler->ctx.get_arg(0);
+                if (hFile != 0xFFFFFFFFu) {
+                    auto itf = handler->ctx.handle_map.find("file_" + std::to_string(hFile));
+                    if (itf == handler->ctx.handle_map.end()) {
+                        handler->ctx.set_eax(0);
+                        handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
+                        std::cout << "\n[API CALL] [FILEMAP] CreateFileMappingA invalid file handle 0x"
+                                  << std::hex << hFile << std::dec << "\n";
+                        return;
+                    }
+                }
+
+                auto* mapping = new MappingHandle();
+                mapping->file_handle = hFile;
+
+                uint32_t handle = 0x9000;
+                if (handler->ctx.global_state.find("MappingHandleTop") == handler->ctx.global_state.end()) {
+                    handler->ctx.global_state["MappingHandleTop"] = handle;
+                } else {
+                    handle = static_cast<uint32_t>(handler->ctx.global_state["MappingHandleTop"]);
+                }
+                handler->ctx.global_state["MappingHandleTop"] = handle + 4;
+                handler->ctx.handle_map["mapping_" + std::to_string(handle)] = mapping;
+
+                handler->ctx.set_eax(handle);
+                handler->ctx.global_state["LastError"] = 0;
+                std::cout << "\n[API CALL] [FILEMAP] CreateFileMappingA(hFile=0x"
+                          << std::hex << hFile << ") -> handle=0x" << handle << std::dec << "\n";
+            } else if (name == "KERNEL32.dll!OpenFileMappingA") {
+                uint32_t lpName = handler->ctx.get_arg(2);
+                std::string map_name = read_guest_c_string(handler->ctx.uc, lpName, 256);
+                std::string key = "OpenFileMap:" + map_name;
+                uint32_t handle = 0;
+                auto it_existing = handler->ctx.global_state.find(key);
+                if (it_existing != handler->ctx.global_state.end()) {
+                    handle = static_cast<uint32_t>(it_existing->second);
+                } else {
+                    auto* mapping = new MappingHandle();
+                    mapping->file_handle = 0xFFFFFFFFu; // anonymous/shared mapping
+
+                    handle = 0x9000;
+                    if (handler->ctx.global_state.find("MappingHandleTop") == handler->ctx.global_state.end()) {
+                        handler->ctx.global_state["MappingHandleTop"] = handle;
+                    } else {
+                        handle = static_cast<uint32_t>(handler->ctx.global_state["MappingHandleTop"]);
+                    }
+                    handler->ctx.global_state["MappingHandleTop"] = handle + 4;
+                    handler->ctx.handle_map["mapping_" + std::to_string(handle)] = mapping;
+                    handler->ctx.global_state[key] = handle;
+                }
+                handler->ctx.set_eax(handle);
+                handler->ctx.global_state["LastError"] = 0;
+                std::cout << "\n[API CALL] [FILEMAP] OpenFileMappingA('" << map_name
+                          << "') -> handle=0x" << std::hex << handle << std::dec << "\n";
             } else if (name == "KERNEL32.dll!MapViewOfFile") {
-                // Return a valid pointer to a dummy 4KB shared memory block mapped at 0x76002000
-                uint32_t shared_mem_ptr = 0x76002000;
-                uint32_t zero = 0;
-                uc_mem_write(handler->ctx.uc, shared_mem_ptr, &zero, 4); // Zero out the first dword so subsequent pointer reads fail safely
-                handler->ctx.set_eax(shared_mem_ptr); 
-                std::cout << "\n[API CALL] [OK] MapViewOfFile -> Dummy Shared Memory at 0x76002000\n";
+                uint32_t hMap = handler->ctx.get_arg(0);
+                uint32_t offHigh = handler->ctx.get_arg(2);
+                uint32_t offLow = handler->ctx.get_arg(3);
+                uint32_t numBytes = handler->ctx.get_arg(4);
+                auto itm = handler->ctx.handle_map.find("mapping_" + std::to_string(hMap));
+                MappingHandle temp_mapping;
+                MappingHandle* mapping = nullptr;
+                if (itm == handler->ctx.handle_map.end()) {
+                    // Some code paths use sentinel handles; allow anonymous zero-filled mapping.
+                    temp_mapping.file_handle = 0xFFFFFFFFu;
+                    mapping = &temp_mapping;
+                    std::cout << "\n[API CALL] [FILEMAP] MapViewOfFile unknown handle 0x"
+                              << std::hex << hMap << std::dec << " -> using anonymous mapping\n";
+                } else {
+                    mapping = static_cast<MappingHandle*>(itm->second);
+                }
+                uint64_t offset = (static_cast<uint64_t>(offHigh) << 32) | static_cast<uint64_t>(offLow);
+
+                std::vector<uint8_t>* source = nullptr;
+                if (mapping->file_handle != 0xFFFFFFFFu) {
+                    auto itf = handler->ctx.handle_map.find("file_" + std::to_string(mapping->file_handle));
+                    if (itf != handler->ctx.handle_map.end()) {
+                        source = &static_cast<HostFileHandle*>(itf->second)->data;
+                    }
+                }
+
+                uint32_t map_size = numBytes;
+                if (map_size == 0) {
+                    if (source && offset < source->size()) {
+                        uint64_t remaining = source->size() - offset;
+                        map_size = remaining > 0xFFFFFFFFu ? 0xFFFFFFFFu : static_cast<uint32_t>(remaining);
+                    } else {
+                        map_size = 0x1000;
+                    }
+                }
+                if (map_size == 0) map_size = 0x1000;
+
+                if (handler->ctx.global_state.find("MapViewBase") == handler->ctx.global_state.end()) {
+                    uint32_t base = 0x32000000;
+                    uint32_t size = 0x10000000; // 256MB map-view arena
+                    uc_mem_map(handler->ctx.uc, base, size, UC_PROT_ALL);
+                    handler->ctx.global_state["MapViewBase"] = base;
+                    handler->ctx.global_state["MapViewLimit"] = base + size;
+                    handler->ctx.global_state["MapViewTop"] = base;
+                }
+
+                uint32_t aligned = (map_size + 0xFFFu) & ~0xFFFu;
+                uint32_t view_ptr = static_cast<uint32_t>(handler->ctx.global_state["MapViewTop"]);
+                uint32_t limit = static_cast<uint32_t>(handler->ctx.global_state["MapViewLimit"]);
+                if (view_ptr + aligned < view_ptr || view_ptr + aligned > limit) {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 8; // ERROR_NOT_ENOUGH_MEMORY
+                    return;
+                }
+                handler->ctx.global_state["MapViewTop"] = view_ptr + aligned;
+
+                std::vector<uint8_t> zeros(aligned, 0);
+                uc_mem_write(handler->ctx.uc, view_ptr, zeros.data(), zeros.size());
+
+                if (source && offset < source->size()) {
+                    size_t available = source->size() - static_cast<size_t>(offset);
+                    size_t to_copy = std::min<size_t>(available, map_size);
+                    if (to_copy > 0) {
+                        uc_mem_write(handler->ctx.uc, view_ptr, source->data() + static_cast<size_t>(offset), to_copy);
+                    }
+                }
+
+                handler->ctx.set_eax(view_ptr);
+                handler->ctx.global_state["LastError"] = 0;
+                std::cout << "\n[API CALL] [FILEMAP] MapViewOfFile(hMap=0x" << std::hex << hMap
+                          << ", off=0x" << offset << ", size=0x" << map_size
+                          << ") -> 0x" << view_ptr << std::dec << "\n";
+            } else if (name == "KERNEL32.dll!UnmapViewOfFile") {
+                handler->ctx.set_eax(1);
+                handler->ctx.global_state["LastError"] = 0;
+            } else if (name == "WINMM.dll!mixerOpen") {
+                uint32_t phmx = handler->ctx.get_arg(0);
+                if (phmx != 0) {
+                    uint32_t hmx = 0x1;
+                    uc_mem_write(handler->ctx.uc, phmx, &hmx, 4);
+                }
+                handler->ctx.set_eax(0); // MMSYSERR_NOERROR
+            } else if (name == "WINMM.dll!mixerClose") {
+                handler->ctx.set_eax(0); // MMSYSERR_NOERROR
+            } else if (name == "WINMM.dll!mixerGetDevCapsA" || name == "WINMM.dll!mixerGetDevCapsW") {
+                uint32_t caps_ptr = handler->ctx.get_arg(1);
+                uint32_t caps_size = handler->ctx.get_arg(2);
+                if (caps_ptr != 0 && caps_size >= 16) {
+                    std::vector<uint8_t> caps(caps_size, 0);
+                    // cDestinations at offset 44 for MIXERCAPSA/W (after szPname[32])
+                    if (caps_size > 48) {
+                        uint32_t cDestinations = 0;
+                        std::memcpy(caps.data() + 44, &cDestinations, sizeof(cDestinations));
+                    }
+                    uc_mem_write(handler->ctx.uc, caps_ptr, caps.data(), caps.size());
+                }
+                handler->ctx.set_eax(0); // MMSYSERR_NOERROR
+            } else if (name == "WINMM.dll!mixerGetNumDevs") {
+                handler->ctx.set_eax(0); // no mixer devices
+            } else if (name == "WINMM.dll!mixerGetLineInfoA" || name == "WINMM.dll!mixerGetLineInfoW" ||
+                       name == "WINMM.dll!mixerGetLineControlsA" || name == "WINMM.dll!mixerGetLineControlsW" ||
+                       name == "WINMM.dll!mixerGetControlDetailsA" || name == "WINMM.dll!mixerGetControlDetailsW") {
+                // Return a graceful mixer failure to let the game continue without mixer controls.
+                handler->ctx.set_eax(1); // MMSYSERR_ERROR
+            } else if (name == "WINMM.dll!mixerSetControlDetails") {
+                handler->ctx.set_eax(0); // MMSYSERR_NOERROR
             } else if (name == "DDRAW.dll!IDirectDraw7_Method_0") {
                 // HRESULT QueryInterface(REFIID riid, void **ppvObj)
                 uint32_t riid = handler->ctx.get_arg(1);
@@ -786,8 +1807,8 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 
                 if (ppvObj) {
                     uint32_t dummy_obj = 0;
-                    if (guid[0] == 0x80) { // IID_IDirectDraw2
-                        dummy_obj = handler->create_fake_com_object("IDirectDraw2", 50);
+                    if (guid[0] == 0x80) { // IID_IDirectDraw (DX1)
+                        dummy_obj = handler->create_fake_com_object("IDirectDraw", 50);
                     } else if (guid[0] == 0x77) { // IID_IDirect3D7
                         dummy_obj = handler->create_fake_com_object("IDirect3D7", 50);
                     } else {
@@ -858,27 +1879,36 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     std::cout << "\n[API CALL] Allocated late surface buffer at 0x" << std::hex << pixel_buffer << std::dec << "\n";
                 }
 
-                if (lpDDSurfaceDesc) {
-                    uint32_t height = 600, width = 800;
-                    uint32_t pitch = width * 4;
+	                if (lpDDSurfaceDesc) {
+	                    uint32_t height = 600, width = 800;
+	                    uint32_t pitch = width * 4;
+                        uint32_t ddsd_size = 124;
+                        uint32_t ddsd_flags = 0x100F; // CAPS|HEIGHT|WIDTH|PITCH|PIXELFORMAT
 
-                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 8, &height, 4);
-                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 12, &width, 4);
-                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 16, &pitch, 4);
-                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 36, &pixel_buffer, 4);
-                    
-                    uint32_t pf_flags = 0x40; // DDPF_RGB
-                    uint32_t bpp = 32;
-                    uint32_t r_mask = 0x00FF0000;
-                    uint32_t g_mask = 0x0000FF00;
-                    uint32_t b_mask = 0x000000FF;
-                    
-                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 72 + 8, &pf_flags, 4);
-                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 72 + 16, &bpp, 4);
-                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 72 + 20, &r_mask, 4);
-                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 72 + 24, &g_mask, 4);
-                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 72 + 28, &b_mask, 4);
-                }
+                        uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 0, &ddsd_size, 4);
+                        uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 4, &ddsd_flags, 4);
+	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 8, &height, 4);
+	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 12, &width, 4);
+	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 16, &pitch, 4);
+	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 36, &pixel_buffer, 4);
+	                    
+                        uint32_t pf_size = 32;
+	                    uint32_t pf_flags = 0x40; // DDPF_RGB
+	                    uint32_t bpp = 32;
+	                    uint32_t r_mask = 0x00FF0000;
+	                    uint32_t g_mask = 0x0000FF00;
+	                    uint32_t b_mask = 0x000000FF;
+                        uint32_t a_mask = 0x00000000;
+	                    
+                        // DDPIXELFORMAT starts at +72
+	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 72, &pf_size, 4);
+	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 76, &pf_flags, 4);
+	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 84, &bpp, 4);
+	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 88, &r_mask, 4);
+	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 92, &g_mask, 4);
+	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 96, &b_mask, 4);
+	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 100, &a_mask, 4);
+	                }
                 
                 handler->ctx.set_eax(0);
                 std::cout << "\n[API CALL] [OK] IDirectDrawSurface7::Lock -> Buffer: 0x" << std::hex << pixel_buffer << std::dec << "\n";
@@ -894,6 +1924,22 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
                 handler->ctx.set_eax(0); // S_OK
                 std::cout << "\n[API CALL] [OK] Intercepted DirectDrawCreateEx -> Wrote IDirectDraw7 to 0x" << std::hex << lplpDD << std::dec << "\n";
+            } else if (name == "KERNEL32.dll!DirectSoundCreate" || name == "DSOUND.dll!DirectSoundCreate") {
+                uint32_t lplpDS = handler->ctx.get_arg(1); // LPDIRECTSOUND*
+                if (lplpDS) {
+                    uint32_t dummy_ds_obj = handler->create_fake_com_object("IDirectSound", 40);
+                    uc_mem_write(handler->ctx.uc, lplpDS, &dummy_ds_obj, 4);
+                }
+                handler->ctx.set_eax(0); // DS_OK
+                std::cout << "\n[API CALL] [OK] Intercepted DirectSoundCreate -> Wrote IDirectSound to 0x"
+                          << std::hex << lplpDS << std::dec << "\n";
+            } else if (name == "KERNEL32.dll!BASS_Init" || name == "BASS.dll!BASS_Init") {
+                handler->ctx.set_eax(1);
+            } else if (name == "KERNEL32.dll!BASS_SetConfig" || name == "BASS.dll!BASS_SetConfig") {
+                handler->ctx.set_eax(1);
+            } else if (name == "KERNEL32.dll!BASS_Start" || name == "BASS.dll!BASS_Start" ||
+                       name == "KERNEL32.dll!BASS_Free" || name == "BASS.dll!BASS_Free") {
+                handler->ctx.set_eax(1);
             } else if (name == "KERNEL32.dll!Direct3DCreate8") {
                 uint32_t dummy_d3d_obj = handler->create_fake_com_object("IDirect3D8", 50);
                 handler->ctx.set_eax(dummy_d3d_obj); // Returns the interface pointer directly in EAX
@@ -910,24 +1956,30 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             } else if (name == "KERNEL32.dll!GetCurrentProcess") {
                 handler->ctx.set_eax(-1); // Pseudo handle for current process
                 std::cout << "\n[API CALL] [OK] Intercepted call to " << name << "\n";
+            } else if (name == "KERNEL32.dll!ExitProcess") {
+                uint32_t exit_code = handler->ctx.get_arg(0);
+                std::cout << "\n[API CALL] [OK] Intercepted call to " << name
+                          << " (exit_code=" << exit_code
+                          << ") -> stopping emulation.\n";
+                // ExitProcess never returns. Force a clean stop path.
+                uint32_t finished_eip = 0;
+                uc_reg_write(handler->ctx.uc, UC_X86_REG_EIP, &finished_eip);
+                uc_emu_stop(handler->ctx.uc);
+                return;
             } else if (name == "KERNEL32.dll!TerminateProcess") {
-                uint32_t ret_addr = 0;
-                uint32_t esp, ebp;
-                uc_reg_read(handler->ctx.uc, UC_X86_REG_ESP, &esp);
-                uc_reg_read(handler->ctx.uc, UC_X86_REG_EBP, &ebp);
-                uc_mem_read(handler->ctx.uc, esp, &ret_addr, 4);
-                std::cout << "\n[!] Engine called TerminateProcess! Direct Return: 0x" << std::hex << ret_addr << std::dec << "\n";
-                // Stack Walk
-                std::cout << "--- Stack Trace ---\n";
-                for (int i = 0; i < 5; i++) {
-                    if (ebp == 0) break;
-                    uint32_t next_ret = 0;
-                    uc_mem_read(handler->ctx.uc, ebp + 4, &next_ret, 4);
-                    std::cout << "  Frame " << i << ": 0x" << std::hex << next_ret << std::dec << "\n";
-                    uc_mem_read(handler->ctx.uc, ebp, &ebp, 4); // Next frame
+                uint32_t h_process = handler->ctx.get_arg(0);
+                uint32_t exit_code = handler->ctx.get_arg(1);
+                handler->ctx.set_eax(1); // success
+                if (h_process == 0xFFFFFFFFu) {
+                    std::cout << "\n[API CALL] [OK] TerminateProcess(current, exit_code="
+                              << exit_code << ") -> stopping emulation.\n";
+                    uint32_t finished_eip = 0;
+                    uc_reg_write(handler->ctx.uc, UC_X86_REG_EIP, &finished_eip);
+                    uc_emu_stop(handler->ctx.uc);
+                    return;
                 }
-                std::cout << "-------------------\n";
-                handler->ctx.set_eax(1);
+                std::cout << "\n[API CALL] [OK] TerminateProcess(0x" << std::hex << h_process
+                          << std::dec << ", " << exit_code << ") mocked as success.\n";
             } else {
                 // For other trivial APIs, return 1 (Success) by default to avoid zero-checks failing
                 handler->ctx.set_eax(1);

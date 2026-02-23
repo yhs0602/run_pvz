@@ -1,0 +1,22 @@
+{
+  "address": "0x59dff5",
+  "size": 26,
+  "assembly": [
+    "mov esi, eax",
+    "mov dword ptr [ebp - 4], 0",
+    "mov dword ptr [ebp - 0x14], esi",
+    "mov dword ptr [ebp - 0x18], esi",
+    "mov dword ptr [ebp - 0x1c], esi",
+    "test esi, esi",
+    "mov byte ptr [ebp - 4], 1",
+    "je 0x59e036"
+  ],
+  "live_in": [
+    "eax",
+    "ebp"
+  ],
+  "live_out": [
+    "eflags",
+    "esi"
+  ]
+}

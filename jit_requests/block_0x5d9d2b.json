@@ -1,0 +1,19 @@
+{
+  "address": "0x5d9d2b",
+  "size": 9,
+  "assembly": [
+    "imul ecx, ecx, 0x5c",
+    "push ecx",
+    "call 0x61c130"
+  ],
+  "live_in": [
+    "ecx",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

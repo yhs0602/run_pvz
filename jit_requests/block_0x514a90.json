@@ -1,0 +1,36 @@
+{
+  "address": "0x514a90",
+  "size": 43,
+  "assembly": [
+    "push ebp",
+    "mov ebp, esp",
+    "push -1",
+    "push 0x642271",
+    "mov eax, dword ptr fs:[0]",
+    "push eax",
+    "mov dword ptr fs:[0], esp",
+    "sub esp, 0x10",
+    "push ebx",
+    "push esi",
+    "push edi",
+    "mov ecx, 1",
+    "mov dword ptr [ebp - 0x10], esp",
+    "call 0x514e50"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "edi",
+    "eip",
+    "esi",
+    "esp",
+    "fs"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

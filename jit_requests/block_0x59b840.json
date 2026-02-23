@@ -1,0 +1,17 @@
+{
+  "address": "0x59b840",
+  "size": 7,
+  "assembly": [
+    "mov eax, dword ptr [edx + 4]",
+    "cmp edi, dword ptr [eax]",
+    "jne 0x59b877"
+  ],
+  "live_in": [
+    "edi",
+    "edx"
+  ],
+  "live_out": [
+    "eax",
+    "eflags"
+  ]
+}

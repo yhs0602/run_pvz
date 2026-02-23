@@ -1,0 +1,20 @@
+{
+  "address": "0x5a241e",
+  "size": 19,
+  "assembly": [
+    "add esp, 4",
+    "lea ebx, [esp + 0xe4]",
+    "lea eax, [esp + 0x30]",
+    "call 0x5afc80"
+  ],
+  "live_in": [
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebx",
+    "eflags",
+    "esp"
+  ]
+}

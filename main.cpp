@@ -219,8 +219,28 @@ void dump_jit_request(uint64_t address, const BlockProfile& profile) {
     out << "  ]\n}\n";
 }
 
+struct BlockTrace { uint64_t addr; uint32_t esp; };
+BlockTrace last_blocks[50];
+int block_idx = 0;
+
+
+
 // Basic Block Hook for Capstone Live-Variable Analysis (LVA)
+void hook_mem_write(uc_engine *uc, uc_mem_type type, uint64_t address, int size, int64_t value, void *user_data) {
+    if (address >= 0x801fe81c && address < 0x801fe81c + 4) {
+        uint32_t pc;
+        uc_reg_read(uc, UC_X86_REG_EIP, &pc);
+        std::cout << "\n[WATCHPOINT] Memory write at 0x" << std::hex << address 
+                  << " with value 0x" << value << " from EIP 0x" << pc << std::dec << "\n";
+    }
+}
+
 void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_data) {
+    uint32_t current_esp;
+    uc_reg_read(uc, UC_X86_REG_ESP, &current_esp);
+    last_blocks[block_idx % 50] = {address, current_esp};
+    block_idx++;
+
     if (address >= DummyAPIHandler::FAKE_API_BASE) {
         return; 
     }
@@ -229,13 +249,13 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
     profile.execution_count++;
 
     // Try JIT Execution first if available
-    if (profile.is_jitted) {
-        if (global_jit->execute_block(address, uc)) {
-            // Stop unicorn so it doesn't execute the x86 block we just ran natively
-            uc_emu_stop(uc);
-        }
-        return;
-    }
+    // if (profile.is_jitted) {
+    //    if (global_jit->execute_block(address, uc)) {
+    //        // Stop unicorn so it doesn't execute the x86 block we just ran natively
+    //        uc_emu_stop(uc);
+    //    }
+    //    return;
+    // }
 
     // Only disassemble and calculate LVA on the VERY FIRST visit to this block.
     if (profile.execution_count == 1) {
@@ -317,6 +337,11 @@ int main(int argc, char **argv) {
 
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!renderer) {
+        cerr << "[!] SDL accelerated renderer failed (" << SDL_GetError()
+             << "), falling back to software renderer." << endl;
+        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+    }
+    if (!renderer) {
         cerr << "[!] SDL Renderer creation failed: " << SDL_GetError() << endl;
         SDL_DestroyWindow(window);
         SDL_Quit();
@@ -369,10 +394,20 @@ int main(int argc, char **argv) {
         pe_module.resolve_imports(uc, api_handler);
         env.setup_system();
 
-        uc_hook hook1;
+        uc_hook hook1, hook_mem;
         uc_hook_add(uc, &hook1, UC_HOOK_BLOCK, (void*)hook_block_lva, nullptr, 1, 0);
+        uc_hook_add(uc, &hook_mem, UC_HOOK_MEM_WRITE, (void*)hook_mem_write, nullptr, 1, 0);
 
         cout << "\n[*] Starting C++ Engine Emulation at 0x" << hex << pe_module.entry_point << "...\n";
+        
+        uint32_t test_val;
+        uc_err test_err = uc_mem_read(uc, 0x38b, &test_val, 4);
+        if (test_err == UC_ERR_OK) {
+            std::cout << "[!!!] ALERT: 0x38b IS MAPPED!!! Val: " << test_val << "\n";
+        } else {
+            std::cout << "[!!!] ALERT: 0x38b IS NOT MAPPED!!!\n";
+        }
+
         cout << "[*] Profiler Active. JIT Memory Dispatcher Ready.\n";
         
         uint32_t pc = pe_module.entry_point;
@@ -404,12 +439,25 @@ int main(int argc, char **argv) {
                     }
                 }
                 std::cerr << "------------------\n";
+                
+                cout << "--- Last 50 Basic Blocks Executed ---\n";
+                int start_idx = block_idx > 50 ? block_idx - 50 : 0;
+                for (int i = start_idx; i < block_idx; i++) {
+                    cout << "  ADDR: 0x" << hex << last_blocks[i % 50].addr 
+                         << "   ESP: 0x" << last_blocks[i % 50].esp << dec << "\n";
+                }
                 break;
             }
             uc_reg_read(uc, UC_X86_REG_EIP, &pc);
             
             if (pc == 0 || pc == 0xffffffff) {
                 cout << "\n[+] Emulation cleanly finished at EIP = 0x" << hex << pc << endl;
+                cout << "--- Last 50 Basic Blocks Executed ---\n";
+                int start_idx = block_idx > 50 ? block_idx - 50 : 0;
+                for (int i = start_idx; i < block_idx; i++) {
+                    cout << "  ADDR: 0x" << hex << last_blocks[i % 50].addr 
+                         << "   ESP: 0x" << last_blocks[i % 50].esp << dec << "\n";
+                }
                 break; 
             }
         }

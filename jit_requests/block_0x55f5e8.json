@@ -1,0 +1,18 @@
+{
+  "address": "0x55f5e8",
+  "size": 8,
+  "assembly": [
+    "add esp, 8",
+    "mov dword ptr [ebp + 8], eax",
+    "jmp 0x55f61a"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esp"
+  ]
+}

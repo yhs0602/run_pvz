@@ -1,0 +1,14 @@
+{
+  "address": "0x60afab",
+  "size": 4,
+  "assembly": [
+    "test esi, esi",
+    "ja 0x60af8c"
+  ],
+  "live_in": [
+    "esi"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

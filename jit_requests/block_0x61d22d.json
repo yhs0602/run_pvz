@@ -1,0 +1,20 @@
+{
+  "address": "0x61d22d",
+  "size": 18,
+  "assembly": [
+    "add esp, 0x14",
+    "mov dword ptr [ebp - 0x1c], eax",
+    "mov dword ptr [ebp - 4], 0xfffffffe",
+    "call 0x61d244"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esp"
+  ]
+}

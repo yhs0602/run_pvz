@@ -1,0 +1,19 @@
+{
+  "address": "0x5b54f6",
+  "size": 9,
+  "assembly": [
+    "add esi, 0x2c",
+    "push esi",
+    "call 0x61cd2d"
+  ],
+  "live_in": [
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

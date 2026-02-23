@@ -1,0 +1,14 @@
+{
+  "address": "0x55d436",
+  "size": 8,
+  "assembly": [
+    "test ebp, ebp",
+    "jbe 0x55d505"
+  ],
+  "live_in": [
+    "ebp"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

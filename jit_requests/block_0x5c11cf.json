@@ -1,0 +1,18 @@
+{
+  "address": "0x5c11cf",
+  "size": 10,
+  "assembly": [
+    "mov ebx, esi",
+    "mov esi, dword ptr [esi]",
+    "cmp byte ptr [esi + 0x35], 0",
+    "je 0x5c11a0"
+  ],
+  "live_in": [
+    "esi"
+  ],
+  "live_out": [
+    "ebx",
+    "eflags",
+    "esi"
+  ]
+}

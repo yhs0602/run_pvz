@@ -1,0 +1,23 @@
+{
+  "address": "0x6215e4",
+  "size": 21,
+  "assembly": [
+    "and dword ptr [eax + 0xc], 0xffff7fff",
+    "sub eax, ecx",
+    "sar eax, 5",
+    "add eax, 0x10",
+    "push eax",
+    "call 0x62ce88"
+  ],
+  "live_in": [
+    "eax",
+    "ecx",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "eflags",
+    "esp"
+  ]
+}

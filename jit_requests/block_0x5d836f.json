@@ -1,0 +1,17 @@
+{
+  "address": "0x5d836f",
+  "size": 13,
+  "assembly": [
+    "xor ebx, ebx",
+    "test byte ptr [esp + 0x16], 0x80",
+    "je 0x5d8130"
+  ],
+  "live_in": [
+    "ebx",
+    "esp"
+  ],
+  "live_out": [
+    "ebx",
+    "eflags"
+  ]
+}

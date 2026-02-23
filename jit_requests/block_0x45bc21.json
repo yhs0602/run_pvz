@@ -1,0 +1,25 @@
+{
+  "address": "0x45bc21",
+  "size": 19,
+  "assembly": [
+    "lea esi, [eax + ecx]",
+    "mov eax, dword ptr [esp + 0x14]",
+    "mov bl, byte ptr [eax]",
+    "lea ebx, [ebx]",
+    "cmp byte ptr [esi], bl",
+    "jne 0x45bc48"
+  ],
+  "live_in": [
+    "eax",
+    "ebx",
+    "ecx",
+    "esp"
+  ],
+  "live_out": [
+    "bl",
+    "eax",
+    "ebx",
+    "eflags",
+    "esi"
+  ]
+}

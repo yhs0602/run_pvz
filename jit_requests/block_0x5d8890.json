@@ -1,0 +1,25 @@
+{
+  "address": "0x5d8890",
+  "size": 17,
+  "assembly": [
+    "mov al, byte ptr [ecx]",
+    "xor al, 0xf7",
+    "mov byte ptr [edx], al",
+    "add edx, 1",
+    "add ecx, 1",
+    "sub esi, 1",
+    "jne 0x5d8890"
+  ],
+  "live_in": [
+    "ecx",
+    "edx",
+    "esi"
+  ],
+  "live_out": [
+    "al",
+    "ecx",
+    "edx",
+    "eflags",
+    "esi"
+  ]
+}

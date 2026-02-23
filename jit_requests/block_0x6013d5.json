@@ -1,0 +1,25 @@
+{
+  "address": "0x6013d5",
+  "size": 17,
+  "assembly": [
+    "mov edx, dword ptr [esp + 0x20]",
+    "add esp, 0xc",
+    "add edi, esi",
+    "add ebp, 1",
+    "cmp ebp, 0x10",
+    "jle 0x601394"
+  ],
+  "live_in": [
+    "ebp",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "edi",
+    "edx",
+    "eflags",
+    "esp"
+  ]
+}

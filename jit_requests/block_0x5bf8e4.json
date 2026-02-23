@@ -1,0 +1,19 @@
+{
+  "address": "0x5bf8e4",
+  "size": 9,
+  "assembly": [
+    "cmp edi, ebx",
+    "setne al",
+    "test eax, eax",
+    "jge 0x5bf8f2"
+  ],
+  "live_in": [
+    "eax",
+    "ebx",
+    "edi"
+  ],
+  "live_out": [
+    "al",
+    "eflags"
+  ]
+}

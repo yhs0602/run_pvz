@@ -1,0 +1,14 @@
+{
+  "address": "0x55a97e",
+  "size": 6,
+  "assembly": [
+    "cmp dword ptr [ebp + 0x18], 8",
+    "jb 0x55a9b5"
+  ],
+  "live_in": [
+    "ebp"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

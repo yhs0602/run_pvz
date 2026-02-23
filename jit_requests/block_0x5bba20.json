@@ -1,0 +1,27 @@
+{
+  "address": "0x5bba20",
+  "size": 19,
+  "assembly": [
+    "sub esp, 0x10",
+    "cmp dword ptr [esi + 0x18], 0x10",
+    "push ebx",
+    "push ebp",
+    "mov ebp, dword ptr [esp + 0x1c]",
+    "push edi",
+    "lea ebx, [esi + 4]",
+    "jb 0x5bba37"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "ebx",
+    "eflags",
+    "esp"
+  ]
+}

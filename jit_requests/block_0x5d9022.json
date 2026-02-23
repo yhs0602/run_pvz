@@ -1,0 +1,21 @@
+{
+  "address": "0x5d9022",
+  "size": 16,
+  "assembly": [
+    "mov edi, dword ptr [esp + 0x34]",
+    "cmp dword ptr [edi + 0x18], 0x10",
+    "mov edx, dword ptr [edi + 0x14]",
+    "lea ecx, [esi + 0xc]",
+    "jb 0x5d9037"
+  ],
+  "live_in": [
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "edi",
+    "edx",
+    "eflags"
+  ]
+}

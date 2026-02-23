@@ -1,0 +1,24 @@
+{
+  "address": "0x5bb880",
+  "size": 12,
+  "assembly": [
+    "push ebx",
+    "mov ebx, dword ptr [esp + 8]",
+    "test ebx, ebx",
+    "push edi",
+    "mov edi, ecx",
+    "jne 0x5bb894"
+  ],
+  "live_in": [
+    "ebx",
+    "ecx",
+    "edi",
+    "esp"
+  ],
+  "live_out": [
+    "ebx",
+    "edi",
+    "eflags",
+    "esp"
+  ]
+}

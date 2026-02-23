@@ -1,0 +1,18 @@
+{
+  "address": "0x59b7b7",
+  "size": 13,
+  "assembly": [
+    "cmp dword ptr [esi + 0x24], 0x10",
+    "mov ebx, dword ptr [esi + 0x20]",
+    "mov dword ptr [esp + 0x20], esi",
+    "jb 0x59b7c9"
+  ],
+  "live_in": [
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ebx",
+    "eflags"
+  ]
+}

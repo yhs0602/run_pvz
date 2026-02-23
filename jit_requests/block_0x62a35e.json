@@ -1,0 +1,16 @@
+{
+  "address": "0x62a35e",
+  "size": 8,
+  "assembly": [
+    "movsx ecx, bl",
+    "sub ecx, 0x30",
+    "jmp 0x62a380"
+  ],
+  "live_in": [
+    "bl"
+  ],
+  "live_out": [
+    "ecx",
+    "eflags"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "address": "0x5d885c",
+  "size": 28,
+  "assembly": [
+    "mov ecx, dword ptr [edx + 0x2c]",
+    "push ebx",
+    "mov ebx, dword ptr [esp + 0x10]",
+    "mov eax, ebx",
+    "imul eax, dword ptr [esp + 0x14]",
+    "push esi",
+    "mov esi, dword ptr [ebp + 4]",
+    "sub ecx, esi",
+    "cmp eax, ecx",
+    "push edi",
+    "mov edi, eax",
+    "jl 0x5d887a"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "edi",
+    "edx",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebx",
+    "ecx",
+    "edi",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

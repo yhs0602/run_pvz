@@ -1,0 +1,36 @@
+{
+  "address": "0x444b20",
+  "size": 31,
+  "assembly": [
+    "push ebp",
+    "mov ebp, esp",
+    "and esp, 0xfffffff8",
+    "sub esp, 0xc",
+    "push edi",
+    "mov edi, eax",
+    "mov eax, dword ptr [edi + 4]",
+    "mov ecx, dword ptr [eax]",
+    "push eax",
+    "push edi",
+    "push ecx",
+    "push edi",
+    "lea eax, [esp + 0x18]",
+    "push eax",
+    "call 0x444b80"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "edi",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ecx",
+    "edi",
+    "eflags",
+    "esp"
+  ]
+}

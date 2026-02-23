@@ -1,0 +1,28 @@
+{
+  "address": "0x443a44",
+  "size": 37,
+  "assembly": [
+    "mov dword ptr [esi + 0x78], eax",
+    "mov byte ptr [eax + 0x45], 1",
+    "mov eax, dword ptr [esi + 0x78]",
+    "mov dword ptr [eax + 4], eax",
+    "mov eax, dword ptr [esi + 0x78]",
+    "mov dword ptr [eax], eax",
+    "mov eax, dword ptr [esi + 0x78]",
+    "mov dword ptr [eax + 8], eax",
+    "mov dword ptr [esi + 0x7c], ebx",
+    "mov byte ptr [esp + 0x10], 4",
+    "call 0x444f50"
+  ],
+  "live_in": [
+    "eax",
+    "ebx",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "esp"
+  ]
+}

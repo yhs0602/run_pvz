@@ -1,0 +1,45 @@
+{
+  "address": "0x5a1edb",
+  "size": 151,
+  "assembly": [
+    "mov eax, 7",
+    "mov byte ptr [esp + 0x16], 0",
+    "mov byte ptr [esp + 0x1f], 0",
+    "mov byte ptr [esp + 0x10], 0",
+    "mov byte ptr [esp + 0x1e], 0",
+    "mov byte ptr [esp + 0x17], 0",
+    "mov dword ptr [esp + 0x16c], eax",
+    "mov dword ptr [esp + 0x168], ebx",
+    "mov word ptr [esp + 0x158], bx",
+    "mov dword ptr [esp + 0x180], ebx",
+    "mov dword ptr [esp + 0xfc], eax",
+    "mov dword ptr [esp + 0xf8], ebx",
+    "mov word ptr [esp + 0xe8], bx",
+    "mov dword ptr [esp + 0x150], eax",
+    "mov dword ptr [esp + 0x14c], ebx",
+    "mov word ptr [esp + 0x13c], bx",
+    "mov dword ptr [esp + 0x118], eax",
+    "mov dword ptr [esp + 0x114], ebx",
+    "mov word ptr [esp + 0x104], bx",
+    "mov byte ptr [esp + 0x180], 3",
+    "mov edi, dword ptr [esp + 0x2c]",
+    "mov edx, dword ptr [edi]",
+    "mov edx, dword ptr [edx + 0x18]",
+    "lea eax, [esp + 0x24]",
+    "push eax",
+    "mov ecx, edi",
+    "call edx"
+  ],
+  "live_in": [
+    "bx",
+    "ebx",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "edi",
+    "edx",
+    "esp"
+  ]
+}

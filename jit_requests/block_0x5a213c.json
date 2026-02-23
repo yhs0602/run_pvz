@@ -1,0 +1,18 @@
+{
+  "address": "0x5a213c",
+  "size": 14,
+  "assembly": [
+    "mov ecx, dword ptr [esp + 0x18]",
+    "mov eax, dword ptr [ecx]",
+    "test eax, eax",
+    "jne 0x5a22b2"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags"
+  ]
+}

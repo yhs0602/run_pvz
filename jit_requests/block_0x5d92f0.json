@@ -1,0 +1,25 @@
+{
+  "address": "0x5d92f0",
+  "size": 22,
+  "assembly": [
+    "mov byte ptr [ecx + 0x58], bl",
+    "mov byte ptr [edx + 0x58], bl",
+    "mov edx, dword ptr [eax]",
+    "mov ecx, dword ptr [edx + 4]",
+    "mov byte ptr [ecx + 0x58], 0",
+    "mov edx, dword ptr [eax]",
+    "mov esi, dword ptr [edx + 4]",
+    "jmp 0x5d9361"
+  ],
+  "live_in": [
+    "bl",
+    "eax",
+    "ecx",
+    "edx"
+  ],
+  "live_out": [
+    "ecx",
+    "edx",
+    "esi"
+  ]
+}

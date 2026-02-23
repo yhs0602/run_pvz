@@ -1,0 +1,30 @@
+{
+  "address": "0x41dc70",
+  "size": 19,
+  "assembly": [
+    "push ebx",
+    "push ebp",
+    "mov ebp, dword ptr [esp + 0xc]",
+    "push esi",
+    "push edi",
+    "mov edi, dword ptr [esp + 0x18]",
+    "cmp dword ptr [ebp + 0x14], edi",
+    "mov esi, ecx",
+    "jae 0x41dc88"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "ecx",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "edi",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

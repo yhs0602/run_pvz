@@ -1,0 +1,15 @@
+{
+  "address": "0x61d24c",
+  "size": 2,
+  "assembly": [
+    "pop ecx",
+    "ret"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "esp"
+  ]
+}

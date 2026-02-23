@@ -1,0 +1,24 @@
+{
+  "address": "0x46c6c1",
+  "size": 13,
+  "assembly": [
+    "xor ecx, ecx",
+    "add esp, 8",
+    "test eax, eax",
+    "setl cl",
+    "mov al, cl",
+    "ret"
+  ],
+  "live_in": [
+    "eax",
+    "ecx",
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "cl",
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

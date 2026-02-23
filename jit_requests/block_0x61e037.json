@@ -1,0 +1,14 @@
+{
+  "address": "0x61e037",
+  "size": 5,
+  "assembly": [
+    "dec dword ptr [ebp + 0x10]",
+    "js 0x61e047"
+  ],
+  "live_in": [
+    "ebp"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

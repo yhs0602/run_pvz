@@ -1,0 +1,20 @@
+{
+  "address": "0x51a150",
+  "size": 9,
+  "assembly": [
+    "push esi",
+    "mov esi, ecx",
+    "cmp dword ptr [esi + 0x18], 8",
+    "jb 0x51a165"
+  ],
+  "live_in": [
+    "ecx",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

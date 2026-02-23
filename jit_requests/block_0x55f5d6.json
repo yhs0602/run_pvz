@@ -1,0 +1,21 @@
+{
+  "address": "0x55f5d6",
+  "size": 18,
+  "assembly": [
+    "lea ecx, [esi + 1]",
+    "push 0",
+    "push ecx",
+    "mov dword ptr [ebp - 4], 0",
+    "call 0x560890"
+  ],
+  "live_in": [
+    "ebp",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "esp"
+  ]
+}

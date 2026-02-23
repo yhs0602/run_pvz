@@ -1,0 +1,5 @@
+{
+  "api_name": "CreateThread",
+  "module": "KERNEL32.dll",
+  "address": "0x76010360"
+}

@@ -1,0 +1,36 @@
+{
+  "address": "0x443ae0",
+  "size": 49,
+  "assembly": [
+    "push -1",
+    "push 0x646147",
+    "mov eax, dword ptr fs:[0]",
+    "push eax",
+    "mov dword ptr fs:[0], esp",
+    "push ecx",
+    "push ebx",
+    "push ebp",
+    "push esi",
+    "push edi",
+    "mov edi, dword ptr [esp + 0x24]",
+    "lea esi, [edi + 0x98]",
+    "mov dword ptr [esp + 0x1c], 4",
+    "call 0x4562a0"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "ecx",
+    "edi",
+    "eip",
+    "esi",
+    "esp",
+    "fs"
+  ],
+  "live_out": [
+    "eax",
+    "edi",
+    "esi",
+    "esp"
+  ]
+}

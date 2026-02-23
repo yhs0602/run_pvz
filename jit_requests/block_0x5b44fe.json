@@ -1,0 +1,23 @@
+{
+  "address": "0x5b44fe",
+  "size": 28,
+  "assembly": [
+    "add esp, 8",
+    "push -1",
+    "push 0",
+    "push eax",
+    "lea ecx, [esp + 0xa0]",
+    "mov byte ptr [esp + 0xcc], 7",
+    "call 0x403e20"
+  ],
+  "live_in": [
+    "eax",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

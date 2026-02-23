@@ -1,0 +1,24 @@
+{
+  "address": "0x62fed6",
+  "size": 22,
+  "assembly": [
+    "movzx eax, word ptr [ebp + 8]",
+    "mov ecx, dword ptr [0x699ff4]",
+    "movzx eax, word ptr [ecx + eax*2]",
+    "movzx ecx, word ptr [ebp + 0xc]",
+    "and eax, ecx",
+    "leave",
+    "ret"
+  ],
+  "live_in": [
+    "ebp",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

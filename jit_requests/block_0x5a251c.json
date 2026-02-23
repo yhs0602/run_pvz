@@ -1,0 +1,14 @@
+{
+  "address": "0x5a251c",
+  "size": 15,
+  "assembly": [
+    "mov byte ptr [esp + 0x17], 1",
+    "mov byte ptr [esp + 0x10], 0",
+    "jmp 0x5a1f60"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+  ]
+}

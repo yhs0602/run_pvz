@@ -1,0 +1,19 @@
+{
+  "address": "0x41e30e",
+  "size": 9,
+  "assembly": [
+    "cmp dword ptr [esp + 0x24], 0x10",
+    "pop ebp",
+    "pop ebx",
+    "jb 0x41e324"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "ebx",
+    "eflags",
+    "esp"
+  ]
+}

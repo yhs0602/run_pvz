@@ -1,0 +1,19 @@
+{
+  "address": "0x61e03c",
+  "size": 9,
+  "assembly": [
+    "sub dword ptr [ebp + 8], esi",
+    "mov ecx, dword ptr [ebp + 8]",
+    "call dword ptr [ebp + 0x14]"
+  ],
+  "live_in": [
+    "ebp",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

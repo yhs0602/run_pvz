@@ -1,0 +1,17 @@
+{
+  "address": "0x601472",
+  "size": 10,
+  "assembly": [
+    "mov esi, dword ptr [esp + 0x10]",
+    "cmp byte ptr [eax + esi], 0",
+    "je 0x601495"
+  ],
+  "live_in": [
+    "eax",
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esi"
+  ]
+}

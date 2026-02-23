@@ -1,0 +1,21 @@
+{
+  "address": "0x601436",
+  "size": 13,
+  "assembly": [
+    "mov eax, 1",
+    "mov ecx, ebp",
+    "shl eax, cl",
+    "cmp edi, eax",
+    "jl 0x60145a"
+  ],
+  "live_in": [
+    "cl",
+    "ebp",
+    "edi"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags"
+  ]
+}

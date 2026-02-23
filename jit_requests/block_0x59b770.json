@@ -1,0 +1,38 @@
+{
+  "address": "0x59b770",
+  "size": 39,
+  "assembly": [
+    "push ebp",
+    "mov ebp, esp",
+    "and esp, 0xfffffff8",
+    "sub esp, 0x1c",
+    "mov edx, dword ptr [ebp + 8]",
+    "mov eax, dword ptr [edx + 4]",
+    "push ebx",
+    "push esi",
+    "mov esi, dword ptr [eax + 4]",
+    "cmp byte ptr [esi + 0x45], 0",
+    "push edi",
+    "mov edi, eax",
+    "mov al, 1",
+    "mov byte ptr [esp + 0x10], al",
+    "jne 0x59b832"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "eax",
+    "ebp",
+    "edi",
+    "edx",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

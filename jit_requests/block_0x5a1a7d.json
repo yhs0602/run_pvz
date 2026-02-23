@@ -1,0 +1,18 @@
+{
+  "address": "0x5a1a7d",
+  "size": 25,
+  "assembly": [
+    "test bl, bl",
+    "mov dword ptr [esp + 0x48], 0xf",
+    "mov dword ptr [esp + 0x44], 0",
+    "mov byte ptr [esp + 0x34], 0",
+    "jne 0x5a1ac3"
+  ],
+  "live_in": [
+    "bl",
+    "esp"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

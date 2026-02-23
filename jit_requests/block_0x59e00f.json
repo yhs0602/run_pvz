@@ -1,0 +1,29 @@
+{
+  "address": "0x59e00f",
+  "size": 29,
+  "assembly": [
+    "mov eax, dword ptr [ebp + 8]",
+    "mov ecx, dword ptr [ebp + 0xc]",
+    "mov edx, dword ptr [ebp + 0x10]",
+    "mov edi, dword ptr [ebp + 0x14]",
+    "mov dword ptr [esi], eax",
+    "lea eax, [esi + 0xc]",
+    "push eax",
+    "mov dword ptr [esi + 4], ecx",
+    "mov dword ptr [esi + 8], edx",
+    "call 0x5a0100"
+  ],
+  "live_in": [
+    "ebp",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "edi",
+    "edx",
+    "esp"
+  ]
+}

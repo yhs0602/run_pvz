@@ -1,0 +1,35 @@
+{
+  "address": "0x59e02c",
+  "size": 32,
+  "assembly": [
+    "mov cl, byte ptr [ebp + 0x18]",
+    "mov byte ptr [esi + 0x44], cl",
+    "mov byte ptr [esi + 0x45], 0",
+    "mov eax, esi",
+    "mov ecx, dword ptr [ebp - 0xc]",
+    "mov dword ptr fs:[0], ecx",
+    "pop ecx",
+    "pop edi",
+    "pop esi",
+    "pop ebx",
+    "mov esp, ebp",
+    "pop ebp",
+    "ret 0x14"
+  ],
+  "live_in": [
+    "ebp",
+    "esi",
+    "esp",
+    "fs"
+  ],
+  "live_out": [
+    "cl",
+    "eax",
+    "ebp",
+    "ebx",
+    "ecx",
+    "edi",
+    "esi",
+    "esp"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "address": "0x62604c",
+  "size": 8,
+  "assembly": [
+    "push edi",
+    "mov edi, ecx",
+    "cmp edx, 4",
+    "jb 0x626085"
+  ],
+  "live_in": [
+    "ecx",
+    "edi",
+    "edx",
+    "esp"
+  ],
+  "live_out": [
+    "edi",
+    "eflags",
+    "esp"
+  ]
+}

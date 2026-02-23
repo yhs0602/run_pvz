@@ -1,0 +1,16 @@
+{
+  "address": "0x5431a0",
+  "size": 7,
+  "assembly": [
+    "mov eax, dword ptr [edi + 4]",
+    "test eax, eax",
+    "jbe 0x5431b2"
+  ],
+  "live_in": [
+    "edi"
+  ],
+  "live_out": [
+    "eax",
+    "eflags"
+  ]
+}

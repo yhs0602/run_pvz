@@ -1,0 +1,22 @@
+{
+  "address": "0x403f62",
+  "size": 17,
+  "assembly": [
+    "mov eax, dword ptr [esi + 0x14]",
+    "sub eax, edi",
+    "add esp, 0x10",
+    "cmp dword ptr [esi + 0x18], 0x10",
+    "mov dword ptr [esi + 0x14], eax",
+    "jb 0x403f76"
+  ],
+  "live_in": [
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "eflags",
+    "esp"
+  ]
+}

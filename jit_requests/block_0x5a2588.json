@@ -1,0 +1,14 @@
+{
+  "address": "0x5a2588",
+  "size": 8,
+  "assembly": [
+    "test eax, eax",
+    "je 0x5a2a08"
+  ],
+  "live_in": [
+    "eax"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

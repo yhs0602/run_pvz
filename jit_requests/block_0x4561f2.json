@@ -1,0 +1,18 @@
+{
+  "address": "0x4561f2",
+  "size": 12,
+  "assembly": [
+    "mov ebp, dword ptr [esp + 0x24]",
+    "test ebp, ebp",
+    "mov ecx, dword ptr [esp + 0x20]",
+    "jne 0x456202"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "ecx",
+    "eflags"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "address": "0x41e450",
+  "size": 10,
+  "assembly": [
+    "mov edi, dword ptr [esi + 0x14]",
+    "add edi, ebp",
+    "cmp edi, -2",
+    "jbe 0x41e45f"
+  ],
+  "live_in": [
+    "ebp",
+    "esi"
+  ],
+  "live_out": [
+    "edi",
+    "eflags"
+  ]
+}

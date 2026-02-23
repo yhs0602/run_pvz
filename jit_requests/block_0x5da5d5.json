@@ -1,0 +1,21 @@
+{
+  "address": "0x5da5d5",
+  "size": 8,
+  "assembly": [
+    "neg al",
+    "sbb eax, eax",
+    "add eax, 1",
+    "ret"
+  ],
+  "live_in": [
+    "al",
+    "eax",
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "eax",
+    "eflags",
+    "esp"
+  ]
+}

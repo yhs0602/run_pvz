@@ -1,0 +1,14 @@
+{
+  "address": "0x41dcaf",
+  "size": 8,
+  "assembly": [
+    "test ebx, ebx",
+    "jbe 0x41dd62"
+  ],
+  "live_in": [
+    "ebx"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "address": "0x5bbd40",
+  "size": 30,
+  "assembly": [
+    "sub esp, 0xc",
+    "mov eax, dword ptr [ecx]",
+    "mov ecx, dword ptr [ecx + 4]",
+    "mov edx, dword ptr [esp + 0x14]",
+    "mov dword ptr [esp + 4], ecx",
+    "push edx",
+    "lea ecx, [esp + 4]",
+    "mov dword ptr [esp + 4], eax",
+    "call 0x5bf4e0"
+  ],
+  "live_in": [
+    "ecx",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "edx",
+    "eflags",
+    "esp"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "address": "0x443b36",
+  "size": 17,
+  "assembly": [
+    "add esp, 4",
+    "lea eax, [edi + 0x80]",
+    "mov dword ptr [esi + 4], ebx",
+    "call 0x444b20"
+  ],
+  "live_in": [
+    "ebx",
+    "edi",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "eflags",
+    "esp"
+  ]
+}

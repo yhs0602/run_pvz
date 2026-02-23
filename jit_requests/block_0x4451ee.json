@@ -1,0 +1,22 @@
+{
+  "address": "0x4451ee",
+  "size": 17,
+  "assembly": [
+    "mov ecx, dword ptr [esp + 0x20]",
+    "mov eax, esi",
+    "mov dword ptr fs:[0], ecx",
+    "add esp, 0x2c",
+    "ret"
+  ],
+  "live_in": [
+    "esi",
+    "esp",
+    "fs"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

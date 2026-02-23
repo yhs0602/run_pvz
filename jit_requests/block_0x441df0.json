@@ -1,0 +1,22 @@
+{
+  "address": "0x441df0",
+  "size": 17,
+  "assembly": [
+    "mov al, byte ptr [esp + 0xc]",
+    "mov edx, dword ptr [esp + 4]",
+    "add ecx, 4",
+    "mov byte ptr [ecx + edx], al",
+    "ret 0xc"
+  ],
+  "live_in": [
+    "ecx",
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "ecx",
+    "edx",
+    "eflags",
+    "esp"
+  ]
+}

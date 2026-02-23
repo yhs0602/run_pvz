@@ -1,0 +1,28 @@
+{
+  "address": "0x5bb8c7",
+  "size": 14,
+  "assembly": [
+    "add ecx, -2",
+    "mov dword ptr [esi + 8], ecx",
+    "pop esi",
+    "pop edi",
+    "xor eax, eax",
+    "pop ebx",
+    "ret 4"
+  ],
+  "live_in": [
+    "eax",
+    "ecx",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebx",
+    "ecx",
+    "edi",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

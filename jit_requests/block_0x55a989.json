@@ -1,0 +1,14 @@
+{
+  "address": "0x55a989",
+  "size": 4,
+  "assembly": [
+    "test edi, edi",
+    "jne 0x55a97c"
+  ],
+  "live_in": [
+    "edi"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

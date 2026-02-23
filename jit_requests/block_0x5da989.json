@@ -1,0 +1,14 @@
+{
+  "address": "0x5da989",
+  "size": 4,
+  "assembly": [
+    "test edx, edx",
+    "jle 0x5da997"
+  ],
+  "live_in": [
+    "edx"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

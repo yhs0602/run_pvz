@@ -1,0 +1,18 @@
+{
+  "address": "0x4566d1",
+  "size": 6,
+  "assembly": [
+    "mov eax, esi",
+    "pop esi",
+    "ret 4"
+  ],
+  "live_in": [
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "esi",
+    "esp"
+  ]
+}

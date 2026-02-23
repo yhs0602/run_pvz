@@ -1,0 +1,34 @@
+{
+  "address": "0x5d972a",
+  "size": 28,
+  "assembly": [
+    "mov byte ptr [esi + 0x58], bl",
+    "mov byte ptr [esi + 0x59], bl",
+    "mov eax, esi",
+    "mov ecx, dword ptr [ebp - 0xc]",
+    "mov dword ptr fs:[0], ecx",
+    "pop ecx",
+    "pop edi",
+    "pop esi",
+    "pop ebx",
+    "mov esp, ebp",
+    "pop ebp",
+    "ret 0x10"
+  ],
+  "live_in": [
+    "bl",
+    "ebp",
+    "esi",
+    "esp",
+    "fs"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ebx",
+    "ecx",
+    "edi",
+    "esi",
+    "esp"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "address": "0x624580",
+  "size": 12,
+  "assembly": [
+    "and eax, 3",
+    "add ecx, eax",
+    "jmp dword ptr [eax*4 + 0x624598]"
+  ],
+  "live_in": [
+    "eax",
+    "ecx"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags"
+  ]
+}

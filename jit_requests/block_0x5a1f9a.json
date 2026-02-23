@@ -1,0 +1,21 @@
+{
+  "address": "0x5a1f9a",
+  "size": 14,
+  "assembly": [
+    "mov esi, dword ptr [esp + 0x28]",
+    "push edx",
+    "push 1",
+    "mov ecx, esi",
+    "call 0x441d20"
+  ],
+  "live_in": [
+    "edx",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "esi",
+    "esp"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "address": "0x5c49f1",
+  "size": 17,
+  "assembly": [
+    "mov si, word ptr [eax - 2]",
+    "mov word ptr [ecx], si",
+    "add eax, -2",
+    "add ecx, 2",
+    "cmp eax, ebp",
+    "jne 0x5c49f1"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "ecx"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags",
+    "si"
+  ]
+}

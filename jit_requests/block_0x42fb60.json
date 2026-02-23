@@ -1,0 +1,33 @@
+{
+  "address": "0x42fb60",
+  "size": 33,
+  "assembly": [
+    "push ecx",
+    "xor eax, eax",
+    "mov dword ptr [esi + 0x14], eax",
+    "mov dword ptr [esi + 0x18], 0xf",
+    "mov dword ptr [esp], eax",
+    "mov byte ptr [esi + 4], al",
+    "mov eax, dword ptr [esp + 8]",
+    "push eax",
+    "push ecx",
+    "push edx",
+    "mov ecx, esi",
+    "call 0x403e20"
+  ],
+  "live_in": [
+    "al",
+    "eax",
+    "ecx",
+    "edx",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

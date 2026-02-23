@@ -1,0 +1,23 @@
+{
+  "address": "0x5d9e4b",
+  "size": 15,
+  "assembly": [
+    "mov al, byte ptr [eax + edi]",
+    "mov cl, al",
+    "sub cl, 0x30",
+    "xor esi, esi",
+    "cmp cl, 9",
+    "ja 0x5d9e62"
+  ],
+  "live_in": [
+    "eax",
+    "edi",
+    "esi"
+  ],
+  "live_out": [
+    "al",
+    "cl",
+    "eflags",
+    "esi"
+  ]
+}

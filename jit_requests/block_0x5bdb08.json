@@ -1,0 +1,28 @@
+{
+  "address": "0x5bdb08",
+  "size": 24,
+  "assembly": [
+    "push ebx",
+    "lea esp, [esp]",
+    "mov bx, word ptr [edx]",
+    "mov word ptr [ecx], bx",
+    "sub eax, 1",
+    "add ecx, 2",
+    "test eax, eax",
+    "ja 0x5bdb10"
+  ],
+  "live_in": [
+    "eax",
+    "ebx",
+    "ecx",
+    "edx",
+    "esp"
+  ],
+  "live_out": [
+    "bx",
+    "eax",
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

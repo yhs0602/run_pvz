@@ -1,0 +1,24 @@
+{
+  "address": "0x5da07f",
+  "size": 26,
+  "assembly": [
+    "mov edx, dword ptr [esi + 0xc]",
+    "mov eax, dword ptr [esi + 8]",
+    "mov word ptr [eax + edx*2], 0",
+    "add dword ptr [esi + 0xc], 1",
+    "mov ecx, dword ptr [esi + 0xc]",
+    "add ecx, 1",
+    "cmp edi, ecx",
+    "jge 0x5da070"
+  ],
+  "live_in": [
+    "edi",
+    "esi"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "edx",
+    "eflags"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "address": "0x5da54d",
+  "size": 5,
+  "assembly": [
+    "call 0x5d9fd0"
+  ],
+  "live_in": [
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "esp"
+  ]
+}

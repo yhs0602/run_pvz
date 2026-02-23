@@ -1,0 +1,19 @@
+{
+  "address": "0x5d829b",
+  "size": 44,
+  "assembly": [
+    "mov dword ptr [esp + 0x218], 0xffffffff",
+    "cmp dword ptr [esp + 0x58], esi",
+    "mov dword ptr [esp + 0x84], 0xf",
+    "mov dword ptr [esp + 0x80], 0",
+    "mov byte ptr [esp + 0x70], 0",
+    "jb 0x5d82d4"
+  ],
+  "live_in": [
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

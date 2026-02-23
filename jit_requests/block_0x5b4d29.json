@@ -1,0 +1,24 @@
+{
+  "address": "0x5b4d29",
+  "size": 36,
+  "assembly": [
+    "lea ecx, [esp + 0x3c]",
+    "mov dword ptr [esp + 0xc0], 4",
+    "mov esi, dword ptr [edi + 4]",
+    "push ecx",
+    "lea ebx, [esp + 0x24]",
+    "mov dword ptr [esp + 0x4c], 1",
+    "call 0x5bbf70"
+  ],
+  "live_in": [
+    "edi",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "ebx",
+    "ecx",
+    "esi",
+    "esp"
+  ]
+}

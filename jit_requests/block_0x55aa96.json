@@ -1,0 +1,25 @@
+{
+  "address": "0x55aa96",
+  "size": 17,
+  "assembly": [
+    "mov ebp, dword ptr [ebp]",
+    "pop edi",
+    "mov eax, esi",
+    "pop esi",
+    "mov word ptr [ebp], 0",
+    "pop ebp",
+    "ret 8"
+  ],
+  "live_in": [
+    "ebp",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "edi",
+    "esi",
+    "esp"
+  ]
+}

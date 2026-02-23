@@ -1,0 +1,28 @@
+{
+  "address": "0x601511",
+  "size": 20,
+  "assembly": [
+    "mov dword ptr [edx], edi",
+    "mov cl, byte ptr [ebp]",
+    "mov byte ptr [esi], cl",
+    "sub eax, 1",
+    "add edx, 4",
+    "add esi, 1",
+    "test eax, eax",
+    "jg 0x601511"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "edi",
+    "edx",
+    "esi"
+  ],
+  "live_out": [
+    "cl",
+    "eax",
+    "edx",
+    "eflags",
+    "esi"
+  ]
+}

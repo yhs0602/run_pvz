@@ -1,0 +1,27 @@
+{
+  "address": "0x61be96",
+  "size": 14,
+  "assembly": [
+    "push ebp",
+    "mov ebp, esp",
+    "mov eax, dword ptr [ebp + 0x14]",
+    "push esi",
+    "push edi",
+    "xor edi, edi",
+    "cmp eax, edi",
+    "je 0x61beeb"
+  ],
+  "live_in": [
+    "ebp",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "edi",
+    "eflags",
+    "esp"
+  ]
+}

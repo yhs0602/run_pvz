@@ -1,0 +1,29 @@
+{
+  "address": "0x62a344",
+  "size": 26,
+  "assembly": [
+    "mov esi, dword ptr [ecx + 0xc8]",
+    "or eax, 0xffffffff",
+    "xor edx, edx",
+    "div dword ptr [ebp + 0x14]",
+    "movzx ecx, bl",
+    "movzx ecx, word ptr [esi + ecx*2]",
+    "test cl, 4",
+    "je 0x62a366"
+  ],
+  "live_in": [
+    "bl",
+    "cl",
+    "eax",
+    "ebp",
+    "ecx",
+    "edx"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "edx",
+    "eflags",
+    "esi"
+  ]
+}

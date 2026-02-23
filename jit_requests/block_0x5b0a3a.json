@@ -1,0 +1,15 @@
+{
+  "address": "0x5b0a3a",
+  "size": 6,
+  "assembly": [
+    "cmp byte ptr [ebx + ebp], 0x2f",
+    "jne 0x5b0a51"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

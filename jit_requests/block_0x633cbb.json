@@ -1,0 +1,24 @@
+{
+  "address": "0x633cbb",
+  "size": 33,
+  "assembly": [
+    "mov eax, dword ptr [esp + 4]",
+    "mov ecx, eax",
+    "and eax, 0x1f",
+    "imul eax, eax, 0x38",
+    "sar ecx, 5",
+    "mov ecx, dword ptr [ecx*4 + 0x75cae0]",
+    "lea eax, [ecx + eax + 0xc]",
+    "push eax",
+    "call dword ptr [0x6520ec]"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

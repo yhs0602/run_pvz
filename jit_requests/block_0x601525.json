@@ -1,0 +1,31 @@
+{
+  "address": "0x601525",
+  "size": 33,
+  "assembly": [
+    "mov esi, dword ptr [esp + 0x10]",
+    "mov eax, dword ptr [esp + 0x20]",
+    "mov edx, dword ptr [esp + 0x1c]",
+    "movzx ecx, byte ptr [edi + esi]",
+    "add edx, 1",
+    "add ebx, 1",
+    "add ebp, 1",
+    "cmp edx, ecx",
+    "mov dword ptr [esp + 0x1c], edx",
+    "jle 0x6014f1"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "edi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ebx",
+    "ecx",
+    "edx",
+    "eflags",
+    "esi"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "address": "0x59b7da",
+  "size": 6,
+  "assembly": [
+    "cmp edi, ebx",
+    "mov ecx, edi",
+    "jb 0x59b7e2"
+  ],
+  "live_in": [
+    "ebx",
+    "edi"
+  ],
+  "live_out": [
+    "ecx",
+    "eflags"
+  ]
+}

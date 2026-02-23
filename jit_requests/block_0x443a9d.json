@@ -1,0 +1,20 @@
+{
+  "address": "0x443a9d",
+  "size": 22,
+  "assembly": [
+    "mov dword ptr [esi + 0x90], eax",
+    "mov dword ptr [esi + 0x94], ebx",
+    "mov byte ptr [esp + 0x10], 6",
+    "call 0x444b60"
+  ],
+  "live_in": [
+    "eax",
+    "ebx",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "esp"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "address": "0x41e2e0",
+  "size": 9,
+  "assembly": [
+    "mov cl, byte ptr [eax]",
+    "add eax, 1",
+    "cmp cl, bl",
+    "jne 0x41e2e0"
+  ],
+  "live_in": [
+    "bl",
+    "eax"
+  ],
+  "live_out": [
+    "cl",
+    "eax",
+    "eflags"
+  ]
+}

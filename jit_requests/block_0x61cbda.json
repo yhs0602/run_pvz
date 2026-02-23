@@ -1,0 +1,23 @@
+{
+  "address": "0x61cbda",
+  "size": 15,
+  "assembly": [
+    "add eax, 0x20",
+    "movzx ecx, byte ptr [edx]",
+    "lea edi, [ecx - 0x41]",
+    "inc edx",
+    "cmp edi, 0x19",
+    "ja 0x61cbec"
+  ],
+  "live_in": [
+    "eax",
+    "edx"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "edi",
+    "edx",
+    "eflags"
+  ]
+}

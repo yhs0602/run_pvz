@@ -1,0 +1,5 @@
+{
+  "api_name": "BASS_Init",
+  "module": "KERNEL32.dll",
+  "address": "0x76010980"
+}

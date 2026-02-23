@@ -1,0 +1,20 @@
+{
+  "address": "0x513c2b",
+  "size": 12,
+  "assembly": [
+    "mov ecx, dword ptr [esp + 0x10]",
+    "push edi",
+    "mov edi, dword ptr [esp + 0x34]",
+    "push ecx",
+    "jmp 0x513bd0"
+  ],
+  "live_in": [
+    "edi",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "edi",
+    "esp"
+  ]
+}

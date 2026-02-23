@@ -1,0 +1,23 @@
+{
+  "address": "0x511270",
+  "size": 20,
+  "assembly": [
+    "xor edx, edx",
+    "mov dword ptr [esp + 0xc], edx",
+    "lea eax, [esi + 0x6c]",
+    "mov dword ptr [esi], 0x675394",
+    "call 0x59a8b0"
+  ],
+  "live_in": [
+    "edx",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "edx",
+    "eflags",
+    "esp"
+  ]
+}

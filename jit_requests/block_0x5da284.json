@@ -1,0 +1,20 @@
+{
+  "address": "0x5da284",
+  "size": 11,
+  "assembly": [
+    "add edx, 1",
+    "mov word ptr [esi], ax",
+    "cmp edx, dword ptr [edi + 0xc]",
+    "jl 0x5da260"
+  ],
+  "live_in": [
+    "ax",
+    "edi",
+    "edx",
+    "esi"
+  ],
+  "live_out": [
+    "edx",
+    "eflags"
+  ]
+}

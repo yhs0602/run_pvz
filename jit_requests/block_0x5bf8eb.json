@@ -1,0 +1,12 @@
+{
+  "address": "0x5bf8eb",
+  "size": 2,
+  "assembly": [
+    "jge 0x5bf8f2"
+  ],
+  "live_in": [
+    "eflags"
+  ],
+  "live_out": [
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "address": "0x6013a0",
+  "size": 11,
+  "assembly": [
+    "lea ecx, [esi + edi]",
+    "cmp ecx, 0x100",
+    "jle 0x6013c2"
+  ],
+  "live_in": [
+    "edi",
+    "esi"
+  ],
+  "live_out": [
+    "ecx",
+    "eflags"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "address": "0x562798",
+  "size": 16,
+  "assembly": [
+    "mov ebx, dword ptr [edi + 0xd8]",
+    "mov dword ptr [ebx + eax*4], ecx",
+    "add eax, 1",
+    "cmp eax, edx",
+    "jl 0x562790"
+  ],
+  "live_in": [
+    "eax",
+    "ecx",
+    "edi",
+    "edx"
+  ],
+  "live_out": [
+    "eax",
+    "ebx",
+    "eflags"
+  ]
+}

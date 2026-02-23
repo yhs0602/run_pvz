@@ -1,0 +1,15 @@
+{
+  "address": "0x59ab10",
+  "size": 10,
+  "assembly": [
+    "mov eax, 0x66f724",
+    "lea edx, [eax + 2]",
+    "jmp 0x59ab20"
+  ],
+  "live_in": [
+  ],
+  "live_out": [
+    "eax",
+    "edx"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "address": "0x56089d",
+  "size": 9,
+  "assembly": [
+    "lea edx, [ecx + ecx]",
+    "push edx",
+    "call 0x61c130"
+  ],
+  "live_in": [
+    "ecx",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "edx",
+    "esp"
+  ]
+}

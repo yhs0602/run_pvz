@@ -1,0 +1,16 @@
+{
+  "address": "0x403f20",
+  "size": 6,
+  "assembly": [
+    "mov edi, eax",
+    "test edi, edi",
+    "jbe 0x403f7b"
+  ],
+  "live_in": [
+    "eax"
+  ],
+  "live_out": [
+    "edi",
+    "eflags"
+  ]
+}

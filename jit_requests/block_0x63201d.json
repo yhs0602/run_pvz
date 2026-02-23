@@ -1,0 +1,18 @@
+{
+  "address": "0x63201d",
+  "size": 2,
+  "assembly": [
+    "rep stosb byte ptr es:[edi], al"
+  ],
+  "live_in": [
+    "al",
+    "ecx",
+    "edi",
+    "eflags",
+    "es"
+  ],
+  "live_out": [
+    "ecx",
+    "edi"
+  ]
+}

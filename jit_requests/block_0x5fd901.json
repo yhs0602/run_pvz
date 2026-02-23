@@ -1,0 +1,44 @@
+{
+  "address": "0x5fd901",
+  "size": 77,
+  "assembly": [
+    "mov ebp, dword ptr [esi + 8]",
+    "mov ebx, edx",
+    "sar ebx, 0x10",
+    "mov dword ptr [eax + ebp], ebx",
+    "mov ebp, dword ptr [esi + 0xc]",
+    "mov ebx, edi",
+    "sar ebx, 0x10",
+    "mov dword ptr [eax + ebp], ebx",
+    "mov ebp, dword ptr [esi + 0x10]",
+    "mov ebx, dword ptr [esp + 0x10]",
+    "mov dword ptr [eax + ebp], ebx",
+    "mov ebp, dword ptr [esi + 0x14]",
+    "mov dword ptr [eax + ebp], ecx",
+    "sub ebx, 0xb6d2",
+    "sub ecx, 0x581a",
+    "add edx, 0x166e9",
+    "add edi, 0x1c5a2",
+    "add eax, 4",
+    "cmp ecx, 0xffd4cb1a",
+    "mov dword ptr [esp + 0x10], ebx",
+    "jge 0x5fd901"
+  ],
+  "live_in": [
+    "eax",
+    "ecx",
+    "edi",
+    "edx",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ebx",
+    "ecx",
+    "edi",
+    "edx",
+    "eflags"
+  ]
+}

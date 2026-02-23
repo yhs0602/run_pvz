@@ -1,0 +1,26 @@
+{
+  "address": "0x62a452",
+  "size": 23,
+  "assembly": [
+    "push ebp",
+    "mov ebp, esp",
+    "xor eax, eax",
+    "cmp dword ptr [0x6a66f4], eax",
+    "push eax",
+    "push dword ptr [ebp + 0x10]",
+    "push dword ptr [ebp + 0xc]",
+    "push dword ptr [ebp + 8]",
+    "jne 0x62a470"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "eflags",
+    "esp"
+  ]
+}

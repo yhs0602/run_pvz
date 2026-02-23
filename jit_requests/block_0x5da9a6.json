@@ -1,0 +1,16 @@
+{
+  "address": "0x5da9a6",
+  "size": 9,
+  "assembly": [
+    "lea ecx, [esp + 0x18]",
+    "call 0x5d9ee0"
+  ],
+  "live_in": [
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "esp"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "address": "0x61d02b",
+  "size": 20,
+  "assembly": [
+    "mov edi, dword ptr [ebp + 0x10]",
+    "imul edi, dword ptr [ebp + 0x14]",
+    "test word ptr [esi + 0xc], 0x10c",
+    "mov dword ptr [ebp - 0x10], edi",
+    "mov ebx, edi",
+    "je 0x61d047"
+  ],
+  "live_in": [
+    "ebp",
+    "esi"
+  ],
+  "live_out": [
+    "ebx",
+    "edi",
+    "eflags"
+  ]
+}

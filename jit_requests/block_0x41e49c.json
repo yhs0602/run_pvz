@@ -1,0 +1,32 @@
+{
+  "address": "0x41e49c",
+  "size": 22,
+  "assembly": [
+    "mov edx, ebx",
+    "mov ecx, dword ptr [esi + 0x14]",
+    "push ebp",
+    "mov ebp, dword ptr [esp + 0x18]",
+    "sub eax, ecx",
+    "push ebp",
+    "push eax",
+    "add ecx, edx",
+    "push ecx",
+    "call 0x61be1b"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "ebx",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ecx",
+    "edx",
+    "eflags",
+    "esp"
+  ]
+}

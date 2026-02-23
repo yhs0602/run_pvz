@@ -1,0 +1,18 @@
+{
+  "address": "0x61de3d",
+  "size": 8,
+  "assembly": [
+    "mov esi, dword ptr [ebp + 8]",
+    "mov ecx, esi",
+    "call dword ptr [ebp + 0x14]"
+  ],
+  "live_in": [
+    "ebp",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "esi",
+    "esp"
+  ]
+}

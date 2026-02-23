@@ -1,0 +1,18 @@
+{
+  "address": "0x59ab20",
+  "size": 11,
+  "assembly": [
+    "mov cx, word ptr [eax]",
+    "add eax, 2",
+    "test cx, cx",
+    "jne 0x59ab20"
+  ],
+  "live_in": [
+    "eax"
+  ],
+  "live_out": [
+    "cx",
+    "eax",
+    "eflags"
+  ]
+}

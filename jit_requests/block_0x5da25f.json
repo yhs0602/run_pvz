@@ -1,0 +1,27 @@
+{
+  "address": "0x5da25f",
+  "size": 23,
+  "assembly": [
+    "nop",
+    "mov eax, dword ptr [ebx + 8]",
+    "lea esi, [eax + edx*2]",
+    "mov eax, dword ptr [edi + 8]",
+    "movzx ebp, word ptr [eax + edx*2]",
+    "movzx eax, word ptr [esi]",
+    "sub eax, ebp",
+    "sub eax, ecx",
+    "jns 0x5da282"
+  ],
+  "live_in": [
+    "ebx",
+    "ecx",
+    "edi",
+    "edx"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "eflags",
+    "esi"
+  ]
+}

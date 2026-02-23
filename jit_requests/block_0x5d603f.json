@@ -1,0 +1,16 @@
+{
+  "address": "0x5d603f",
+  "size": 11,
+  "assembly": [
+    "lea edi, [edx - 0xfffe]",
+    "cmp edi, 1",
+    "jbe 0x5d6011"
+  ],
+  "live_in": [
+    "edx"
+  ],
+  "live_out": [
+    "edi",
+    "eflags"
+  ]
+}

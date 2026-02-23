@@ -1,0 +1,16 @@
+{
+  "address": "0x5d5f20",
+  "size": 10,
+  "assembly": [
+    "sub esp, 0x1c",
+    "cmp dword ptr [esp + 0x24], 0",
+    "jne 0x5d5f30"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esp"
+  ]
+}

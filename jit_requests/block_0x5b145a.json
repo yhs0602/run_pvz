@@ -1,0 +1,15 @@
+{
+  "address": "0x5b145a",
+  "size": 4,
+  "assembly": [
+    "add esp, 0x64",
+    "ret"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esp"
+  ]
+}

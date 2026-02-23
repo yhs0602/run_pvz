@@ -1,0 +1,20 @@
+{
+  "address": "0x5d82d1",
+  "size": 28,
+  "assembly": [
+    "add esp, 4",
+    "test ebx, ebx",
+    "mov dword ptr [esp + 0x58], 0xf",
+    "mov dword ptr [esp + 0x54], 0",
+    "mov byte ptr [esp + 0x44], 0",
+    "jne 0x5d82f2"
+  ],
+  "live_in": [
+    "ebx",
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esp"
+  ]
+}

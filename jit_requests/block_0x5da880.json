@@ -1,0 +1,44 @@
+{
+  "address": "0x5da880",
+  "size": 58,
+  "assembly": [
+    "push -1",
+    "push 0x63feb8",
+    "mov eax, dword ptr fs:[0]",
+    "push eax",
+    "sub esp, 0x2c",
+    "push ebx",
+    "push ebp",
+    "push esi",
+    "push edi",
+    "mov eax, dword ptr [0x699fe8]",
+    "xor eax, esp",
+    "push eax",
+    "lea eax, [esp + 0x40]",
+    "mov dword ptr fs:[0], eax",
+    "mov ebp, ecx",
+    "mov ebx, dword ptr [esp + 0x54]",
+    "xor edi, edi",
+    "mov eax, ebx",
+    "mov dword ptr [esp + 0x14], edi",
+    "call 0x5d9fd0"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "ecx",
+    "edi",
+    "eip",
+    "esi",
+    "esp",
+    "fs"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ebx",
+    "edi",
+    "eflags",
+    "esp"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "address": "0x51a165",
+  "size": 18,
+  "assembly": [
+    "xor eax, eax",
+    "mov dword ptr [esi + 0x18], 7",
+    "mov dword ptr [esi + 0x14], eax",
+    "mov word ptr [esi + 4], ax",
+    "pop esi",
+    "ret"
+  ],
+  "live_in": [
+    "ax",
+    "eax",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

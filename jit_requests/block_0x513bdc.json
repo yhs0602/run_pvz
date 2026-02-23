@@ -1,0 +1,32 @@
+{
+  "address": "0x513bdc",
+  "size": 25,
+  "assembly": [
+    "mov ecx, dword ptr [eax]",
+    "mov edx, dword ptr [eax + 4]",
+    "mov dword ptr [ebx], ecx",
+    "mov dword ptr [ebx + 4], edx",
+    "mov byte ptr [ebx + 8], 1",
+    "mov eax, ebx",
+    "pop edi",
+    "pop esi",
+    "pop ebp",
+    "add esp, 0x20",
+    "ret 8"
+  ],
+  "live_in": [
+    "eax",
+    "ebx",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ecx",
+    "edi",
+    "edx",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "address": "0x60145a",
+  "size": 17,
+  "assembly": [
+    "lea eax, [esp + esi + 0x430]",
+    "add edi, edi",
+    "add ebp, 1",
+    "cmp byte ptr [eax], 0",
+    "jne 0x601410"
+  ],
+  "live_in": [
+    "ebp",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "edi",
+    "eflags"
+  ]
+}

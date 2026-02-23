@@ -1,0 +1,16 @@
+{
+  "address": "0x5144ed",
+  "size": 8,
+  "assembly": [
+    "mov edx, dword ptr [edx]",
+    "cmp byte ptr [edx + 0x2c], 0",
+    "jne 0x51450b"
+  ],
+  "live_in": [
+    "edx"
+  ],
+  "live_out": [
+    "edx",
+    "eflags"
+  ]
+}

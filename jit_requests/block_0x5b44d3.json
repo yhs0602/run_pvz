@@ -1,0 +1,14 @@
+{
+  "address": "0x5b44d3",
+  "size": 4,
+  "assembly": [
+    "test ebx, ebx",
+    "jne 0x5b44dc"
+  ],
+  "live_in": [
+    "ebx"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

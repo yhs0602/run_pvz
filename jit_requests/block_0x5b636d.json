@@ -1,0 +1,19 @@
+{
+  "address": "0x5b636d",
+  "size": 16,
+  "assembly": [
+    "test al, al",
+    "lea edx, [esp + 0x84]",
+    "push edx",
+    "je 0x5b65c8"
+  ],
+  "live_in": [
+    "al",
+    "esp"
+  ],
+  "live_out": [
+    "edx",
+    "eflags",
+    "esp"
+  ]
+}

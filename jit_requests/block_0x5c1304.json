@@ -1,0 +1,25 @@
+{
+  "address": "0x5c1304",
+  "size": 22,
+  "assembly": [
+    "add eax, 1",
+    "mov dword ptr [ecx + 8], eax",
+    "mov ecx, dword ptr [esp + 0x48]",
+    "mov dword ptr fs:[0], ecx",
+    "pop ecx",
+    "add esp, 0x50",
+    "ret"
+  ],
+  "live_in": [
+    "eax",
+    "ecx",
+    "esp",
+    "fs"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

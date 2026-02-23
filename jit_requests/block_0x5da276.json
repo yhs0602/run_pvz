@@ -1,0 +1,17 @@
+{
+  "address": "0x5da276",
+  "size": 12,
+  "assembly": [
+    "mov ecx, 1",
+    "add eax, 0x10000",
+    "jmp 0x5da284"
+  ],
+  "live_in": [
+    "eax"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags"
+  ]
+}

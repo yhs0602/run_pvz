@@ -1,0 +1,19 @@
+{
+  "address": "0x5bdb20",
+  "size": 5,
+  "assembly": [
+    "pop ebx",
+    "lea eax, [edi + esi*2]",
+    "ret"
+  ],
+  "live_in": [
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebx",
+    "esp"
+  ]
+}

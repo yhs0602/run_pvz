@@ -1,0 +1,20 @@
+{
+  "address": "0x404420",
+  "size": 9,
+  "assembly": [
+    "push esi",
+    "mov esi, ecx",
+    "cmp dword ptr [esi + 0x18], 0x10",
+    "jb 0x404435"
+  ],
+  "live_in": [
+    "ecx",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

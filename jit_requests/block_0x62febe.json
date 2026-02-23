@@ -1,0 +1,21 @@
+{
+  "address": "0x62febe",
+  "size": 12,
+  "assembly": [
+    "push ebp",
+    "mov ebp, esp",
+    "push ecx",
+    "cmp word ptr [ebp + 8], 0xffff",
+    "jne 0x62fece"
+  ],
+  "live_in": [
+    "ebp",
+    "ecx",
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "eflags",
+    "esp"
+  ]
+}

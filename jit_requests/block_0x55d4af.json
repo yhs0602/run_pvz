@@ -1,0 +1,14 @@
+{
+  "address": "0x55d4af",
+  "size": 5,
+  "assembly": [
+    "mov ecx, dword ptr [esi + 4]",
+    "jmp 0x55d4b7"
+  ],
+  "live_in": [
+    "esi"
+  ],
+  "live_out": [
+    "ecx"
+  ]
+}

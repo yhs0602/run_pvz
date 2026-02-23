@@ -1,0 +1,27 @@
+{
+  "address": "0x631f7c",
+  "size": 48,
+  "assembly": [
+    "movdqa xmmword ptr [edi], xmm0",
+    "movdqa xmmword ptr [edi + 0x10], xmm0",
+    "movdqa xmmword ptr [edi + 0x20], xmm0",
+    "movdqa xmmword ptr [edi + 0x30], xmm0",
+    "movdqa xmmword ptr [edi + 0x40], xmm0",
+    "movdqa xmmword ptr [edi + 0x50], xmm0",
+    "movdqa xmmword ptr [edi + 0x60], xmm0",
+    "movdqa xmmword ptr [edi + 0x70], xmm0",
+    "lea edi, [edi + 0x80]",
+    "dec ecx",
+    "jne 0x631f7c"
+  ],
+  "live_in": [
+    "ecx",
+    "edi",
+    "xmm0"
+  ],
+  "live_out": [
+    "ecx",
+    "edi",
+    "eflags"
+  ]
+}

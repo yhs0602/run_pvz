@@ -1,0 +1,22 @@
+{
+  "address": "0x443b6a",
+  "size": 19,
+  "assembly": [
+    "mov ebp, 0xf",
+    "mov dword ptr [edi + 0x70], ebp",
+    "mov dword ptr [edi + 0x6c], ebx",
+    "mov byte ptr [edi + 0x5c], bl",
+    "cmp dword ptr [edi + 0x54], esi",
+    "jb 0x443b89"
+  ],
+  "live_in": [
+    "bl",
+    "ebx",
+    "edi",
+    "esi"
+  ],
+  "live_out": [
+    "ebp",
+    "eflags"
+  ]
+}

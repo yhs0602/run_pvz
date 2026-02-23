@@ -1,0 +1,17 @@
+{
+  "address": "0x5d4065",
+  "size": 7,
+  "assembly": [
+    "add esp, 0x14",
+    "test eax, eax",
+    "jne 0x5d407e"
+  ],
+  "live_in": [
+    "eax",
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esp"
+  ]
+}

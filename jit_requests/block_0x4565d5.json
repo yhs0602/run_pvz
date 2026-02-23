@@ -1,0 +1,14 @@
+{
+  "address": "0x4565d5",
+  "size": 5,
+  "assembly": [
+    "mov edi, dword ptr [edi + 4]",
+    "jmp 0x4565dd"
+  ],
+  "live_in": [
+    "edi"
+  ],
+  "live_out": [
+    "edi"
+  ]
+}

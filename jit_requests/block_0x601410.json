@@ -1,0 +1,17 @@
+{
+  "address": "0x601410",
+  "size": 7,
+  "assembly": [
+    "movsx eax, byte ptr [eax]",
+    "cmp eax, ebp",
+    "jne 0x601436"
+  ],
+  "live_in": [
+    "eax",
+    "ebp"
+  ],
+  "live_out": [
+    "eax",
+    "eflags"
+  ]
+}

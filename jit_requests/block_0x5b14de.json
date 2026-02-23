@@ -1,0 +1,18 @@
+{
+  "address": "0x5b14de",
+  "size": 14,
+  "assembly": [
+    "movzx ebp, word ptr [eax + ebx*2]",
+    "cmp bp, 0x26",
+    "jne 0x5b16d6"
+  ],
+  "live_in": [
+    "bp",
+    "eax",
+    "ebx"
+  ],
+  "live_out": [
+    "ebp",
+    "eflags"
+  ]
+}

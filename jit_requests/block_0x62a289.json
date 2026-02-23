@@ -1,0 +1,27 @@
+{
+  "address": "0x62a289",
+  "size": 21,
+  "assembly": [
+    "mov ecx, dword ptr [ebp - 0x14]",
+    "push ebx",
+    "mov bl, byte ptr [esi]",
+    "mov dword ptr [ebp - 4], edi",
+    "lea edi, [esi + 1]",
+    "cmp dword ptr [ecx + 0xac], 1",
+    "jle 0x62a2b5"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "bl",
+    "ecx",
+    "edi",
+    "eflags",
+    "esp"
+  ]
+}

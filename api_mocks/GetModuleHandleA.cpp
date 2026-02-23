@@ -39,6 +39,31 @@ extern "C" void mock_GetModuleHandleA(APIContext* ctx) {
         } else if (module_name == "user32" || module_name == "user32.dll") {
             hModule = 0x75000000;
             ctx->global_state["LastError"] = 0;
+        } else if (module_name == "mscoree" || module_name == "mscoree.dll") {
+            // PvZ probes this during startup; returning a non-zero handle avoids abort paths.
+            hModule = 0x78000000;
+            ctx->global_state["LastError"] = 0;
+        } else if (module_name == "ole32" || module_name == "ole32.dll") {
+            hModule = 0x74000000;
+            ctx->global_state["LastError"] = 0;
+        } else if (module_name == "oleaut32" || module_name == "oleaut32.dll") {
+            hModule = 0x74100000;
+            ctx->global_state["LastError"] = 0;
+        } else if (module_name == "ddraw" || module_name == "ddraw.dll") {
+            hModule = 0x73000000;
+            ctx->global_state["LastError"] = 0;
+        } else if (module_name == "gdi32" || module_name == "gdi32.dll") {
+            hModule = 0x73100000;
+            ctx->global_state["LastError"] = 0;
+        } else if (module_name == "winmm" || module_name == "winmm.dll") {
+            hModule = 0x73200000;
+            ctx->global_state["LastError"] = 0;
+        } else if (module_name == "dsound" || module_name == "dsound.dll") {
+            hModule = 0x73300000;
+            ctx->global_state["LastError"] = 0;
+        } else if (module_name == "bass" || module_name == "bass.dll") {
+            hModule = 0x73400000;
+            ctx->global_state["LastError"] = 0;
         } else {
             hModule = 0; // Module not found
             ctx->global_state["LastError"] = 126; // ERROR_MOD_NOT_FOUND

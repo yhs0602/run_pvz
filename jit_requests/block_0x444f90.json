@@ -1,0 +1,31 @@
+{
+  "address": "0x444f90",
+  "size": 21,
+  "assembly": [
+    "push ecx",
+    "push ebx",
+    "push esi",
+    "mov esi, dword ptr [esp + 0x10]",
+    "xor ebx, ebx",
+    "cmp byte ptr [esi + 0x45], bl",
+    "push edi",
+    "mov dword ptr [esp + 0xc], ecx",
+    "mov edi, esi",
+    "jne 0x445006"
+  ],
+  "live_in": [
+    "bl",
+    "ebx",
+    "ecx",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ebx",
+    "edi",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

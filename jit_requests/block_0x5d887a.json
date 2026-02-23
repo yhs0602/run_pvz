@@ -1,0 +1,25 @@
+{
+  "address": "0x5d887a",
+  "size": 18,
+  "assembly": [
+    "mov eax, dword ptr [edx]",
+    "mov ecx, dword ptr [eax + 8]",
+    "add ecx, dword ptr [edx + 0x28]",
+    "mov edx, dword ptr [esp + 0x14]",
+    "add ecx, esi",
+    "test edi, edi",
+    "jle 0x5d88a1"
+  ],
+  "live_in": [
+    "edi",
+    "edx",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "edx",
+    "eflags"
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "address": "0x5d5f30",
+  "size": 24,
+  "assembly": [
+    "mov eax, dword ptr [esp + 0x20]",
+    "push ebx",
+    "push ebp",
+    "push esi",
+    "mov esi, dword ptr [eax]",
+    "movzx edx, byte ptr [esi]",
+    "add esi, 1",
+    "test dl, dl",
+    "push edi",
+    "jns 0x5d6027"
+  ],
+  "live_in": [
+    "dl",
+    "ebp",
+    "ebx",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "edx",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

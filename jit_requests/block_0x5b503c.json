@@ -1,0 +1,23 @@
+{
+  "address": "0x5b503c",
+  "size": 34,
+  "assembly": [
+    "cmp dword ptr [ebx + 4], esi",
+    "mov eax, dword ptr [esp + 0x14]",
+    "sete dl",
+    "mov dword ptr [esp + 0xc0], 0xffffffff",
+    "cmp dword ptr [esp + 0x38], 0x10",
+    "mov byte ptr [eax + 0xcc], dl",
+    "jb 0x5b506b"
+  ],
+  "live_in": [
+    "ebx",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "dl",
+    "eax",
+    "eflags"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "address": "0x5d888c",
+  "size": 21,
+  "assembly": [
+    "mov esi, edi",
+    "mov edi, edi",
+    "mov al, byte ptr [ecx]",
+    "xor al, 0xf7",
+    "mov byte ptr [edx], al",
+    "add edx, 1",
+    "add ecx, 1",
+    "sub esi, 1",
+    "jne 0x5d8890"
+  ],
+  "live_in": [
+    "ecx",
+    "edi",
+    "edx"
+  ],
+  "live_out": [
+    "al",
+    "ecx",
+    "edi",
+    "edx",
+    "eflags",
+    "esi"
+  ]
+}

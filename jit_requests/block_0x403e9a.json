@@ -1,0 +1,17 @@
+{
+  "address": "0x403e9a",
+  "size": 8,
+  "assembly": [
+    "cmp eax, 0x10",
+    "mov dword ptr [esi + 0x14], edi",
+    "jb 0x403eb1"
+  ],
+  "live_in": [
+    "eax",
+    "edi",
+    "esi"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

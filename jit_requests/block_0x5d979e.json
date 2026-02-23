@@ -1,0 +1,16 @@
+{
+  "address": "0x5d979e",
+  "size": 9,
+  "assembly": [
+    "mov eax, dword ptr [eax + 4]",
+    "cmp byte ptr [eax + 0x59], 0",
+    "jne 0x5d97bd"
+  ],
+  "live_in": [
+    "eax"
+  ],
+  "live_out": [
+    "eax",
+    "eflags"
+  ]
+}

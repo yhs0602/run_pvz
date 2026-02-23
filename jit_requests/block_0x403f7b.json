@@ -1,0 +1,22 @@
+{
+  "address": "0x403f7b",
+  "size": 8,
+  "assembly": [
+    "pop edi",
+    "mov eax, esi",
+    "pop esi",
+    "pop ebx",
+    "ret 8"
+  ],
+  "live_in": [
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebx",
+    "edi",
+    "esi",
+    "esp"
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "api_name": "mixerOpen",
+  "module": "WINMM.dll",
+  "address": "0x900005a0"
+}

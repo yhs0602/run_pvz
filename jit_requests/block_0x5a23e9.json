@@ -1,0 +1,22 @@
+{
+  "address": "0x5a23e9",
+  "size": 43,
+  "assembly": [
+    "add esp, 4",
+    "mov byte ptr [esp + 0x180], 3",
+    "cmp dword ptr [esp + 0x48], 8",
+    "mov dword ptr [esp + 0xc4], 0xf",
+    "mov dword ptr [esp + 0xc0], ebx",
+    "mov byte ptr [esp + 0xb0], bl",
+    "jb 0x5a2421"
+  ],
+  "live_in": [
+    "bl",
+    "ebx",
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esp"
+  ]
+}

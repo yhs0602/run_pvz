@@ -1,0 +1,39 @@
+{
+  "address": "0x5c4990",
+  "size": 39,
+  "assembly": [
+    "push ecx",
+    "mov eax, dword ptr [esp + 0x2c]",
+    "push ebx",
+    "mov ebx, dword ptr [esp + 0x2c]",
+    "push ebp",
+    "mov ebp, dword ptr [esp + 0x2c]",
+    "push esi",
+    "push edi",
+    "mov edi, dword ptr [esp + 0x2c]",
+    "mov esi, edi",
+    "sub esi, ebp",
+    "sar esi, 1",
+    "test ebx, ebx",
+    "mov dword ptr [esp + 0x30], ebx",
+    "mov dword ptr [esp + 0x34], eax",
+    "jne 0x5c49bc"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "ecx",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ebx",
+    "edi",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "api_name": "GetActiveWindow",
+  "module": "USER32.dll",
+  "address": "0x900004f0"
+}

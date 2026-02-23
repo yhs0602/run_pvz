@@ -1,0 +1,17 @@
+{
+  "address": "0x626b30",
+  "size": 7,
+  "assembly": [
+    "add esp, 0x10",
+    "test eax, eax",
+    "je 0x626b46"
+  ],
+  "live_in": [
+    "eax",
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esp"
+  ]
+}

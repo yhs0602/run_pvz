@@ -1,0 +1,19 @@
+{
+  "address": "0x5a2e3c",
+  "size": 14,
+  "assembly": [
+    "mov edx, edi",
+    "lea ecx, [esp + 0xac]",
+    "call 0x5b11a0"
+  ],
+  "live_in": [
+    "edi",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "edx",
+    "esp"
+  ]
+}

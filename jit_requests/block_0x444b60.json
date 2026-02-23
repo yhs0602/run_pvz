@@ -1,0 +1,16 @@
+{
+  "address": "0x444b60",
+  "size": 10,
+  "assembly": [
+    "mov ecx, 1",
+    "call 0x445290"
+  ],
+  "live_in": [
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "esp"
+  ]
+}

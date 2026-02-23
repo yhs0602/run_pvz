@@ -1,0 +1,29 @@
+{
+  "address": "0x5da150",
+  "size": 29,
+  "assembly": [
+    "mov ecx, dword ptr [ebx + 8]",
+    "movzx edx, word ptr [ecx + eax*2]",
+    "lea ecx, [ecx + eax*2]",
+    "lea edx, [esi + edx*2]",
+    "mov esi, edx",
+    "add eax, 1",
+    "sar esi, 0x10",
+    "mov word ptr [ecx], dx",
+    "cmp eax, dword ptr [ebx + 0xc]",
+    "jl 0x5da150"
+  ],
+  "live_in": [
+    "dx",
+    "eax",
+    "ebx",
+    "esi"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "edx",
+    "eflags",
+    "esi"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "address": "0x444fce",
+  "size": 18,
+  "assembly": [
+    "add esp, 4",
+    "mov dword ptr [esi + 0x40], ebp",
+    "mov dword ptr [esi + 0x3c], ebx",
+    "mov byte ptr [esi + 0x2c], bl",
+    "cmp dword ptr [esi + 0x24], 0x10",
+    "jb 0x444fec"
+  ],
+  "live_in": [
+    "bl",
+    "ebp",
+    "ebx",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esp"
+  ]
+}

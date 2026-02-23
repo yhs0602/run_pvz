@@ -1,0 +1,17 @@
+{
+  "address": "0x41dca3",
+  "size": 7,
+  "assembly": [
+    "lea edx, [eax + ebx]",
+    "cmp edx, eax",
+    "jae 0x41dcaf"
+  ],
+  "live_in": [
+    "eax",
+    "ebx"
+  ],
+  "live_out": [
+    "edx",
+    "eflags"
+  ]
+}

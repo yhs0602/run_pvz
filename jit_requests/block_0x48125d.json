@@ -1,0 +1,19 @@
+{
+  "address": "0x48125d",
+  "size": 10,
+  "assembly": [
+    "lea ecx, [ecx]",
+    "mov ecx, dword ptr [esi + 4]",
+    "cmp ecx, dword ptr [eax]",
+    "jne 0x481275"
+  ],
+  "live_in": [
+    "eax",
+    "ecx",
+    "esi"
+  ],
+  "live_out": [
+    "ecx",
+    "eflags"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "address": "0x514517",
+  "size": 38,
+  "assembly": [
+    "mov eax, dword ptr [esi + 4]",
+    "mov byte ptr [eax + 0x2c], bl",
+    "mov ecx, dword ptr [esi + 4]",
+    "mov edx, dword ptr [ecx + 4]",
+    "mov byte ptr [edx + 0x2c], 0",
+    "mov eax, dword ptr [esi + 4]",
+    "mov eax, dword ptr [eax + 4]",
+    "mov ecx, dword ptr [eax + 8]",
+    "mov edx, dword ptr [ecx]",
+    "mov dword ptr [eax + 8], edx",
+    "mov edx, dword ptr [ecx]",
+    "cmp byte ptr [edx + 0x2d], 0",
+    "jne 0x514540"
+  ],
+  "live_in": [
+    "bl",
+    "esi"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "edx",
+    "eflags"
+  ]
+}

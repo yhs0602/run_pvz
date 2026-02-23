@@ -1,0 +1,28 @@
+{
+  "address": "0x55f654",
+  "size": 27,
+  "assembly": [
+    "add esp, 4",
+    "cmp esi, 8",
+    "mov ecx, dword ptr [ebp + 8]",
+    "lea eax, [edi + 4]",
+    "mov word ptr [eax], 0",
+    "mov dword ptr [eax], ecx",
+    "mov dword ptr [edi + 0x18], esi",
+    "mov dword ptr [edi + 0x14], ebx",
+    "jb 0x55f671"
+  ],
+  "live_in": [
+    "ebp",
+    "ebx",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "address": "0x5b634b",
+  "size": 16,
+  "assembly": [
+    "xor eax, eax",
+    "cmp esi, 5",
+    "setne al",
+    "cmp eax, edi",
+    "jne 0x5b63e6"
+  ],
+  "live_in": [
+    "eax",
+    "edi",
+    "esi"
+  ],
+  "live_out": [
+    "al",
+    "eax",
+    "eflags"
+  ]
+}

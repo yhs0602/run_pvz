@@ -1,0 +1,23 @@
+{
+  "address": "0x45bc09",
+  "size": 17,
+  "assembly": [
+    "mov ecx, eax",
+    "mov eax, dword ptr [edi + 0x18]",
+    "cmp eax, 0x10",
+    "mov dword ptr [esp + 0xc], eax",
+    "lea ebp, [edi + 4]",
+    "jb 0x45bc1f"
+  ],
+  "live_in": [
+    "eax",
+    "edi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ecx",
+    "eflags"
+  ]
+}

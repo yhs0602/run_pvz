@@ -1,0 +1,21 @@
+{
+  "address": "0x62acfc",
+  "size": 11,
+  "assembly": [
+    "mov eax, dword ptr [esp + 4]",
+    "push esi",
+    "xor esi, esi",
+    "cmp eax, esi",
+    "jne 0x62ad24"
+  ],
+  "live_in": [
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}
