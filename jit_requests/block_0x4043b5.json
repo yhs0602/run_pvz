@@ -1,0 +1,17 @@
+{
+  "address": "0x4043b5",
+  "size": 8,
+  "assembly": [
+    "cmp eax, 0x10",
+    "mov dword ptr [esi + 0x14], edi",
+    "jb 0x4043bf"
+  ],
+  "live_in": [
+    "eax",
+    "edi",
+    "esi"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "address": "0x5d6a01",
+  "size": 18,
+  "assembly": [
+    "mov eax, dword ptr [esi + 8]",
+    "mov cl, byte ptr [ebx]",
+    "mov byte ptr [eax], cl",
+    "add eax, 1",
+    "mov dword ptr [esi + 8], eax",
+    "pop edi",
+    "add esp, 0x10",
+    "ret"
+  ],
+  "live_in": [
+    "ebx",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "cl",
+    "eax",
+    "edi",
+    "eflags",
+    "esp"
+  ]
+}

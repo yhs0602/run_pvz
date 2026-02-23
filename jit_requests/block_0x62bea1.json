@@ -1,0 +1,17 @@
+{
+  "address": "0x62bea1",
+  "size": 8,
+  "assembly": [
+    "mov al, dl",
+    "sub al, 0x20",
+    "cmp al, 0x58",
+    "ja 0x62beba"
+  ],
+  "live_in": [
+    "dl"
+  ],
+  "live_out": [
+    "al",
+    "eflags"
+  ]
+}

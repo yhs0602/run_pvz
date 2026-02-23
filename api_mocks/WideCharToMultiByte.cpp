@@ -42,7 +42,7 @@ extern "C" void mock_WideCharToMultiByte(APIContext* ctx) {
     wide.reserve(256);
 
     auto read_u16 = [&](uint32_t addr, uint16_t& out) -> bool {
-        return uc_mem_read(ctx->uc, addr, &out, sizeof(out)) == UC_ERR_OK;
+        return ctx->backend->mem_read(addr, &out, sizeof(out)) == UC_ERR_OK;
     };
 
     if (cch_wide_char == -1) {
@@ -127,7 +127,7 @@ extern "C" void mock_WideCharToMultiByte(APIContext* ctx) {
         char default_ch = '?';
         if (lp_default_char != 0) {
             char tmp = '?';
-            if (uc_mem_read(ctx->uc, lp_default_char, &tmp, 1) == UC_ERR_OK && tmp != '\0') {
+            if (ctx->backend->mem_read(lp_default_char, &tmp, 1) == UC_ERR_OK && tmp != '\0') {
                 default_ch = tmp;
             }
         }
@@ -151,7 +151,7 @@ extern "C" void mock_WideCharToMultiByte(APIContext* ctx) {
     if (cb_multi_byte == 0) {
         if (lp_used_default_char != 0) {
             uint32_t used = used_default ? 1u : 0u;
-            uc_mem_write(ctx->uc, lp_used_default_char, &used, 4);
+            ctx->backend->mem_write(lp_used_default_char, &used, 4);
         }
         ctx->global_state["LastError"] = ERROR_SUCCESS;
         ctx->set_eax(required);
@@ -168,14 +168,14 @@ extern "C" void mock_WideCharToMultiByte(APIContext* ctx) {
         return;
     }
 
-    if (required > 0 && uc_mem_write(ctx->uc, lp_multi_byte_str, out.data(), required) != UC_ERR_OK) {
+    if (required > 0 && ctx->backend->mem_write(lp_multi_byte_str, out.data(), required) != UC_ERR_OK) {
         fail(ERROR_INVALID_PARAMETER);
         return;
     }
 
     if (lp_used_default_char != 0) {
         uint32_t used = used_default ? 1u : 0u;
-        uc_mem_write(ctx->uc, lp_used_default_char, &used, 4);
+        ctx->backend->mem_write(lp_used_default_char, &used, 4);
     }
 
     ctx->global_state["LastError"] = ERROR_SUCCESS;

@@ -52,14 +52,14 @@ extern "C" void mock_GetEnvironmentStringsW(APIContext* ctx) {
         const uint32_t map_needed = (env_ptr - map_base) + bytes;
         const uint32_t map_size = (map_needed + (kPageSize - 1)) & ~(kPageSize - 1);
 
-        uc_err map_err = uc_mem_map(ctx->uc, map_base, map_size, UC_PROT_ALL);
+        uc_err map_err = ctx->backend->mem_map(map_base, map_size, UC_PROT_ALL);
         if (map_err != UC_ERR_OK && map_err != UC_ERR_MAP) {
             env_ptr = 0x00310000;
             const uint32_t fallback_size = (bytes + (kPageSize - 1)) & ~(kPageSize - 1);
-            uc_mem_map(ctx->uc, env_ptr, fallback_size, UC_PROT_ALL);
+            ctx->backend->mem_map(env_ptr, fallback_size, UC_PROT_ALL);
         }
 
-        if (uc_mem_write(ctx->uc, env_ptr, env_block.data(), bytes) != UC_ERR_OK) {
+        if (ctx->backend->mem_write(env_ptr, env_block.data(), bytes) != UC_ERR_OK) {
             env_ptr = 0;
             ctx->global_state["LastError"] = ERROR_NOT_ENOUGH_MEMORY;
         } else {

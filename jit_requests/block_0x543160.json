@@ -1,0 +1,23 @@
+{
+  "address": "0x543160",
+  "size": 15,
+  "assembly": [
+    "push ecx",
+    "push esi",
+    "mov esi, ecx",
+    "push 0",
+    "lea ecx, [esp + 8]",
+    "call 0x60b57a"
+  ],
+  "live_in": [
+    "ecx",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "esi",
+    "esp"
+  ]
+}

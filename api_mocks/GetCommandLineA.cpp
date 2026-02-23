@@ -28,13 +28,13 @@ extern "C" void mock_GetCommandLineA(APIContext* ctx) {
         const uint32_t map_needed = (cmd_ptr - map_base) + len;
         const uint32_t map_size = (map_needed + (kPageSize - 1)) & ~(kPageSize - 1);
 
-        uc_err map_err = uc_mem_map(ctx->uc, map_base, map_size, UC_PROT_ALL);
+        uc_err map_err = ctx->backend->mem_map(map_base, map_size, UC_PROT_ALL);
         if (map_err != UC_ERR_OK && map_err != UC_ERR_MAP) {
             cmd_ptr = 0x00300000;
-            uc_mem_map(ctx->uc, cmd_ptr & ~(kPageSize - 1), kPageSize, UC_PROT_ALL);
+            ctx->backend->mem_map(cmd_ptr & ~(kPageSize - 1), kPageSize, UC_PROT_ALL);
         }
 
-        if (uc_mem_write(ctx->uc, cmd_ptr, kCommandLine, len) != UC_ERR_OK) {
+        if (ctx->backend->mem_write(cmd_ptr, kCommandLine, len) != UC_ERR_OK) {
             cmd_ptr = 0;
         } else {
             ctx->global_state["GetCommandLineA_ptr"] = cmd_ptr;

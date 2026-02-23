@@ -93,7 +93,7 @@ extern "C" void mock_RegOpenKeyExA(APIContext* ctx) {
         sub_key.reserve(128);
         for (uint32_t i = 0; i < 1024; ++i) {
             char ch = 0;
-            if (uc_mem_read(ctx->uc, lpSubKey + i, &ch, 1) != UC_ERR_OK || ch == '\0') {
+            if (ctx->backend->mem_read(lpSubKey + i, &ch, 1) != UC_ERR_OK || ch == '\0') {
                 break;
             }
             sub_key.push_back(ch);
@@ -129,7 +129,7 @@ extern "C" void mock_RegOpenKeyExA(APIContext* ctx) {
         if (!exists) {
             result = ERROR_FILE_NOT_FOUND;
             uint32_t zero_handle = 0;
-            uc_mem_write(ctx->uc, phkResult, &zero_handle, sizeof(zero_handle));
+            ctx->backend->mem_write(phkResult, &zero_handle, sizeof(zero_handle));
         } else {
             uint32_t out_handle = 0;
 
@@ -152,7 +152,7 @@ extern "C" void mock_RegOpenKeyExA(APIContext* ctx) {
                 ctx->handle_map["reg_handle_path_" + std::to_string(out_handle)] = stored_path;
             }
 
-            if (uc_mem_write(ctx->uc, phkResult, &out_handle, sizeof(out_handle)) != UC_ERR_OK) {
+            if (ctx->backend->mem_write(phkResult, &out_handle, sizeof(out_handle)) != UC_ERR_OK) {
                 result = ERROR_INVALID_PARAMETER;
             }
         }
@@ -162,10 +162,10 @@ extern "C" void mock_RegOpenKeyExA(APIContext* ctx) {
     ctx->set_eax(result);
 
     uint32_t esp;
-    uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_read(UC_X86_REG_ESP, &esp);
     uint32_t ret_addr;
-    uc_mem_read(ctx->uc, esp, &ret_addr, 4);
+    ctx->backend->mem_read(esp, &ret_addr, 4);
     esp += 20 + 4; // Add arg size + 4 bytes for the return address itself
-    uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-    uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
+    ctx->backend->reg_write(UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_write(UC_X86_REG_EIP, &ret_addr);
 }

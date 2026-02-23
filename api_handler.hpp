@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cpu_backend_compat.hpp"
+#include "backend/cpu_backend.hpp"
 #include <string>
 #include <unordered_map>
 #include <iostream>
@@ -11,6 +11,7 @@ extern std::unordered_map<std::string, int> KNOWN_SIGNATURES;
 
 class DummyAPIHandler {
 private:
+    CpuBackend& backend;
     APIContext ctx;
     std::unordered_map<uint32_t, std::string> fake_api_map;
     std::unordered_map<std::string, void*> dylib_handles;
@@ -22,7 +23,7 @@ private:
 public:
     static constexpr uint32_t FAKE_API_BASE = 0x90000000;
 
-    explicit DummyAPIHandler(uc_engine* engine);
+    explicit DummyAPIHandler(CpuBackend& backend_ref);
     ~DummyAPIHandler();
     
     void set_sdl_window(void* window) { ctx.sdl_window = window; }

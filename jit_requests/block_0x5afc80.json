@@ -1,0 +1,22 @@
+{
+  "address": "0x5afc80",
+  "size": 19,
+  "assembly": [
+    "sub esp, 8",
+    "push edi",
+    "mov edi, eax",
+    "mov dword ptr [esp + 8], 0",
+    "call 0x5afbb0"
+  ],
+  "live_in": [
+    "eax",
+    "edi",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "edi",
+    "eflags",
+    "esp"
+  ]
+}

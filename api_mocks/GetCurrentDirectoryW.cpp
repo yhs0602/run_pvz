@@ -33,7 +33,7 @@ extern "C" void mock_GetCurrentDirectoryW(APIContext* ctx) {
         result = 0;
         last_error = ERROR_INVALID_PARAMETER;
     } else if (nBufferLength >= required_size) {
-        if (uc_mem_write(ctx->uc, lpBuffer, wide_dir.data(), required_size * sizeof(uint16_t)) == UC_ERR_OK) {
+        if (ctx->backend->mem_write(lpBuffer, wide_dir.data(), required_size * sizeof(uint16_t)) == UC_ERR_OK) {
             result = dir_len;
             last_error = ERROR_SUCCESS;
         } else {
@@ -43,10 +43,10 @@ extern "C" void mock_GetCurrentDirectoryW(APIContext* ctx) {
     } else {
         const uint32_t to_copy = nBufferLength - 1;
         if (to_copy > 0) {
-            uc_mem_write(ctx->uc, lpBuffer, wide_dir.data(), to_copy * sizeof(uint16_t));
+            ctx->backend->mem_write(lpBuffer, wide_dir.data(), to_copy * sizeof(uint16_t));
         }
         const uint16_t null_terminator = 0;
-        uc_mem_write(ctx->uc, lpBuffer + (to_copy * sizeof(uint16_t)), &null_terminator, sizeof(null_terminator));
+        ctx->backend->mem_write(lpBuffer + (to_copy * sizeof(uint16_t)), &null_terminator, sizeof(null_terminator));
         result = required_size;
         last_error = ERROR_INSUFFICIENT_BUFFER;
     }
@@ -55,10 +55,10 @@ extern "C" void mock_GetCurrentDirectoryW(APIContext* ctx) {
     ctx->set_eax(result);
 
     uint32_t esp;
-    uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_read(UC_X86_REG_ESP, &esp);
     uint32_t ret_addr;
-    uc_mem_read(ctx->uc, esp, &ret_addr, 4);
+    ctx->backend->mem_read(esp, &ret_addr, 4);
     esp += 8 + 4; // Add arg size + 4 bytes for the return address itself
-    uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-    uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
+    ctx->backend->reg_write(UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_write(UC_X86_REG_EIP, &ret_addr);
 }

@@ -25,7 +25,7 @@ extern "C" void mock_CreateEventA(APIContext* ctx) {
         event_name.reserve(260);
         for (uint32_t i = 0; i < 260; ++i) {
             char ch = 0;
-            if (uc_mem_read(ctx->uc, lpName + i, &ch, 1) != UC_ERR_OK) {
+            if (ctx->backend->mem_read(lpName + i, &ch, 1) != UC_ERR_OK) {
                 name_read_ok = false;
                 break;
             }
@@ -84,10 +84,10 @@ extern "C" void mock_CreateEventA(APIContext* ctx) {
     ctx->set_eax(result);
 
     uint32_t esp;
-    uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_read(UC_X86_REG_ESP, &esp);
     uint32_t ret_addr;
-    uc_mem_read(ctx->uc, esp, &ret_addr, 4);
+    ctx->backend->mem_read(esp, &ret_addr, 4);
     esp += 16 + 4; // Add arg size + 4 bytes for the return address itself
-    uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-    uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
+    ctx->backend->reg_write(UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_write(UC_X86_REG_EIP, &ret_addr);
 }

@@ -1,0 +1,17 @@
+{
+  "address": "0x5a2286",
+  "size": 14,
+  "assembly": [
+    "mov edx, dword ptr [esp + 0x24]",
+    "cmp dx, 0x20",
+    "ja 0x5a213c"
+  ],
+  "live_in": [
+    "dx",
+    "esp"
+  ],
+  "live_out": [
+    "edx",
+    "eflags"
+  ]
+}

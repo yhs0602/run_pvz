@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cpu_backend_compat.hpp"
+#include "backend/cpu_backend.hpp"
 #include <LIEF/PE.hpp>
 #include <string>
 #include <memory>
@@ -17,6 +17,6 @@ public:
 
     explicit PEModule(const std::string& filepath);
     
-    void map_into(uc_engine* uc);
-    void resolve_imports(uc_engine* uc, DummyAPIHandler& api_handler);
+    void map_into(CpuBackend& backend);
+    void resolve_imports(CpuBackend& backend, DummyAPIHandler& api_handler);
 };

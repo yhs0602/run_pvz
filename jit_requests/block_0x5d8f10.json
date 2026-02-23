@@ -1,0 +1,33 @@
+{
+  "address": "0x5d8f10",
+  "size": 34,
+  "assembly": [
+    "sub esp, 0x20",
+    "push ebp",
+    "push esi",
+    "push edi",
+    "mov edi, dword ptr [esp + 0x30]",
+    "mov eax, dword ptr [edi + 4]",
+    "mov esi, dword ptr [eax + 4]",
+    "cmp byte ptr [esi + 0x59], 0",
+    "mov ebp, eax",
+    "mov al, 1",
+    "mov byte ptr [esp + 0x10], al",
+    "jne 0x5d8fd4"
+  ],
+  "live_in": [
+    "ebp",
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "eax",
+    "ebp",
+    "edi",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

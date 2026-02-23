@@ -1,0 +1,25 @@
+{
+  "address": "0x59cb18",
+  "size": 21,
+  "assembly": [
+    "mov dword ptr [edi + 4], eax",
+    "mov ecx, dword ptr [ebx + 8]",
+    "mov edx, dword ptr [esi + 4]",
+    "mov dword ptr [esi + 8], ecx",
+    "mov eax, dword ptr [edx + 4]",
+    "cmp byte ptr [eax + 0x45], 0",
+    "jne 0x59cb61"
+  ],
+  "live_in": [
+    "eax",
+    "ebx",
+    "edi",
+    "esi"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "edx",
+    "eflags"
+  ]
+}

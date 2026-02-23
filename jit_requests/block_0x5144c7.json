@@ -1,0 +1,19 @@
+{
+  "address": "0x5144c7",
+  "size": 8,
+  "assembly": [
+    "push edi",
+    "mov esi, ecx",
+    "call 0x5149f0"
+  ],
+  "live_in": [
+    "ecx",
+    "edi",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "esi",
+    "esp"
+  ]
+}

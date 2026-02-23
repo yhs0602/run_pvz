@@ -68,7 +68,19 @@
   - `backend/cpu_backend.hpp` 추가
   - `backend/unicorn_backend.*` 추가
   - `main.cpp` 실행 루프를 `CpuBackend` 기반으로 일부 이관
+  - `windows_env`를 `CpuBackend` 기반으로 이관
+  - `pe_loader`를 `CpuBackend` 기반으로 이관
+  - `api_context` helper를 `CpuBackend` 기반으로 이관
+  - `api_handler` 생성/메모리/레지스터/훅 경로를 `CpuBackend` 기반으로 이관
+  - 헤드리스/디버그 실행 플래그 도입 (`PVZ_HEADLESS`, `PVZ_DISABLE_NATIVE_JIT`, `PVZ_BOOT_TRACE`)
+  - mock 안정화 플래그 도입 (`PVZ_DISABLE_DYLIB_MOCKS`)
+  - `GetProcAddress/LoadLibrary/GetModuleHandle` 계열을 내장 HLE 우선 경로로 고정
+  - `Tls/Fls/Interlocked` 계열을 내장 HLE 우선 경로로 확장
+  - `HeapSize/HeapReAlloc` 내장 HLE 구현으로 포인터 오염 크래시 제거
+  - `api_mocks/*.cpp`를 `ctx->backend` 호출 기반으로 치환
+  - hot-path sync + heap/tls/fls 로그 억제(관측/성능 개선)
+  - watchpoint 로그를 opt-in(`PVZ_WATCHPOINT`)으로 전환
   - 60초 지표 샘플 1회 수집 (`known=0:0`, `NOT FOUND:0`, `UC_ERR_FETCH_UNMAPPED:1`)
 - 미완료:
-  - `windows_env`, `pe_loader`, `api_handler`의 backend-neutral 이관
+  - `HeapAlloc/HeapFree` 핫루프 로그 억제(선택적 디버그 플래그화)
   - `PVZ_CPU_BACKEND=fexcore` 실제 구현

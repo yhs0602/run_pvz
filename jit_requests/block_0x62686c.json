@@ -1,0 +1,30 @@
+{
+  "address": "0x62686c",
+  "size": 25,
+  "assembly": [
+    "mov esi, dword ptr [ebp - 4]",
+    "pop ecx",
+    "pop ecx",
+    "mov ecx, dword ptr [ebp - 0xc]",
+    "add eax, ebx",
+    "add esi, 4",
+    "dec dword ptr [ebp - 8]",
+    "lea ebx, [eax + ecx + 2]",
+    "mov dword ptr [ebp - 4], esi",
+    "jne 0x62685a"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "ebx",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebx",
+    "ecx",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

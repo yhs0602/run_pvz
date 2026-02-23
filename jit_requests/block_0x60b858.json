@@ -1,0 +1,25 @@
+{
+  "address": "0x60b858",
+  "size": 21,
+  "assembly": [
+    "mov eax, dword ptr [esi + 8]",
+    "mov ecx, dword ptr [ebp + 0xc]",
+    "or dword ptr [ebp - 4], 0xffffffff",
+    "mov dword ptr [edi + eax], ecx",
+    "lea ecx, [ebp - 0x10]",
+    "call 0x60b59b"
+  ],
+  "live_in": [
+    "ebp",
+    "edi",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

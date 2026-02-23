@@ -82,7 +82,7 @@ extern "C" void mock_GetStringTypeW(APIContext* ctx) {
             bool found_null = false;
             for (uint32_t i = 0; i < kMaxScanChars; ++i) {
                 uint16_t ch = 0;
-                if (uc_mem_read(ctx->uc, lpSrcStr + (i * 2u), &ch, sizeof(ch)) != UC_ERR_OK) {
+                if (ctx->backend->mem_read(lpSrcStr + (i * 2u), &ch, sizeof(ch)) != UC_ERR_OK) {
                     chars.clear();
                     break;
                 }
@@ -99,7 +99,7 @@ extern "C" void mock_GetStringTypeW(APIContext* ctx) {
             chars.resize(static_cast<size_t>(cchSrc));
             for (int32_t i = 0; i < cchSrc; ++i) {
                 uint16_t ch = 0;
-                if (uc_mem_read(ctx->uc, lpSrcStr + (static_cast<uint32_t>(i) * 2u), &ch, sizeof(ch)) != UC_ERR_OK) {
+                if (ctx->backend->mem_read(lpSrcStr + (static_cast<uint32_t>(i) * 2u), &ch, sizeof(ch)) != UC_ERR_OK) {
                     chars.clear();
                     break;
                 }
@@ -140,7 +140,7 @@ extern "C" void mock_GetStringTypeW(APIContext* ctx) {
                 if (is_ascii_punct(ch)) out |= C3_SYMBOL;
             }
 
-            if (uc_mem_write(ctx->uc, lpCharType + static_cast<uint32_t>(i * 2u), &out, sizeof(out)) != UC_ERR_OK) {
+            if (ctx->backend->mem_write(lpCharType + static_cast<uint32_t>(i * 2u), &out, sizeof(out)) != UC_ERR_OK) {
                 write_ok = false;
                 break;
             }

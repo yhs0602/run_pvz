@@ -45,7 +45,7 @@ extern "C" void mock_LCMapStringW(APIContext* ctx) {
             bool found_nul = false;
             for (uint32_t i = 0; i < kMaxScan; ++i) {
                 uint16_t ch = 0;
-                if (uc_mem_read(ctx->uc, lp_src_str + (i * 2), &ch, sizeof(ch)) != UC_ERR_OK) {
+                if (ctx->backend->mem_read(lp_src_str + (i * 2), &ch, sizeof(ch)) != UC_ERR_OK) {
                     fail(ERROR_INVALID_PARAMETER);
                     break;
                 }
@@ -62,7 +62,7 @@ extern "C" void mock_LCMapStringW(APIContext* ctx) {
         } else {
             source.resize(static_cast<size_t>(cch_src));
             if (!source.empty() &&
-                uc_mem_read(ctx->uc, lp_src_str, source.data(), source.size() * sizeof(uint16_t)) != UC_ERR_OK) {
+                ctx->backend->mem_read(lp_src_str, source.data(), source.size() * sizeof(uint16_t)) != UC_ERR_OK) {
                 fail(ERROR_INVALID_PARAMETER);
             }
         }
@@ -113,7 +113,7 @@ extern "C" void mock_LCMapStringW(APIContext* ctx) {
                 fail(ERROR_INVALID_PARAMETER);
             } else if (static_cast<uint32_t>(cch_dest) < required) {
                 fail(ERROR_INSUFFICIENT_BUFFER);
-            } else if (required > 0 && uc_mem_write(ctx->uc, lp_dest_str, sort_key.data(), required) != UC_ERR_OK) {
+            } else if (required > 0 && ctx->backend->mem_write(lp_dest_str, sort_key.data(), required) != UC_ERR_OK) {
                 fail(ERROR_INVALID_PARAMETER);
             } else {
                 result = required;
@@ -155,7 +155,7 @@ extern "C" void mock_LCMapStringW(APIContext* ctx) {
             } else if (static_cast<uint32_t>(cch_dest) < required) {
                 fail(ERROR_INSUFFICIENT_BUFFER);
             } else if (required > 0 &&
-                       uc_mem_write(ctx->uc, lp_dest_str, mapped.data(), mapped.size() * sizeof(uint16_t)) != UC_ERR_OK) {
+                       ctx->backend->mem_write(lp_dest_str, mapped.data(), mapped.size() * sizeof(uint16_t)) != UC_ERR_OK) {
                 fail(ERROR_INVALID_PARAMETER);
             } else {
                 result = required;

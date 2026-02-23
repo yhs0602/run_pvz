@@ -103,3 +103,120 @@
 - 정지 지점:
   - `EIP = 0x1`
   - 직전 호출 흐름: `TlsSetValue` 이후 fetch unmapped 발생
+
+5. Phase 2 추가 이관 (main 외곽 모듈)
+- `windows_env`를 `CpuBackend` 참조 기반으로 변경:
+  - `windows_env.hpp/.cpp`에서 `uc_engine*` 직접 의존 제거
+  - `mem_map/mem_write/reg_read/reg_write`를 백엔드 호출로 전환
+- `pe_loader`를 `CpuBackend` 기반으로 변경:
+  - `map_into`, `resolve_imports` 시그니처/구현을 backend 경유로 전환
+- `main.cpp` 연결 변경:
+  - `WindowsEnvironment env(backend);`
+  - `pe_module.map_into(backend);`
+  - `pe_module.resolve_imports(backend, api_handler);`
+- 검증:
+  - `cmake --build build -j4` 성공
+
+6. 검증 환경 제약 메모
+- 현재 세션에서 SDL 디스플레이 접근 제약으로 GUI 런타임 검증이 불안정함:
+  - 예: `SDL2 Initialization failed: The video driver did not add any displays`
+  - 예: `SDL Window creation failed: Could not initialize OpenGL / GLES library`
+- 따라서 이번 턴의 런타임 검증은 "컴파일 성공 + 코드 경로 이관" 중심으로 기록.
+
+7. 헤드리스/디버그 실행 옵션 추가
+- `main.cpp`에 환경변수 기반 실행 제어 추가:
+  - `PVZ_HEADLESS=1`: SDL 이벤트 전용 초기화(창/렌더러 미생성)
+  - `PVZ_DISABLE_NATIVE_JIT=1`: ARM64 네이티브 JIT 디스패처 비활성화
+  - `PVZ_BOOT_TRACE=1`: 부팅 체크포인트 로그 출력
+- 목적:
+  - 디스플레이가 없는 환경에서도 코어 부팅 경로를 관찰 가능하게 하기 위함.
+
+8. 헤드리스 부팅 추적 결과 (현재 샌드박스)
+- 커맨드:
+  - `PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_BOOT_TRACE=1 stdbuf -oL -eL ./build/runner pvz/main.exe`
+- 관찰:
+  - `[TRACE] after backend.open_x86_32` 까지 통과
+  - `[TRACE] before guest_vram map` 직후 `EXIT:132(SIGILL)`
+- 해석:
+  - 현 샌드박스에서는 `uc_mem_map` 시점에서 프로세스가 SIGILL로 중단되는 제약이 존재.
+  - 동일 코드의 기능 검증은 로컬 GUI 세션/비제약 환경에서 재확인 필요.
+
+9. 로더 API 안정화(내장 HLE 우선)
+- `api_handler.cpp::try_load_dylib`에 코어 로더 API 예외 추가:
+  - `GetProcAddress`, `LoadLibraryA/W`, `GetModuleHandleA/W`
+- 의도:
+  - 해당 API는 호출 규약/핸들 정책의 일관성이 중요하므로, LLM 플러그인 대신 내장 HLE 경로를 우선 사용.
+- 상태:
+  - 컴파일 성공 (`cmake --build build -j4`)
+  - 후속 헤드리스 재검증에서 해당 정책이 반영되어 `GetProcAddress`/`Tls*`가 내장 HLE 경로로 처리됨.
+
+10. API 레이어 백엔드 이관 완료
+- `api_context.hpp`
+  - `CpuBackend* backend` 추가
+  - `get_arg/set_eax/pop_args`가 `uc_*` 직접 호출 대신 backend API 사용
+  - `uc_engine* uc`는 기존 `api_mocks/*.dylib` 호환을 위해 보존
+- `api_handler.hpp/.cpp`
+  - 생성자 시그니처 변경: `DummyAPIHandler(CpuBackend&)`
+  - 내부 메모리/레지스터/훅/emu 제어를 backend 경유로 전환
+  - non-backend 직접 `uc_*` 호출 제거 (코어 코드 기준)
+
+11. 동적 mock 안정화 옵션/정책
+- 새 옵션:
+  - `PVZ_DISABLE_DYLIB_MOCKS=1`
+- 정책 보강:
+  - 코어 API(`GetProcAddress`, `LoadLibrary*`, `GetModuleHandle*`)
+  - TLS/FLS(`Tls*`, `Fls*`)
+  - 원자 연산(`Interlocked*`)
+  - 위 함수들은 내장 HLE 우선 처리
+
+12. 최신 헤드리스 검증 결과
+- 명령:
+  - `PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_DISABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe`
+- 결과:
+  - 세그폴트(139) 제거
+  - 진행 후 중단 지점: `UC_ERR_WRITE_UNMAPPED`
+  - `EIP=0x61df1c` (`/tmp/pvz_iface_exit3.log` 기준)
+
+13. `UC_ERR_WRITE_UNMAPPED(EIP=0x61df1c)` 원인/조치
+- 디스어셈블 기준 실패 명령:
+  - `0x61df1c: mov dword ptr [edi], eax`
+  - 크래시 당시 `EDI=0x1` (잘못된 포인터)
+- 원인:
+  - `HeapReAlloc`/`HeapSize` 미구현으로 기본 성공값(1) 반환 -> 포인터 오염
+- 조치:
+  - `KERNEL32.dll!HeapSize` 구현: `heap_size_<ptr>` 조회, 실패 시 `(SIZE_T)-1`
+  - `KERNEL32.dll!HeapReAlloc` 구현: shrink in-place / grow allocate+copy / NULL 입력 처리
+- 결과:
+  - 해당 크래시 사라지고 프로세스 장시간 생존 확인 (`/tmp/pvz_iface_exit4.log`, 약 90만 라인)
+
+14. `api_mocks` 인터페이스 의존화
+- `api_mocks/*.cpp` 내 `uc_*` 직접 호출을 `ctx->backend->...` 호출로 일괄 치환
+- 잔여 `ctx->uc` 참조(2건)도 helper 함수 backend 경유로 변경:
+  - `api_mocks/GetProcAddress.cpp`
+  - `api_mocks/LoadCursorA.cpp`
+- 샘플 플러그인 컴파일 확인:
+  - `GetProcAddress.cpp`, `LoadCursorA.cpp`, `TlsAlloc.cpp` (`-DPVZ_CPU_BACKEND_UNICORN=1`)
+
+15. 고빈도 API 로그 노이즈 억제
+- `Enter/LeaveCriticalSection`, `Interlocked*` 계열 디버그 출력 억제
+- 효과:
+  - 동일 8초 런에서 critical-section 로그 0건
+  - 여전히 `HeapAlloc/HeapFree` 핫루프 로그는 많음(후속 억제 후보)
+
+16. 로그 폭주 추가 정리 + 관측 모드 개선
+- `HeapAlloc/HeapFree/HeapSize/HeapReAlloc`, `Tls/Fls`, `GetLastError/SetLastError`를 noisy API 목록으로 묶어 디버그 출력 억제.
+- `Heap*` 개별 성공 로그 제거(핫루프에서 로그 병목 방지).
+- watchpoint 출력 기본 OFF로 변경, `PVZ_WATCHPOINT=1`일 때만 활성화.
+
+17. 최신 안정성 지표 (헤드리스, no-native-jit, no-dylib-mocks)
+- 명령:
+  - `PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_DISABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe`
+- 8초 샘플:
+  - 라인 수: 약 3,318 (이전 15만+에서 감소)
+  - `watch_hits`: 0
+  - `Heap*` 로그: 0
+- 30초 샘플:
+  - `RUNNING_AFTER_30S`
+  - `known=0`: 0
+  - `unknown API`: 0
+  - `UC_ERR`: 0

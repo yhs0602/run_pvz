@@ -38,7 +38,7 @@ extern "C" void mock_mixerGetDevCapsA(APIContext* ctx) {
         const uint32_t write_size =
             (cbmxcaps < static_cast<uint32_t>(sizeof(caps))) ? cbmxcaps : static_cast<uint32_t>(sizeof(caps));
 
-        if (uc_mem_write(ctx->uc, pmxcaps, &caps, write_size) != UC_ERR_OK) {
+        if (ctx->backend->mem_write(pmxcaps, &caps, write_size) != UC_ERR_OK) {
             result = 11; // MMSYSERR_INVALPARAM
         }
     }
@@ -46,10 +46,10 @@ extern "C" void mock_mixerGetDevCapsA(APIContext* ctx) {
     ctx->set_eax(result);
 
     uint32_t esp;
-    uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_read(UC_X86_REG_ESP, &esp);
     uint32_t ret_addr;
-    uc_mem_read(ctx->uc, esp, &ret_addr, 4);
+    ctx->backend->mem_read(esp, &ret_addr, 4);
     esp += 12 + 4; // Add arg size + 4 bytes for the return address itself
-    uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-    uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
+    ctx->backend->reg_write(UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_write(UC_X86_REG_EIP, &ret_addr);
 }

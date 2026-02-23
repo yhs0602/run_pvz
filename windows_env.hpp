@@ -1,12 +1,12 @@
 #pragma once
 
-#include "cpu_backend_compat.hpp"
+#include "backend/cpu_backend.hpp"
 #include <cstdint>
 #include <iostream>
 
 class WindowsEnvironment {
 private:
-    uc_engine* uc;
+    CpuBackend& backend;
     
     uint64_t create_gdt_entry(uint32_t base, uint32_t limit, uint8_t access, uint8_t flags);
     void setup_stack();
@@ -19,7 +19,7 @@ public:
     static constexpr uint32_t STACK_BASE = 0x80000000;
     static constexpr uint32_t STACK_SIZE = 2 * 1024 * 1024; // 2MB
 
-    explicit WindowsEnvironment(uc_engine* engine) : uc(engine) {}
+    explicit WindowsEnvironment(CpuBackend& backend_ref) : backend(backend_ref) {}
     
     void setup_system();
 };

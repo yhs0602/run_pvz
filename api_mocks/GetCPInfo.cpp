@@ -87,9 +87,9 @@ extern "C" void mock_GetCPInfo(APIContext* ctx) {
 
     if (lpCPInfo != 0 && supported) {
         bool ok = true;
-        ok = ok && (uc_mem_write(ctx->uc, lpCPInfo + 0, &max_char_size, sizeof(max_char_size)) == UC_ERR_OK);
-        ok = ok && (uc_mem_write(ctx->uc, lpCPInfo + 4, default_char, sizeof(default_char)) == UC_ERR_OK);
-        ok = ok && (uc_mem_write(ctx->uc, lpCPInfo + 6, lead_byte, sizeof(lead_byte)) == UC_ERR_OK);
+        ok = ok && (ctx->backend->mem_write(lpCPInfo + 0, &max_char_size, sizeof(max_char_size)) == UC_ERR_OK);
+        ok = ok && (ctx->backend->mem_write(lpCPInfo + 4, default_char, sizeof(default_char)) == UC_ERR_OK);
+        ok = ok && (ctx->backend->mem_write(lpCPInfo + 6, lead_byte, sizeof(lead_byte)) == UC_ERR_OK);
 
         if (ok) {
             result = 1;

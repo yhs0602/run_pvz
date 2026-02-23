@@ -9,9 +9,9 @@ extern "C" void mock_InterlockedIncrement(APIContext* ctx) {
     uint32_t current = 0;
     uint32_t result = 1;
 
-    if (addend_ptr != 0 && uc_mem_read(ctx->uc, addend_ptr, &current, sizeof(current)) == UC_ERR_OK) {
+    if (addend_ptr != 0 && ctx->backend->mem_read(addend_ptr, &current, sizeof(current)) == UC_ERR_OK) {
         result = current + 1;
-        uc_mem_write(ctx->uc, addend_ptr, &result, sizeof(result));
+        ctx->backend->mem_write(addend_ptr, &result, sizeof(result));
     } else {
         const std::string key = "interlocked_" + std::to_string(addend_ptr);
         auto it = ctx->global_state.find(key);

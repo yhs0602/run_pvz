@@ -1,0 +1,14 @@
+{
+  "address": "0x5bbfbe",
+  "size": 6,
+  "assembly": [
+    "lea eax, [esp + 8]",
+    "jmp 0x5bbfd3"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "eax"
+  ]
+}

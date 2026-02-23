@@ -1,0 +1,20 @@
+{
+  "address": "0x444ffb",
+  "size": 10,
+  "assembly": [
+    "add esp, 4",
+    "cmp byte ptr [edi + 0x45], bl",
+    "mov esi, edi",
+    "je 0x444fb0"
+  ],
+  "live_in": [
+    "bl",
+    "edi",
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

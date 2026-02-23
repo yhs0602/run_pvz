@@ -1,0 +1,21 @@
+{
+  "address": "0x59b832",
+  "size": 14,
+  "assembly": [
+    "test al, al",
+    "mov esi, edi",
+    "mov dword ptr [esp + 0x24], esi",
+    "mov dword ptr [esp + 0x20], edx",
+    "je 0x59b884"
+  ],
+  "live_in": [
+    "al",
+    "edi",
+    "edx",
+    "esp"
+  ],
+  "live_out": [
+    "eflags",
+    "esi"
+  ]
+}

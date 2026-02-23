@@ -36,7 +36,7 @@ extern "C" void mock_CreateThread(APIContext* ctx) {
         ctx->global_state["ThreadIdTop"] = static_cast<uint64_t>(tid + 1);
 
         if (lpThreadId != 0) {
-            uc_mem_write(ctx->uc, lpThreadId, &tid, 4);
+            ctx->backend->mem_write(lpThreadId, &tid, 4);
         }
 
         ctx->handle_map["thread_" + std::to_string(handle)] =
@@ -49,10 +49,10 @@ extern "C" void mock_CreateThread(APIContext* ctx) {
     ctx->set_eax(result);
 
     uint32_t esp;
-    uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_read(UC_X86_REG_ESP, &esp);
     uint32_t ret_addr;
-    uc_mem_read(ctx->uc, esp, &ret_addr, 4);
+    ctx->backend->mem_read(esp, &ret_addr, 4);
     esp += 24 + 4; // Add arg size + 4 bytes for the return address itself
-    uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-    uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
+    ctx->backend->reg_write(UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_write(UC_X86_REG_EIP, &ret_addr);
 }

@@ -1,0 +1,18 @@
+{
+  "address": "0x59b813",
+  "size": 11,
+  "assembly": [
+    "setl al",
+    "test al, al",
+    "mov byte ptr [esp + 0x10], al",
+    "je 0x59b822"
+  ],
+  "live_in": [
+    "eflags",
+    "esp"
+  ],
+  "live_out": [
+    "al",
+    "eflags"
+  ]
+}

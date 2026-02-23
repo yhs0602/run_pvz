@@ -1,0 +1,17 @@
+{
+  "address": "0x61cd03",
+  "size": 7,
+  "assembly": [
+    "pop esi",
+    "pop ebp",
+    "jmp 0x61cbc4"
+  ],
+  "live_in": [
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "esi",
+    "esp"
+  ]
+}

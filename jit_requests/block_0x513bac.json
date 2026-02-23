@@ -1,0 +1,23 @@
+{
+  "address": "0x513bac",
+  "size": 22,
+  "assembly": [
+    "mov ebp, dword ptr [esp + 0x20]",
+    "mov edi, dword ptr [esp + 0x30]",
+    "test al, al",
+    "mov esi, ebp",
+    "mov dword ptr [esp + 0x24], esi",
+    "mov dword ptr [esp + 0x20], edi",
+    "je 0x513c02"
+  ],
+  "live_in": [
+    "al",
+    "esp"
+  ],
+  "live_out": [
+    "ebp",
+    "edi",
+    "eflags",
+    "esi"
+  ]
+}

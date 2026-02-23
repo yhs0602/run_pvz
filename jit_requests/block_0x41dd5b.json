@@ -1,0 +1,27 @@
+{
+  "address": "0x41dd5b",
+  "size": 16,
+  "assembly": [
+    "lea eax, [esi + 4]",
+    "mov byte ptr [eax + edi], 0",
+    "pop edi",
+    "mov eax, esi",
+    "pop esi",
+    "pop ebp",
+    "pop ebx",
+    "ret 0xc"
+  ],
+  "live_in": [
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ebp",
+    "ebx",
+    "edi",
+    "esi",
+    "esp"
+  ]
+}

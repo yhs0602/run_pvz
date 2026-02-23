@@ -1,0 +1,15 @@
+{
+  "address": "0x45bc30",
+  "size": 4,
+  "assembly": [
+    "cmp byte ptr [esi], bl",
+    "jne 0x45bc48"
+  ],
+  "live_in": [
+    "bl",
+    "esi"
+  ],
+  "live_out": [
+    "eflags"
+  ]
+}

@@ -941,7 +941,77 @@ for i in md.disasm(data, 0x54cce3):
 
 *User accepted the command `cmake --build build -j4`*
 
+*Edited relevant file*
+
+*Edited relevant file*
+
+*User accepted the command `cmake --build build -j4 && PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 stdbuf -oL -eL ./build/runner pvz/main.exe | rg -n "TlsAlloc|JIT MOCK|GetProcAddress|EXIT" -n -m 30`*
+
+*User accepted the command `LOG=/tmp/pvz_iface_20s.log; (PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 ./build/runner pvz/main.exe > "$LOG" 2>&1 &) ; sleep 20; if pgrep -f "./build/runner pvz/main.exe" >/dev/null; then echo RUNNING_20S; pkill -f "./build/runner pvz/main.exe"; else echo EXITED_EARLY; fi; echo lines=$(wc -l < "$LOG"); echo jit_mock=$(rg -c "\\[JIT MOCK\\]" "$LOG" || echo 0); echo known0=$(rg -c "known=0" "$LOG" || echo 0); echo uc_err=$(rg -c "UC_ERR|Emulation stopped due to error" "$LOG" || echo 0); tail -n 30 "$LOG"`*
+
+*Edited relevant file*
+
+*Edited relevant file*
+
+*User accepted the command `cmake --build build -j4 && PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_DISABLE_DYLIB_MOCKS=1 stdbuf -oL -eL ./build/runner pvz/main.exe > /tmp/pvz_iface_exit3.log 2>&1; echo EXIT:$?; rg -n "JIT MOCK|\\[UNKNOWN\\]|Emulation stopped due to error|EXIT" /tmp/pvz_iface_exit3.log | tail -n 30; tail -n 25 /tmp/pvz_iface_exit3.log`*
+
+*Edited relevant file*
+
+*User accepted the command `cmake --build build -j4`*
+
+*User accepted the command `PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_DISABLE_DYLIB_MOCKS=1 stdbuf -oL -eL ./build/runner pvz/main.exe > /tmp/pvz_iface_exit4.log 2>&1; echo EXIT:$?; rg -n "Emulation stopped due to error|EIP =|HeapReAlloc|HeapSize" /tmp/pvz_iface_exit4.log | tail -n 40; tail -n 35 /tmp/pvz_iface_exit4.log`*
+
+*Edited relevant file*
+
+*Edited relevant file*
+
+*Edited relevant file*
+
+*User accepted the command `cmake --build build -j4 && PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_DISABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe > /tmp/pvz_iface_quiet_8s.log 2>&1 & sleep 8; pkill -f "./build/runner pvz/main.exe" >/dev/null 2>&1 || true; echo lines=$(wc -l < /tmp/pvz_iface_quiet_8s.log); echo crit_logs=$(rg -c "EnterCriticalSection|LeaveCriticalSection" /tmp/pvz_iface_quiet_8s.log || echo 0); echo emu_err=$(rg -c "Emulation stopped due to error|UC_ERR" /tmp/pvz_iface_quiet_8s.log || echo 0); tail -n 25 /tmp/pvz_iface_quiet_8s.log`*
+
+*Edited relevant file*
+
+*Edited relevant file*
+
+*User accepted the command `cmake --build build -j4 && LOG=/tmp/pvz_iface_quiet3_8s.log; rm -f "$LOG"; PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_DISABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe > "$LOG" 2>&1 & pid=$!; sleep 8; if ps -p $pid >/dev/null 2>&1; then kill $pid >/dev/null 2>&1; fi; echo lines=$(wc -l < "$LOG"); echo watch_hits=$(rg -c "\\[WATCHPOINT\\]" "$LOG" || echo 0); echo heap_lines=$(rg -c "HeapAlloc|HeapFree|HeapReAlloc|HeapSize" "$LOG" || echo 0); tail -n 30 "$LOG"`*
+
+*User accepted the command `LOG=/tmp/pvz_iface_quiet3_30s.log; rm -f "$LOG"; PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_DISABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe > "$LOG" 2>&1 & pid=$!; sleep 30; if ps -p $pid >/dev/null 2>&1; then echo RUNNING_AFTER_30S; kill $pid >/dev/null 2>&1; else echo EXITED_BEFORE_30S; fi; echo lines=$(wc -l < "$LOG"); echo emu_err=$(rg -c "Emulation stopped due to error|UC_ERR" "$LOG" || echo 0); echo known0=$(rg -c "known=0" "$LOG" || echo 0); echo unknown=$(rg -c "\\[API CALL\\] \\[UNKNOWN\\]" "$LOG" || echo 0); tail -n 25 "$LOG"`*
+
 *User accepted the command `(./build/runner pvz/main.exe > /tmp/pvz_run_smoke2.log 2>&1 &) ; sleep 5; pkill -f "./build/runner pvz/main.exe" >/dev/null 2>&1 || true; head -n 25 /tmp/pvz_run_smoke2.log; echo '---'; tail -n 25 /tmp/pvz_run_smoke2.log`*
+
+*Edited relevant file*
+
+*Edited relevant file*
+
+*Edited relevant file*
+
+*Edited relevant file*
+
+*Edited relevant file*
+
+*User accepted the command `cmake --build build -j4`*
+
+*User accepted the command `LOG=/tmp/pvz_run_backend_refactor_10s.log; (./build/runner pvz/main.exe > "$LOG" 2>&1 &) ; sleep 10; pkill -f "./build/runner pvz/main.exe" >/dev/null 2>&1 || true; echo lines=$(wc -l < "$LOG"); echo known0=$(rg -c "known=0" "$LOG" || echo 0); echo not_found=$(rg -c "NOT FOUND" "$LOG" || echo 0); echo uc_err=$(rg -c "UC_ERR|Emulation stopped due to error" "$LOG" || echo 0); head -n 20 "$LOG"; echo '---'; tail -n 20 "$LOG"`*
+
+*User accepted the command `LOG=/tmp/pvz_run_backend_refactor_dummy_8s.log; (SDL_VIDEODRIVER=dummy ./build/runner pvz/main.exe > "$LOG" 2>&1 &) ; sleep 8; pkill -f "./build/runner pvz/main.exe" >/dev/null 2>&1 || true; echo lines=$(wc -l < "$LOG"); echo known0=$(rg -c "known=0" "$LOG" || echo 0); echo not_found=$(rg -c "NOT FOUND" "$LOG" || echo 0); echo uc_err=$(rg -c "UC_ERR|Emulation stopped due to error" "$LOG" || echo 0); head -n 18 "$LOG"; echo '---'; tail -n 18 "$LOG"`*
+
+*Edited relevant file*
+
+*Edited relevant file*
+
+*User accepted the command `cmake --build build -j4`*
+
+*User accepted the command `PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 stdbuf -oL -eL ./build/runner pvz/main.exe; echo EXIT:$?`*
+
+*Edited relevant file*
+
+*User accepted the command `cmake --build build -j4`*
+
+*User accepted the command `PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_BOOT_TRACE=1 stdbuf -oL -eL ./build/runner pvz/main.exe; echo EXIT:$?`*
+
+*Edited relevant file*
+
+*User accepted the command `cmake --build build -j4`*
 
 *Checked command status*
 

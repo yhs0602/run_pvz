@@ -50,7 +50,7 @@ extern "C" void mock_GetLocaleInfoA(APIContext* ctx) {
         }
 
         if (known_numeric && lp_lc_data != 0 && cch_data >= sizeof(uint32_t)) {
-            uc_mem_write(ctx->uc, lp_lc_data, &numeric, sizeof(uint32_t));
+            ctx->backend->mem_write(lp_lc_data, &numeric, sizeof(uint32_t));
             result = sizeof(uint32_t);
         }
     } else {
@@ -111,7 +111,7 @@ extern "C" void mock_GetLocaleInfoA(APIContext* ctx) {
             if (cch_data == 0) {
                 result = required;
             } else if (lp_lc_data != 0 && cch_data >= required) {
-                uc_mem_write(ctx->uc, lp_lc_data, value.c_str(), required);
+                ctx->backend->mem_write(lp_lc_data, value.c_str(), required);
                 result = required;
             }
         }
@@ -120,10 +120,10 @@ extern "C" void mock_GetLocaleInfoA(APIContext* ctx) {
     ctx->set_eax(result);
 
     uint32_t esp;
-    uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_read(UC_X86_REG_ESP, &esp);
     uint32_t ret_addr;
-    uc_mem_read(ctx->uc, esp, &ret_addr, 4);
+    ctx->backend->mem_read(esp, &ret_addr, 4);
     esp += 16 + 4; // Add arg size + 4 bytes for the return address itself
-    uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-    uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
+    ctx->backend->reg_write(UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_write(UC_X86_REG_EIP, &ret_addr);
 }

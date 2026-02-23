@@ -1,0 +1,18 @@
+{
+  "address": "0x62b0d8",
+  "size": 13,
+  "assembly": [
+    "mov ecx, dword ptr [ebp + 0x10]",
+    "mov al, byte ptr [ecx]",
+    "cmp al, 0x1a",
+    "je 0x62b193"
+  ],
+  "live_in": [
+    "ebp"
+  ],
+  "live_out": [
+    "al",
+    "ecx",
+    "eflags"
+  ]
+}

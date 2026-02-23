@@ -1,0 +1,27 @@
+{
+  "address": "0x5d82fc",
+  "size": 29,
+  "assembly": [
+    "mov eax, dword ptr [esp + 0x1c]",
+    "mov dword ptr [edi + 0x28], eax",
+    "lea eax, [esp + 0x10c]",
+    "lea edx, [eax + 1]",
+    "lea ecx, [ecx]",
+    "mov cl, byte ptr [eax]",
+    "add eax, 1",
+    "test cl, cl",
+    "jne 0x5d8310"
+  ],
+  "live_in": [
+    "ecx",
+    "edi",
+    "esp"
+  ],
+  "live_out": [
+    "cl",
+    "eax",
+    "ecx",
+    "edx",
+    "eflags"
+  ]
+}

@@ -21,20 +21,20 @@ void WindowsEnvironment::setup_stack() {
     std::cout << "[*] Mapping Stack: Base=0x" << std::hex << STACK_BASE 
               << ", Size=0x" << STACK_SIZE << std::dec << "\n";
               
-    uc_mem_map(uc, STACK_BASE, STACK_SIZE, UC_PROT_ALL);
+    backend.mem_map(STACK_BASE, STACK_SIZE, UC_PROT_ALL);
     
     uint32_t stack_top = STACK_BASE + STACK_SIZE - 0x1000;
-    uc_reg_write(uc, UC_X86_REG_ESP, &stack_top);
-    uc_reg_write(uc, UC_X86_REG_EBP, &stack_top);
+    backend.reg_write(UC_X86_REG_ESP, &stack_top);
+    backend.reg_write(UC_X86_REG_EBP, &stack_top);
 }
 
 void WindowsEnvironment::setup_teb_peb() {
     std::cout << "[*] Setting up GDT (0x" << std::hex << GDT_BASE 
               << ") and TEB/PEB (0x" << TEB_BASE << ")\n";
 
-    uc_mem_map(uc, TEB_BASE, 0x1000, UC_PROT_ALL);
-    uc_mem_map(uc, PEB_BASE, 0x1000, UC_PROT_ALL);
-    uc_mem_map(uc, GDT_BASE, 0x1000, UC_PROT_ALL);
+    backend.mem_map(TEB_BASE, 0x1000, UC_PROT_ALL);
+    backend.mem_map(PEB_BASE, 0x1000, UC_PROT_ALL);
+    backend.mem_map(GDT_BASE, 0x1000, UC_PROT_ALL);
 
     // 1. Setup GDT Entries
     std::vector<uint64_t> gdt = {
@@ -45,7 +45,7 @@ void WindowsEnvironment::setup_teb_peb() {
     };
 
     for (size_t i = 0; i < gdt.size(); i++) {
-        uc_mem_write(uc, GDT_BASE + (i * 8), &gdt[i], sizeof(uint64_t));
+        backend.mem_write(GDT_BASE + (i * 8), &gdt[i], sizeof(uint64_t));
     }
 
     // 2. Load GDTR
@@ -53,32 +53,32 @@ void WindowsEnvironment::setup_teb_peb() {
     gdtr.base = GDT_BASE;
     gdtr.limit = static_cast<uint16_t>(gdt.size() * 8 - 1);
     gdtr.selector = 0;
-    uc_reg_write(uc, UC_X86_REG_GDTR, &gdtr);
+    backend.reg_write(UC_X86_REG_GDTR, &gdtr);
 
     // 3. Load Segment Registers
     uint32_t ds = 0x10, es = 0x10, ss = 0x10, fs = 0x18;
-    uc_reg_write(uc, UC_X86_REG_DS, &ds);
-    uc_reg_write(uc, UC_X86_REG_ES, &es);
-    uc_reg_write(uc, UC_X86_REG_SS, &ss);
-    uc_reg_write(uc, UC_X86_REG_FS, &fs);
+    backend.reg_write(UC_X86_REG_DS, &ds);
+    backend.reg_write(UC_X86_REG_ES, &es);
+    backend.reg_write(UC_X86_REG_SS, &ss);
+    backend.reg_write(UC_X86_REG_FS, &fs);
 
     // 4. Populate TEB Fields
     uint32_t seh_head = 0xFFFFFFFF;
-    uc_mem_write(uc, TEB_BASE + 0x00, &seh_head, 4);
+    backend.mem_write(TEB_BASE + 0x00, &seh_head, 4);
     
     uint32_t stack_top;
-    uc_reg_read(uc, UC_X86_REG_ESP, &stack_top);
+    backend.reg_read(UC_X86_REG_ESP, &stack_top);
     
-    uc_mem_write(uc, TEB_BASE + 0x04, &stack_top, 4);
+    backend.mem_write(TEB_BASE + 0x04, &stack_top, 4);
     
     uint32_t stack_base = STACK_BASE;
-    uc_mem_write(uc, TEB_BASE + 0x08, &stack_base, 4);
+    backend.mem_write(TEB_BASE + 0x08, &stack_base, 4);
     
     uint32_t teb_base = TEB_BASE;
-    uc_mem_write(uc, TEB_BASE + 0x18, &teb_base, 4);
+    backend.mem_write(TEB_BASE + 0x18, &teb_base, 4);
     
     uint32_t peb_base = PEB_BASE;
-    uc_mem_write(uc, TEB_BASE + 0x30, &peb_base, 4);
+    backend.mem_write(TEB_BASE + 0x30, &peb_base, 4);
 }
 
 void WindowsEnvironment::setup_system() {

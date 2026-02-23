@@ -1,11 +1,12 @@
 #pragma once
 
-#include "cpu_backend_compat.hpp"
+#include "backend/cpu_backend.hpp"
 #include <string>
 #include <unordered_map>
 
 struct APIContext {
-    uc_engine* uc;
+    CpuBackend* backend = nullptr;
+    uc_engine* uc = nullptr; // Kept for compatibility with generated api_mocks.
     void* sdl_window; // Opaque pointer to SDL_Window
     void* sdl_renderer; // Opaque pointer to SDL_Renderer
     void* sdl_texture; // Opaque pointer to SDL_Texture
@@ -17,28 +18,31 @@ struct APIContext {
     // Quick helper to read arguments from Windows x86 stack (stdcall)
     // index 0 is first argument
     uint32_t get_arg(int index) {
+        if (!backend) return 0;
         uint32_t esp;
-        uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+        backend->reg_read(UC_X86_REG_ESP, &esp);
         uint32_t val;
         // Skip return address (+4)
-        uc_err err = uc_mem_read(uc, esp + 4 + (index * 4), &val, sizeof(val));
+        uc_err err = backend->mem_read(esp + 4 + (index * 4), &val, sizeof(val));
         if (err) return 0;
         return val;
     }
 
     // Set EAX return value
     void set_eax(uint32_t val) {
-        uc_reg_write(uc, UC_X86_REG_EAX, &val);
+        if (!backend) return;
+        backend->reg_write(UC_X86_REG_EAX, &val);
     }
 
     // Emulate stdcall return
     void pop_args(int num_args) {
+        if (!backend) return;
         uint32_t esp;
-        uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+        backend->reg_read(UC_X86_REG_ESP, &esp);
         uint32_t ret_addr;
-        uc_mem_read(uc, esp, &ret_addr, 4);
+        backend->mem_read(esp, &ret_addr, 4);
         esp += (num_args * 4) + 4;
-        uc_reg_write(uc, UC_X86_REG_ESP, &esp);
-        uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+        backend->reg_write(UC_X86_REG_ESP, &esp);
+        backend->reg_write(UC_X86_REG_EIP, &ret_addr);
     }
 };

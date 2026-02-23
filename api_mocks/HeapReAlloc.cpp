@@ -104,8 +104,8 @@ extern "C" void mock_HeapReAlloc(APIContext* ctx) {
                             static_cast<uint32_t>(buffer.size()),
                             copy_size - copied);
 
-                        if (uc_mem_read(ctx->uc, lpMem + copied, buffer.data(), chunk) != UC_ERR_OK ||
-                            uc_mem_write(ctx->uc, new_ptr + copied, buffer.data(), chunk) != UC_ERR_OK) {
+                        if (ctx->backend->mem_read(lpMem + copied, buffer.data(), chunk) != UC_ERR_OK ||
+                            ctx->backend->mem_write(new_ptr + copied, buffer.data(), chunk) != UC_ERR_OK) {
                             io_ok = false;
                             break;
                         }
@@ -120,7 +120,7 @@ extern "C" void mock_HeapReAlloc(APIContext* ctx) {
                                 static_cast<uint32_t>(zero_buf.size()),
                                 requested_size - zeroed);
 
-                            if (uc_mem_write(ctx->uc, new_ptr + zeroed, zero_buf.data(), chunk) != UC_ERR_OK) {
+                            if (ctx->backend->mem_write(new_ptr + zeroed, zero_buf.data(), chunk) != UC_ERR_OK) {
                                 io_ok = false;
                                 break;
                             }

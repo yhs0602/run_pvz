@@ -1,0 +1,22 @@
+{
+  "address": "0x513b30",
+  "size": 21,
+  "assembly": [
+    "mov edx, dword ptr [esp + 0x34]",
+    "mov eax, dword ptr [esp + 0x14]",
+    "cmp dword ptr [esi + 0x24], 0x10",
+    "mov edi, dword ptr [esi + 0x20]",
+    "mov dword ptr [esp + 0x20], esi",
+    "jb 0x513b4a"
+  ],
+  "live_in": [
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "edi",
+    "edx",
+    "eflags"
+  ]
+}

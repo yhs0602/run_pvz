@@ -1,0 +1,11 @@
+{
+  "address": "0x5c483b",
+  "size": 2,
+  "assembly": [
+    "jmp 0x5c4840"
+  ],
+  "live_in": [
+  ],
+  "live_out": [
+  ]
+}

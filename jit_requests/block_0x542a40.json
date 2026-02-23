@@ -1,0 +1,24 @@
+{
+  "address": "0x542a40",
+  "size": 15,
+  "assembly": [
+    "or eax, 0xffffffff",
+    "xor edx, edx",
+    "div ecx",
+    "sub esp, 0x10",
+    "cmp eax, 0xc",
+    "jae 0x542a7b"
+  ],
+  "live_in": [
+    "eax",
+    "ecx",
+    "edx",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "edx",
+    "eflags",
+    "esp"
+  ]
+}

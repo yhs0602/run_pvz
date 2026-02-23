@@ -1,0 +1,16 @@
+{
+  "address": "0x4041cd",
+  "size": 6,
+  "assembly": [
+    "push ecx",
+    "call 0x61c130"
+  ],
+  "live_in": [
+    "ecx",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "esp"
+  ]
+}

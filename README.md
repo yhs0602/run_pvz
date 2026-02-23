@@ -35,6 +35,28 @@ rm -rf compiled_blocks/* llm_cache/* jit_requests/* api_requests/* api_mocks/*
 ./build/runner pvz/main.exe
 ```
 
+### (선택) 디버그/헤드리스 실행 옵션
+디스플레이가 없는 환경이나 코어 부팅 추적이 필요할 때 사용합니다.
+```bash
+# 창 없이 이벤트만 초기화
+PVZ_HEADLESS=1 ./build/runner pvz/main.exe
+
+# 네이티브 ARM64 JIT 디스패처 비활성화
+PVZ_DISABLE_NATIVE_JIT=1 ./build/runner pvz/main.exe
+
+# 부팅 체크포인트 로그 활성화
+PVZ_BOOT_TRACE=1 ./build/runner pvz/main.exe
+
+# JIT 동적 mock(.dylib) 비활성화 (내장 HLE만 사용)
+PVZ_DISABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe
+
+# 특정 watchpoint 로그 활성화 (기본 OFF)
+PVZ_WATCHPOINT=1 ./build/runner pvz/main.exe
+
+# 권장 디버그 조합 (헤드리스 + 네이티브JIT off + dylib mock off)
+PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_DISABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe
+```
+
 ---
 
 ## 🛑 현재 구동 가능 한계 (Current Status)

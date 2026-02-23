@@ -1,0 +1,23 @@
+{
+  "address": "0x5bf52f",
+  "size": 10,
+  "assembly": [
+    "add dword ptr [esi + 4], edi",
+    "pop edi",
+    "mov eax, esi",
+    "pop esi",
+    "ret 4"
+  ],
+  "live_in": [
+    "edi",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "edi",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

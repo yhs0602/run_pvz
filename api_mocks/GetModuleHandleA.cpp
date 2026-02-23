@@ -18,7 +18,7 @@ extern "C" void mock_GetModuleHandleA(APIContext* ctx) {
 
         for (uint32_t i = 0; i < 260; ++i) {
             char ch = 0;
-            if (uc_mem_read(ctx->uc, lpModuleName + i, &ch, 1) != UC_ERR_OK || ch == '\0') {
+            if (ctx->backend->mem_read(lpModuleName + i, &ch, 1) != UC_ERR_OK || ch == '\0') {
                 break;
             }
             module_name.push_back(ch);

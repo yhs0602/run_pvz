@@ -26,7 +26,7 @@ extern "C" void mock_CreateFontA(APIContext* ctx) {
         face_name.reserve(32);
         for (uint32_t i = 0; i < 64; ++i) {
             char ch = 0;
-            if (uc_mem_read(ctx->uc, pszFaceName + i, &ch, 1) != UC_ERR_OK) {
+            if (ctx->backend->mem_read(pszFaceName + i, &ch, 1) != UC_ERR_OK) {
                 face_name_valid = false;
                 break;
             }
@@ -76,10 +76,10 @@ extern "C" void mock_CreateFontA(APIContext* ctx) {
     ctx->set_eax(result);
 
     uint32_t esp;
-    uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_read(UC_X86_REG_ESP, &esp);
     uint32_t ret_addr;
-    uc_mem_read(ctx->uc, esp, &ret_addr, 4);
+    ctx->backend->mem_read(esp, &ret_addr, 4);
     esp += 56 + 4; // Add arg size + 4 bytes for the return address itself
-    uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-    uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
+    ctx->backend->reg_write(UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_write(UC_X86_REG_EIP, &ret_addr);
 }

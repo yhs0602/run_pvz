@@ -9,6 +9,7 @@
 #include <iterator>
 #include <cctype>
 #include <cstring>
+#include <cstdlib>
 
 // --- Win32 Message Mapping ---
 constexpr uint32_t WM_QUIT = 0x0012;
@@ -44,13 +45,13 @@ struct MappingHandle {
     uint32_t file_handle = 0xFFFFFFFFu; // INVALID_HANDLE_VALUE means page-file backed mapping
 };
 
-static std::string read_guest_c_string(uc_engine* uc, uint32_t guest_ptr, size_t max_len = 512) {
+static std::string read_guest_c_string(APIContext& ctx, uint32_t guest_ptr, size_t max_len = 512) {
     if (guest_ptr == 0) return "";
     std::string out;
     out.reserve(64);
     for (size_t i = 0; i < max_len; ++i) {
         char ch = 0;
-        if (uc_mem_read(uc, guest_ptr + i, &ch, 1) != UC_ERR_OK || ch == '\0') break;
+        if (!ctx.backend || ctx.backend->mem_read(guest_ptr + i, &ch, 1) != UC_ERR_OK || ch == '\0') break;
         out.push_back(ch);
     }
     return out;
@@ -464,52 +465,53 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"mscoree.dll!CorExitProcess", 4}
 };
 
-DummyAPIHandler::DummyAPIHandler(uc_engine* engine) : current_addr(FAKE_API_BASE) {
-    ctx.uc = engine;
+DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref), current_addr(FAKE_API_BASE) {
+    ctx.backend = &backend;
+    ctx.uc = backend.engine();
     std::filesystem::create_directories("api_requests");
     std::filesystem::create_directories("api_mocks");
     
     std::cout << "[*] Mapping FAKE_API boundary at 0x" << std::hex << FAKE_API_BASE << std::dec << "\n";
-    uc_mem_map(ctx.uc, FAKE_API_BASE, 0x100000, UC_PROT_ALL); // 1MB
+    backend.mem_map(FAKE_API_BASE, 0x100000, UC_PROT_ALL); // 1MB
 
     // --- BUILD FAKE KERNEL32.DLL PE HEADER ---
     uint32_t k32_base = 0x76000000;
-    uc_mem_map(ctx.uc, k32_base, 0x200000, UC_PROT_ALL);
+    backend.mem_map(k32_base, 0x200000, UC_PROT_ALL);
     
     uint16_t mz_magic = 0x5A4D; // "MZ"
-    uc_mem_write(ctx.uc, k32_base, &mz_magic, 2);
+    backend.mem_write(k32_base, &mz_magic, 2);
     
     uint32_t e_lfanew = 0x40;
-    uc_mem_write(ctx.uc, k32_base + 0x3C, &e_lfanew, 4);
+    backend.mem_write(k32_base + 0x3C, &e_lfanew, 4);
     uint32_t signature = 0x00004550; // "PE\0\0"
-    uc_mem_write(ctx.uc, k32_base + 0x40, &signature, 4);
+    backend.mem_write(k32_base + 0x40, &signature, 4);
     
     uint16_t opt_magic = 0x010B; // PE32
-    uc_mem_write(ctx.uc, k32_base + 0x40 + 0x18, &opt_magic, 2);
+    backend.mem_write(k32_base + 0x40 + 0x18, &opt_magic, 2);
     
     uint32_t export_dir_rva = 0x1000;
     uint32_t export_dir_size = 0x1000;
-    uc_mem_write(ctx.uc, k32_base + 0x40 + 0x18 + 0x60, &export_dir_rva, 4);
-    uc_mem_write(ctx.uc, k32_base + 0x40 + 0x18 + 0x64, &export_dir_size, 4);
+    backend.mem_write(k32_base + 0x40 + 0x18 + 0x60, &export_dir_rva, 4);
+    backend.mem_write(k32_base + 0x40 + 0x18 + 0x64, &export_dir_size, 4);
     
     uint32_t exp_dir[11] = {0, 0, 0, 0x1100, 1, 3, 3, 0x1200, 0x1300, 0x1400};
-    uc_mem_write(ctx.uc, k32_base + 0x1000, exp_dir, 40);
+    backend.mem_write(k32_base + 0x1000, exp_dir, 40);
     
     const char* dll_name = "KERNEL32.dll";
-    uc_mem_write(ctx.uc, k32_base + 0x1100, dll_name, strlen(dll_name) + 1);
+    backend.mem_write(k32_base + 0x1100, dll_name, strlen(dll_name) + 1);
     
     const char* f1_name = "GetProcAddress";
-    uc_mem_write(ctx.uc, k32_base + 0x1310, f1_name, strlen(f1_name) + 1);
+    backend.mem_write(k32_base + 0x1310, f1_name, strlen(f1_name) + 1);
     const char* f2_name = "LoadLibraryA";
-    uc_mem_write(ctx.uc, k32_base + 0x1340, f2_name, strlen(f2_name) + 1);
+    backend.mem_write(k32_base + 0x1340, f2_name, strlen(f2_name) + 1);
     const char* f3_name = "VirtualAlloc";
-    uc_mem_write(ctx.uc, k32_base + 0x1370, f3_name, strlen(f3_name) + 1);
+    backend.mem_write(k32_base + 0x1370, f3_name, strlen(f3_name) + 1);
     
     uint32_t addr_names[3] = {0x1310, 0x1340, 0x1370};
-    uc_mem_write(ctx.uc, k32_base + 0x1300, addr_names, sizeof(addr_names));
+    backend.mem_write(k32_base + 0x1300, addr_names, sizeof(addr_names));
     
     uint16_t ordinals[3] = {0, 1, 2};
-    uc_mem_write(ctx.uc, k32_base + 0x1400, ordinals, sizeof(ordinals));
+    backend.mem_write(k32_base + 0x1400, ordinals, sizeof(ordinals));
     
     uint32_t addr_GetProcAddress = register_fake_api("KERNEL32.dll!GetProcAddress");
     uint32_t addr_LoadLibraryA = register_fake_api("KERNEL32.dll!LoadLibraryA");
@@ -520,7 +522,7 @@ DummyAPIHandler::DummyAPIHandler(uc_engine* engine) : current_addr(FAKE_API_BASE
         uint32_t stub_addr = k32_base + rva;
         uint32_t rel_offset = target_addr - (stub_addr + 5);
         memcpy(&jmp_stub[1], &rel_offset, 4);
-        uc_mem_write(ctx.uc, stub_addr, jmp_stub, 5);
+        backend.mem_write(stub_addr, jmp_stub, 5);
     };
     
     write_jmp_stub(0x2000, addr_GetProcAddress);
@@ -528,10 +530,10 @@ DummyAPIHandler::DummyAPIHandler(uc_engine* engine) : current_addr(FAKE_API_BASE
     write_jmp_stub(0x2020, addr_VirtualAlloc);
     
     uint32_t addr_funcs[3] = {0x2000, 0x2010, 0x2020};
-    uc_mem_write(ctx.uc, k32_base + 0x1200, addr_funcs, sizeof(addr_funcs));
+    backend.mem_write(k32_base + 0x1200, addr_funcs, sizeof(addr_funcs));
 
     uc_hook trace;
-    uc_hook_add(ctx.uc, &trace, UC_HOOK_BLOCK, (void*)hook_api_call, this, 1, 0); // Catch all blocks
+    backend.hook_add(&trace, UC_HOOK_BLOCK, (void*)hook_api_call, this, 1, 0); // Catch all blocks
 }
 
 DummyAPIHandler::~DummyAPIHandler() {
@@ -559,10 +561,10 @@ uint32_t DummyAPIHandler::register_fake_api(const std::string& full_name) {
     if (it != KNOWN_SIGNATURES.end() && it->second > 0) {
         int args_bytes = it->second;
         uint8_t instruction[3] = {0xC2, static_cast<uint8_t>(args_bytes & 0xFF), static_cast<uint8_t>((args_bytes >> 8) & 0xFF)};
-        uc_mem_write(ctx.uc, api_addr, instruction, 3);
+        backend.mem_write(api_addr, instruction, 3);
     } else {
         uint8_t instruction = 0xC3; // ret
-        uc_mem_write(ctx.uc, api_addr, &instruction, 1);
+        backend.mem_write(api_addr, &instruction, 1);
     }
     
     return api_addr;
@@ -578,7 +580,7 @@ uint32_t DummyAPIHandler::create_fake_com_object(const std::string& class_name, 
     current_addr += 32; 
     
     // Write VTable pointer to the start of the object
-    uc_mem_write(ctx.uc, object_addr, &vtable_addr, 4);
+    backend.mem_write(object_addr, &vtable_addr, 4);
     
     // 3. Register fake APIs for each method
     for (int i = 0; i < num_methods; i++) {
@@ -591,13 +593,42 @@ uint32_t DummyAPIHandler::create_fake_com_object(const std::string& class_name, 
         }
         uint32_t api_addr = register_fake_api(method_name);
         // Write the API address into the VTable at index i
-        uc_mem_write(ctx.uc, vtable_addr + (i * 4), &api_addr, 4);
+        backend.mem_write(vtable_addr + (i * 4), &api_addr, 4);
     }
     
     return object_addr;
 }
 
 bool DummyAPIHandler::try_load_dylib(const std::string& api_name) {
+    const char* disable_env = std::getenv("PVZ_DISABLE_DYLIB_MOCKS");
+    if (disable_env && std::string(disable_env) != "0") {
+        return false;
+    }
+
+    // Keep core loader APIs on native HLE path for predictable calling convention behavior.
+    std::string api_lower = to_lower_ascii(api_name);
+    auto is_core = [&](const char* suffix) {
+        return api_lower.find(suffix) != std::string::npos;
+    };
+    if (is_core("!getprocaddress") ||
+        is_core("!loadlibrarya") ||
+        is_core("!loadlibraryw") ||
+        is_core("!getmodulehandlea") ||
+        is_core("!getmodulehandlew") ||
+        is_core("!interlockedincrement") ||
+        is_core("!interlockeddecrement") ||
+        is_core("!interlockedexchange") ||
+        is_core("!interlockedcompareexchange") ||
+        is_core("!tlsalloc") ||
+        is_core("!tlssetvalue") ||
+        is_core("!tlsgetvalue") ||
+        is_core("!flsalloc") ||
+        is_core("!flssetvalue") ||
+        is_core("!flsgetvalue") ||
+        is_core("!flsfree")) {
+        return false;
+    }
+
     if (dylib_funcs.find(api_name) != dylib_funcs.end()) return true;
 
     // Parse Just the function name (e.g., KERNEL32.dll!TlsGetValue -> TlsGetValue)
@@ -657,7 +688,7 @@ void DummyAPIHandler::handle_unknown_api(const std::string& api_name, uint32_t a
         dylib_funcs[api_name](&ctx);
     } else {
         std::cerr << "[!] CRITICAL: Failed to load generated mock for " << api_name << "\n";
-        uc_emu_stop(ctx.uc);
+        backend.emu_stop();
     }
 }
 
@@ -678,12 +709,12 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             handler->ctx.set_eax(0x12345678); // Dummy HWND
             
             uint32_t esp;
-            uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+            handler->backend.reg_read(UC_X86_REG_ESP, &esp);
             uint32_t ret_addr;
-            uc_mem_read(uc, esp, &ret_addr, 4);
+            handler->backend.mem_read(esp, &ret_addr, 4);
             esp += 48 + 4; // 12 args
-            uc_reg_write(uc, UC_X86_REG_ESP, &esp);
-            uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+            handler->backend.reg_write(UC_X86_REG_ESP, &esp);
+            handler->backend.reg_write(UC_X86_REG_EIP, &ret_addr);
             return;
         }
 
@@ -692,18 +723,18 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             uint32_t lpCaption = handler->ctx.get_arg(2);
             char text[256] = {0};
             char caption[256] = {0};
-            if (lpText) uc_mem_read(uc, lpText, text, 255);
-            if (lpCaption) uc_mem_read(uc, lpCaption, caption, 255);
+            if (lpText) handler->backend.mem_read(lpText, text, 255);
+            if (lpCaption) handler->backend.mem_read(lpCaption, caption, 255);
             std::cout << "\n[API CALL] [ERROR BOX] MessageBoxA: caption='" << caption << "', text='" << text << "'\n";
             handler->ctx.set_eax(1); // IDOK
             
             uint32_t esp;
-            uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+            handler->backend.reg_read(UC_X86_REG_ESP, &esp);
             uint32_t ret_addr;
-            uc_mem_read(uc, esp, &ret_addr, 4);
+            handler->backend.mem_read(esp, &ret_addr, 4);
             esp += 4 + 16; 
-            uc_reg_write(uc, UC_X86_REG_ESP, &esp);
-            uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+            handler->backend.reg_write(UC_X86_REG_ESP, &esp);
+            handler->backend.reg_write(UC_X86_REG_EIP, &ret_addr);
             return;
         }
 
@@ -712,12 +743,12 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             handler->ctx.set_eax(0xC000); // Dummy ATOM
             
             uint32_t esp;
-            uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+            handler->backend.reg_read(UC_X86_REG_ESP, &esp);
             uint32_t ret_addr;
-            uc_mem_read(uc, esp, &ret_addr, 4);
+            handler->backend.mem_read(esp, &ret_addr, 4);
             esp += 4 + 4; // 1 arg
-            uc_reg_write(uc, UC_X86_REG_ESP, &esp);
-            uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+            handler->backend.reg_write(UC_X86_REG_ESP, &esp);
+            handler->backend.reg_write(UC_X86_REG_EIP, &ret_addr);
             return;
         }
 
@@ -725,12 +756,12 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             handler->ctx.set_eax(1); // Success
             
             uint32_t esp;
-            uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+            handler->backend.reg_read(UC_X86_REG_ESP, &esp);
             uint32_t ret_addr;
-            uc_mem_read(uc, esp, &ret_addr, 4);
+            handler->backend.mem_read(esp, &ret_addr, 4);
             esp += (name.find("Ex") != std::string::npos) ? 16 + 4 : 12 + 4; // 4 args vs 3 args
-            uc_reg_write(uc, UC_X86_REG_ESP, &esp);
-            uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+            handler->backend.reg_write(UC_X86_REG_ESP, &esp);
+            handler->backend.reg_write(UC_X86_REG_EIP, &ret_addr);
             return;
         }
 
@@ -740,17 +771,17 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 int w, h;
                 SDL_GetWindowSize((SDL_Window*)handler->ctx.sdl_window, &w, &h);
                 uint32_t rect[4] = {0, 0, (uint32_t)w, (uint32_t)h};
-                uc_mem_write(uc, lpRect, rect, sizeof(rect));
+                handler->backend.mem_write(lpRect, rect, sizeof(rect));
             }
             handler->ctx.set_eax(1);
             
             uint32_t esp;
-            uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+            handler->backend.reg_read(UC_X86_REG_ESP, &esp);
             uint32_t ret_addr;
-            uc_mem_read(uc, esp, &ret_addr, 4);
+            handler->backend.mem_read(esp, &ret_addr, 4);
             esp += 8 + 4; // 2 args
-            uc_reg_write(uc, UC_X86_REG_ESP, &esp);
-            uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+            handler->backend.reg_write(UC_X86_REG_ESP, &esp);
+            handler->backend.reg_write(UC_X86_REG_EIP, &ret_addr);
             return;
         }
 
@@ -766,7 +797,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             uint32_t lplpDD = is_ex ? handler->ctx.get_arg(1) : handler->ctx.get_arg(1);
             
             uint32_t pDD = handler->create_fake_com_object("IDirectDraw", 40);
-            uc_mem_write(uc, lplpDD, &pDD, 4);
+            handler->backend.mem_write(lplpDD, &pDD, 4);
             
             handler->ctx.set_eax(0); // DD_OK
             handler->ctx.pop_args(is_ex ? 4 : 3);
@@ -779,7 +810,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             if (method_idx == 6 || method_idx == 22) { // CreateSurface
                 uint32_t lplpSurface = handler->ctx.get_arg(2);
                 uint32_t pSurface = handler->create_fake_com_object("IDDSurface", 45);
-                uc_mem_write(uc, lplpSurface, &pSurface, 4);
+                handler->backend.mem_write(lplpSurface, &pSurface, 4);
                 std::cout << "[HLE DDRAW] CreateSurface Intercepted\n";
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(4);
@@ -788,7 +819,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t lplpClipper = handler->ctx.get_arg(2);
                 if (lplpClipper != 0) {
                     uint32_t pClipper = handler->create_fake_com_object("IDirectDrawClipper", 20);
-                    uc_mem_write(uc, lplpClipper, &pClipper, 4);
+                    handler->backend.mem_write(lplpClipper, &pClipper, 4);
                 }
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(4); // this, flags, outClipper, unkOuter
@@ -797,7 +828,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t lplpPalette = handler->ctx.get_arg(3);
                 if (lplpPalette != 0) {
                     uint32_t pPalette = handler->create_fake_com_object("IDirectDrawPalette", 20);
-                    uc_mem_write(uc, lplpPalette, &pPalette, 4);
+                    handler->backend.mem_write(lplpPalette, &pPalette, 4);
                 }
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(5); // this, flags, colorTable, outPalette, unkOuter
@@ -810,7 +841,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t out_hz = handler->ctx.get_arg(1);
                 if (out_hz != 0) {
                     uint32_t hz = 60;
-                    uc_mem_write(uc, out_hz, &hz, 4);
+                    handler->backend.mem_write(out_hz, &hz, 4);
                 }
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(2);
@@ -860,20 +891,20 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     uint32_t g_mask = 0x0000FF00;
                     uint32_t b_mask = 0x000000FF;
                     uint32_t a_mask = 0x00000000;
-                    uc_mem_write(uc, lpDDSurfaceDesc + 0, &ddsd_size, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 4, &ddsd_flags, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 8, &height, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 12, &width, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 16, &pitch, 4); 
-                    uc_mem_write(uc, lpDDSurfaceDesc + 36, &handler->ctx.guest_vram, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 0, &ddsd_size, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 4, &ddsd_flags, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 8, &height, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 12, &width, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 16, &pitch, 4); 
+                    handler->backend.mem_write(lpDDSurfaceDesc + 36, &handler->ctx.guest_vram, 4);
                     // DDPIXELFORMAT at +72
-                    uc_mem_write(uc, lpDDSurfaceDesc + 72, &pf_size, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 76, &pf_flags, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 84, &bpp, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 88, &r_mask, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 92, &g_mask, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 96, &b_mask, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 100, &a_mask, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 72, &pf_size, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 76, &pf_flags, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 84, &bpp, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 88, &r_mask, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 92, &g_mask, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 96, &b_mask, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 100, &a_mask, 4);
                 }
                 std::cout << "[HLE DDRAW] Surface Lock Intercepted\n";
                 handler->ctx.set_eax(0);
@@ -881,7 +912,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 return;
             } else if (method_idx == 32 || method_idx == 26) { // Unlock
                 if (handler->ctx.sdl_texture && handler->ctx.sdl_renderer && handler->ctx.host_vram) {
-                    uc_mem_read(uc, handler->ctx.guest_vram, handler->ctx.host_vram, 800 * 600 * 4);
+                    handler->backend.mem_read(handler->ctx.guest_vram, handler->ctx.host_vram, 800 * 600 * 4);
                     
                     SDL_UpdateTexture((SDL_Texture*)handler->ctx.sdl_texture, NULL, handler->ctx.host_vram, 800 * 4);
                     SDL_RenderClear((SDL_Renderer*)handler->ctx.sdl_renderer);
@@ -911,20 +942,20 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     uint32_t g_mask = 0x0000FF00;
                     uint32_t b_mask = 0x000000FF;
                     uint32_t a_mask = 0x00000000;
-                    uc_mem_write(uc, lpDDSurfaceDesc + 0, &ddsd_size, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 4, &ddsd_flags, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 8, &height, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 12, &width, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 16, &pitch, 4); 
-                    uc_mem_write(uc, lpDDSurfaceDesc + 36, &handler->ctx.guest_vram, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 0, &ddsd_size, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 4, &ddsd_flags, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 8, &height, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 12, &width, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 16, &pitch, 4); 
+                    handler->backend.mem_write(lpDDSurfaceDesc + 36, &handler->ctx.guest_vram, 4);
                     // DDPIXELFORMAT at +72
-                    uc_mem_write(uc, lpDDSurfaceDesc + 72, &pf_size, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 76, &pf_flags, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 84, &bpp, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 88, &r_mask, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 92, &g_mask, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 96, &b_mask, 4);
-                    uc_mem_write(uc, lpDDSurfaceDesc + 100, &a_mask, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 72, &pf_size, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 76, &pf_flags, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 84, &bpp, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 88, &r_mask, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 92, &g_mask, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 96, &b_mask, 4);
+                    handler->backend.mem_write(lpDDSurfaceDesc + 100, &a_mask, 4);
                 }
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(2);
@@ -934,7 +965,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 if (pSurfaceOut != 0) {
                     uint32_t this_surface = handler->ctx.get_arg(0);
                     // Return self as a stable attached surface for now.
-                    uc_mem_write(uc, pSurfaceOut, &this_surface, 4);
+                    handler->backend.mem_write(pSurfaceOut, &this_surface, 4);
                 }
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(3);
@@ -949,13 +980,13 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     uint32_t g_mask = 0x0000FF00;
                     uint32_t b_mask = 0x000000FF;
                     uint32_t a_mask = 0x00000000;
-                    uc_mem_write(uc, lpPixelFormat + 0, &pf_size, 4);
-                    uc_mem_write(uc, lpPixelFormat + 4, &pf_flags, 4);
-                    uc_mem_write(uc, lpPixelFormat + 12, &bpp, 4);
-                    uc_mem_write(uc, lpPixelFormat + 16, &r_mask, 4);
-                    uc_mem_write(uc, lpPixelFormat + 20, &g_mask, 4);
-                    uc_mem_write(uc, lpPixelFormat + 24, &b_mask, 4);
-                    uc_mem_write(uc, lpPixelFormat + 28, &a_mask, 4);
+                    handler->backend.mem_write(lpPixelFormat + 0, &pf_size, 4);
+                    handler->backend.mem_write(lpPixelFormat + 4, &pf_flags, 4);
+                    handler->backend.mem_write(lpPixelFormat + 12, &bpp, 4);
+                    handler->backend.mem_write(lpPixelFormat + 16, &r_mask, 4);
+                    handler->backend.mem_write(lpPixelFormat + 20, &g_mask, 4);
+                    handler->backend.mem_write(lpPixelFormat + 24, &b_mask, 4);
+                    handler->backend.mem_write(lpPixelFormat + 28, &a_mask, 4);
                 }
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(2);
@@ -987,7 +1018,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t out_hwnd = handler->ctx.get_arg(1);
                 if (out_hwnd != 0) {
                     uint32_t hwnd = 0x12345678;
-                    uc_mem_write(uc, out_hwnd, &hwnd, 4);
+                    handler->backend.mem_write(out_hwnd, &hwnd, 4);
                 }
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(2);
@@ -1023,7 +1054,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t out_ds_buffer = handler->ctx.get_arg(2);
                 if (out_ds_buffer != 0) {
                     uint32_t ds_buf = handler->create_fake_com_object("IDirectSoundBuffer", 40);
-                    uc_mem_write(uc, out_ds_buffer, &ds_buf, 4);
+                    handler->backend.mem_write(out_ds_buffer, &ds_buf, 4);
                 }
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(4);
@@ -1051,10 +1082,10 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t lpCaps = handler->ctx.get_arg(1);
                 if (lpCaps != 0) {
                     uint32_t size = 0;
-                    uc_mem_read(uc, lpCaps, &size, 4);
+                    handler->backend.mem_read(lpCaps, &size, 4);
                     if (size >= 8) {
                         uint32_t flags = 0;
-                        uc_mem_write(uc, lpCaps + 4, &flags, 4);
+                        handler->backend.mem_write(lpCaps + 4, &flags, 4);
                     }
                 }
                 handler->ctx.set_eax(0);
@@ -1064,15 +1095,15 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t pPlay = handler->ctx.get_arg(1);
                 uint32_t pWrite = handler->ctx.get_arg(2);
                 uint32_t zero = 0;
-                if (pPlay) uc_mem_write(uc, pPlay, &zero, 4);
-                if (pWrite) uc_mem_write(uc, pWrite, &zero, 4);
+                if (pPlay) handler->backend.mem_write(pPlay, &zero, 4);
+                if (pWrite) handler->backend.mem_write(pWrite, &zero, 4);
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(3);
                 return;
             } else if (method_idx == 9) { // GetStatus
                 uint32_t pStatus = handler->ctx.get_arg(1);
                 uint32_t status = 0;
-                if (pStatus) uc_mem_write(uc, pStatus, &status, 4);
+                if (pStatus) handler->backend.mem_write(pStatus, &status, 4);
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(2);
                 return;
@@ -1085,17 +1116,17 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t pbytes2 = handler->ctx.get_arg(6);
                 if (handler->ctx.global_state.find("DirectSoundHeap") == handler->ctx.global_state.end()) {
                     handler->ctx.global_state["DirectSoundHeap"] = 0x34000000;
-                    uc_mem_map(uc, 0x34000000, 0x01000000, UC_PROT_ALL);
+                    handler->backend.mem_map(0x34000000, 0x01000000, UC_PROT_ALL);
                 }
                 uint32_t base = static_cast<uint32_t>(handler->ctx.global_state["DirectSoundHeap"]);
                 uint32_t ptr1 = base + (write_cursor & 0xFFFFF);
                 uint32_t bytes1 = write_bytes;
                 uint32_t ptr2 = 0;
                 uint32_t bytes2 = 0;
-                if (ppv1) uc_mem_write(uc, ppv1, &ptr1, 4);
-                if (pbytes1) uc_mem_write(uc, pbytes1, &bytes1, 4);
-                if (ppv2) uc_mem_write(uc, ppv2, &ptr2, 4);
-                if (pbytes2) uc_mem_write(uc, pbytes2, &bytes2, 4);
+                if (ppv1) handler->backend.mem_write(ppv1, &ptr1, 4);
+                if (pbytes1) handler->backend.mem_write(pbytes1, &bytes1, 4);
+                if (ppv2) handler->backend.mem_write(ppv2, &ptr2, 4);
+                if (pbytes2) handler->backend.mem_write(pbytes2, &bytes2, 4);
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(8);
                 return;
@@ -1186,7 +1217,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     msg.message = 0; // Ignore
                 }
 
-                uc_mem_write(uc, lpMsg, &msg, sizeof(msg));
+                handler->backend.mem_write(lpMsg, &msg, sizeof(msg));
                 handler->ctx.set_eax(msg.message != WM_QUIT ? 1 : 0);
             } else {
                 handler->ctx.set_eax(0);
@@ -1194,18 +1225,44 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
 
             // Clean up stack and return manually (stdcall)
             uint32_t esp;
-            uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+            handler->backend.reg_read(UC_X86_REG_ESP, &esp);
             uint32_t ret_addr;
-            uc_mem_read(uc, esp, &ret_addr, 4);
+            handler->backend.mem_read(esp, &ret_addr, 4);
             esp += (is_peek ? 24 : 20); // Peek arguments: 5 (20 bytes), Get arguments: 4 (16 bytes) + 4 for ret
-            uc_reg_write(uc, UC_X86_REG_ESP, &esp);
-            uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+            handler->backend.reg_write(UC_X86_REG_ESP, &esp);
+            handler->backend.reg_write(UC_X86_REG_EIP, &ret_addr);
             return;
         }
 
+        auto is_noisy_fastpath_api = [&](const std::string& n) {
+            return n == "KERNEL32.dll!EnterCriticalSection" ||
+                   n == "KERNEL32.dll!LeaveCriticalSection" ||
+                   n == "KERNEL32.dll!InitializeCriticalSection" ||
+                   n == "KERNEL32.dll!InitializeCriticalSectionAndSpinCount" ||
+                   n == "KERNEL32.dll!HeapAlloc" ||
+                   n == "KERNEL32.dll!HeapFree" ||
+                   n == "KERNEL32.dll!HeapSize" ||
+                   n == "KERNEL32.dll!HeapReAlloc" ||
+                   n == "KERNEL32.dll!TlsGetValue" ||
+                   n == "KERNEL32.dll!TlsSetValue" ||
+                   n == "KERNEL32.dll!TlsAlloc" ||
+                   n == "KERNEL32.dll!FlsGetValue" ||
+                   n == "KERNEL32.dll!FlsSetValue" ||
+                   n == "KERNEL32.dll!FlsAlloc" ||
+                   n == "KERNEL32.dll!FlsFree" ||
+                   n == "KERNEL32.dll!GetLastError" ||
+                   n == "KERNEL32.dll!SetLastError" ||
+                   n == "KERNEL32.dll!InterlockedIncrement" ||
+                   n == "KERNEL32.dll!InterlockedDecrement" ||
+                   n == "KERNEL32.dll!InterlockedExchange" ||
+                   n == "KERNEL32.dll!InterlockedCompareExchange";
+        };
+
         bool known = (KNOWN_SIGNATURES.find(name) != KNOWN_SIGNATURES.end());
         if (name.find("GetProcAddress") != std::string::npos) known = true;
-        std::cout << "\n[DEBUG] hook_api_call name='" << name << "', known=" << known << "\n";
+        if (!is_noisy_fastpath_api(name)) {
+            std::cout << "\n[DEBUG] hook_api_call name='" << name << "', known=" << known << "\n";
+        }
         
         if (handler->try_load_dylib(name)) {
             std::cout << "\n[API CALL] [JIT MOCK] Redirecting to " << name << std::endl;
@@ -1223,16 +1280,16 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t lpVersionInformation = handler->ctx.get_arg(0);
                 if (lpVersionInformation) {
                     uint32_t size;
-                    uc_mem_read(uc, lpVersionInformation, &size, 4);
+                    handler->backend.mem_read(lpVersionInformation, &size, 4);
                     if (size >= 20) { // OSVERSIONINFOA is 148 bytes
                         uint32_t major = 6;  // Windows 7 / Vista
                         uint32_t minor = 1;
                         uint32_t build = 7601;
                         uint32_t platformId = 2; // VER_PLATFORM_WIN32_NT
-                        uc_mem_write(uc, lpVersionInformation + 4, &major, 4);
-                        uc_mem_write(uc, lpVersionInformation + 8, &minor, 4);
-                        uc_mem_write(uc, lpVersionInformation + 12, &build, 4);
-                        uc_mem_write(uc, lpVersionInformation + 16, &platformId, 4);
+                        handler->backend.mem_write(lpVersionInformation + 4, &major, 4);
+                        handler->backend.mem_write(lpVersionInformation + 8, &minor, 4);
+                        handler->backend.mem_write(lpVersionInformation + 12, &build, 4);
+                        handler->backend.mem_write(lpVersionInformation + 16, &platformId, 4);
                     }
                 }
                 handler->ctx.set_eax(1);
@@ -1246,9 +1303,9 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t len = static_cast<uint32_t>(std::strlen(value));
                 if (lpBuffer != 0 && uSize > 0) {
                     uint32_t to_copy = std::min<uint32_t>(len, uSize - 1);
-                    uc_mem_write(uc, lpBuffer, value, to_copy);
+                    handler->backend.mem_write(lpBuffer, value, to_copy);
                     char nul = '\0';
-                    uc_mem_write(uc, lpBuffer + to_copy, &nul, 1);
+                    handler->backend.mem_write(lpBuffer + to_copy, &nul, 1);
                 }
                 handler->ctx.set_eax(len);
                 handler->ctx.global_state["LastError"] = 0;
@@ -1263,9 +1320,9 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t len = static_cast<uint32_t>(wide.size());
                 if (lpBuffer != 0 && uSize > 0) {
                     uint32_t to_copy = std::min<uint32_t>(len, uSize - 1);
-                    uc_mem_write(uc, lpBuffer, wide.data(), to_copy * 2);
+                    handler->backend.mem_write(lpBuffer, wide.data(), to_copy * 2);
                     uint16_t nul = 0;
-                    uc_mem_write(uc, lpBuffer + to_copy * 2, &nul, 2);
+                    handler->backend.mem_write(lpBuffer + to_copy * 2, &nul, 2);
                 }
                 handler->ctx.set_eax(len);
                 handler->ctx.global_state["LastError"] = 0;
@@ -1283,7 +1340,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 // Extremely simple bump allocator
                 if (handler->ctx.global_state.find("HeapTop") == handler->ctx.global_state.end()) {
                     handler->ctx.global_state["HeapTop"] = 0x20000000;
-                    uc_mem_map(uc, 0x20000000, 0x10000000, UC_PROT_ALL); // 256MB Heap
+                    handler->backend.mem_map(0x20000000, 0x10000000, UC_PROT_ALL); // 256MB Heap
                 }
                 
                 uint32_t ptr = handler->ctx.global_state["HeapTop"];
@@ -1298,14 +1355,80 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 
                 handler->ctx.set_eax(ptr);
                 handler->ctx.global_state["heap_size_" + std::to_string(ptr)] = dwBytes;
-                std::cout << "\n[API CALL] [OK] HeapAlloc(" << dwBytes << ") -> 0x" << std::hex << ptr << std::dec << std::endl;
             } else if (name == "KERNEL32.dll!HeapFree") {
                 handler->ctx.set_eax(1); // Success
-                std::cout << "\n[API CALL] [OK] HeapFree" << std::endl;
+            } else if (name == "KERNEL32.dll!HeapSize") {
+                uint32_t lpMem = handler->ctx.get_arg(2);
+                auto it = handler->ctx.global_state.find("heap_size_" + std::to_string(lpMem));
+                if (it != handler->ctx.global_state.end()) {
+                    handler->ctx.set_eax(static_cast<uint32_t>(it->second));
+                    handler->ctx.global_state["LastError"] = 0;
+                } else {
+                    handler->ctx.set_eax(0xFFFFFFFFu); // (SIZE_T)-1 on failure
+                    handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
+                }
+            } else if (name == "KERNEL32.dll!HeapReAlloc") {
+                uint32_t dwFlags = handler->ctx.get_arg(1);
+                uint32_t lpMem = handler->ctx.get_arg(2);
+                uint32_t dwBytes = handler->ctx.get_arg(3);
+
+                if (dwBytes == 0) {
+                    dwBytes = 1;
+                }
+
+                if (lpMem == 0) {
+                    // Windows allows HeapReAlloc(NULL, ..) behavior similar to alloc in some runtimes.
+                    if (handler->ctx.global_state.find("HeapTop") == handler->ctx.global_state.end()) {
+                        handler->ctx.global_state["HeapTop"] = 0x20000000;
+                        handler->backend.mem_map(0x20000000, 0x10000000, UC_PROT_ALL);
+                    }
+                    uint32_t ptr = static_cast<uint32_t>(handler->ctx.global_state["HeapTop"]);
+                    uint32_t aligned = (dwBytes + 15) & ~15u;
+                    handler->ctx.global_state["HeapTop"] = ptr + aligned;
+                    handler->ctx.global_state["heap_size_" + std::to_string(ptr)] = dwBytes;
+                    handler->ctx.set_eax(ptr);
+                    handler->ctx.global_state["LastError"] = 0;
+                } else {
+                    auto it = handler->ctx.global_state.find("heap_size_" + std::to_string(lpMem));
+                    if (it == handler->ctx.global_state.end()) {
+                        handler->ctx.set_eax(0);
+                        handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
+                    } else {
+                        uint32_t old_size = static_cast<uint32_t>(it->second);
+                        if (dwBytes <= old_size) {
+                            // Shrink in-place
+                            handler->ctx.global_state["heap_size_" + std::to_string(lpMem)] = dwBytes;
+                            handler->ctx.set_eax(lpMem);
+                            handler->ctx.global_state["LastError"] = 0;
+                        } else {
+                            // Grow by allocating a new block and copying old bytes.
+                            if (handler->ctx.global_state.find("HeapTop") == handler->ctx.global_state.end()) {
+                                handler->ctx.global_state["HeapTop"] = 0x20000000;
+                                handler->backend.mem_map(0x20000000, 0x10000000, UC_PROT_ALL);
+                            }
+                            uint32_t new_ptr = static_cast<uint32_t>(handler->ctx.global_state["HeapTop"]);
+                            uint32_t aligned = (dwBytes + 15) & ~15u;
+                            handler->ctx.global_state["HeapTop"] = new_ptr + aligned;
+
+                            std::vector<uint8_t> temp(old_size, 0);
+                            handler->backend.mem_read(lpMem, temp.data(), old_size);
+                            handler->backend.mem_write(new_ptr, temp.data(), old_size);
+
+                            if (dwFlags & 0x00000008u) { // HEAP_ZERO_MEMORY
+                                std::vector<uint8_t> zeros(dwBytes - old_size, 0);
+                                handler->backend.mem_write(new_ptr + old_size, zeros.data(), zeros.size());
+                            }
+
+                            handler->ctx.global_state["heap_size_" + std::to_string(new_ptr)] = dwBytes;
+                            handler->ctx.set_eax(new_ptr);
+                            handler->ctx.global_state["LastError"] = 0;
+                        }
+                    }
+                }
             } else if (name == "KERNEL32.dll!CreateFileA") {
                 uint32_t lpFileName = handler->ctx.get_arg(0);
                 uint32_t creationDisposition = handler->ctx.get_arg(4);
-                std::string guest_path = read_guest_c_string(uc, lpFileName, 1024);
+                std::string guest_path = read_guest_c_string(handler->ctx, lpFileName, 1024);
                 std::string host_path = resolve_guest_path_to_host(guest_path, handler->process_base_dir);
                 if (host_path.empty()) {
                     std::string normalized = guest_path;
@@ -1376,7 +1499,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 auto itf = handler->ctx.handle_map.find(key);
                 if (itf == handler->ctx.handle_map.end()) {
                     uint32_t zero = 0;
-                    if (lpBytesRead) uc_mem_write(uc, lpBytesRead, &zero, 4);
+                    if (lpBytesRead) handler->backend.mem_write(lpBytesRead, &zero, 4);
                     handler->ctx.set_eax(0);
                     handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
                 } else {
@@ -1384,10 +1507,10 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     size_t remaining = (fh->pos < fh->data.size()) ? (fh->data.size() - fh->pos) : 0;
                     uint32_t to_read = static_cast<uint32_t>(std::min<size_t>(remaining, nBytesToRead));
                     if (to_read > 0) {
-                        uc_mem_write(uc, lpBuffer, fh->data.data() + fh->pos, to_read);
+                        handler->backend.mem_write(lpBuffer, fh->data.data() + fh->pos, to_read);
                         fh->pos += to_read;
                     }
-                    if (lpBytesRead) uc_mem_write(uc, lpBytesRead, &to_read, 4);
+                    if (lpBytesRead) handler->backend.mem_write(lpBytesRead, &to_read, 4);
                     handler->ctx.set_eax(1);
                     handler->ctx.global_state["LastError"] = 0;
                 }
@@ -1400,7 +1523,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 auto itf = handler->ctx.handle_map.find(key);
                 if (itf == handler->ctx.handle_map.end()) {
                     uint32_t zero = 0;
-                    if (lpBytesWritten) uc_mem_write(uc, lpBytesWritten, &zero, 4);
+                    if (lpBytesWritten) handler->backend.mem_write(lpBytesWritten, &zero, 4);
                     handler->ctx.set_eax(0);
                     handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
                 } else {
@@ -1408,10 +1531,10 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     if (fh->pos > fh->data.size()) fh->data.resize(fh->pos, 0);
                     if (nBytesToWrite > 0) {
                         if (fh->pos + nBytesToWrite > fh->data.size()) fh->data.resize(fh->pos + nBytesToWrite);
-                        uc_mem_read(uc, lpBuffer, fh->data.data() + fh->pos, nBytesToWrite);
+                        handler->backend.mem_read(lpBuffer, fh->data.data() + fh->pos, nBytesToWrite);
                         fh->pos += nBytesToWrite;
                     }
-                    if (lpBytesWritten) uc_mem_write(uc, lpBytesWritten, &nBytesToWrite, 4);
+                    if (lpBytesWritten) handler->backend.mem_write(lpBytesWritten, &nBytesToWrite, 4);
                     handler->ctx.set_eax(1);
                     handler->ctx.global_state["LastError"] = 0;
                 }
@@ -1475,7 +1598,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 handler->ctx.global_state["ThreadHandleTop"] = handle + 4;
                 if (lpThreadId != 0) {
                     uint32_t tid = 1;
-                    uc_mem_write(uc, lpThreadId, &tid, 4);
+                    handler->backend.mem_write(lpThreadId, &tid, 4);
                 }
                 handler->ctx.set_eax(handle);
                 handler->ctx.global_state["LastError"] = 0;
@@ -1550,7 +1673,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 std::string procName;
                 if (lpProcName > 0xFFFF) { // Not an ordinal
                     char buf[256] = {0};
-                    uc_mem_read(uc, lpProcName, buf, 255);
+                    handler->backend.mem_read(lpProcName, buf, 255);
                     procName = buf;
                 } else {
                     procName = "Ordinal_" + std::to_string(lpProcName);
@@ -1594,8 +1717,8 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                           << " (exit_code=" << exit_code
                           << ") -> stopping emulation.\n";
                 uint32_t finished_eip = 0;
-                uc_reg_write(handler->ctx.uc, UC_X86_REG_EIP, &finished_eip);
-                uc_emu_stop(handler->ctx.uc);
+                handler->backend.reg_write(UC_X86_REG_EIP, &finished_eip);
+                handler->backend.emu_stop();
                 return;
             } else if (name == "KERNEL32.dll!EncodePointer" || name == "KERNEL32.dll!DecodePointer") {
                 uint32_t ptr = handler->ctx.get_arg(0);
@@ -1605,38 +1728,91 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t target_ptr = handler->ctx.get_arg(0);
                 uint32_t val = handler->ctx.get_arg(1);
                 uint32_t prev = 0;
-                uc_mem_read(uc, target_ptr, &prev, 4);
-                uc_mem_write(uc, target_ptr, &val, 4);
+                handler->backend.mem_read(target_ptr, &prev, 4);
+                handler->backend.mem_write(target_ptr, &val, 4);
                 handler->ctx.set_eax(prev);
-                std::cout << "\n[API CALL] [OK] InterlockedExchange(" << std::hex << target_ptr << ") = " << prev << "\n";
             } else if (name == "KERNEL32.dll!InterlockedCompareExchange") {
                 uint32_t target_ptr = handler->ctx.get_arg(0);
                 uint32_t xchg = handler->ctx.get_arg(1);
                 uint32_t comp = handler->ctx.get_arg(2);
                 uint32_t prev = 0;
-                uc_mem_read(uc, target_ptr, &prev, 4);
+                handler->backend.mem_read(target_ptr, &prev, 4);
                 if (prev == comp) {
-                    uc_mem_write(uc, target_ptr, &xchg, 4);
+                    handler->backend.mem_write(target_ptr, &xchg, 4);
                 }
                 handler->ctx.set_eax(prev);
             } else if (name == "KERNEL32.dll!InterlockedIncrement") {
                 uint32_t target_ptr = handler->ctx.get_arg(0);
                 uint32_t val = 0;
-                uc_mem_read(uc, target_ptr, &val, 4);
+                handler->backend.mem_read(target_ptr, &val, 4);
                 val++;
-                uc_mem_write(uc, target_ptr, &val, 4);
+                handler->backend.mem_write(target_ptr, &val, 4);
                 handler->ctx.set_eax(val);
             } else if (name == "KERNEL32.dll!InterlockedDecrement") {
                 uint32_t target_ptr = handler->ctx.get_arg(0);
                 uint32_t val = 0;
-                uc_mem_read(uc, target_ptr, &val, 4);
+                handler->backend.mem_read(target_ptr, &val, 4);
                 val--;
-                uc_mem_write(uc, target_ptr, &val, 4);
+                handler->backend.mem_write(target_ptr, &val, 4);
                 handler->ctx.set_eax(val);
+            } else if (name == "KERNEL32.dll!EnterCriticalSection" ||
+                       name == "KERNEL32.dll!LeaveCriticalSection" ||
+                       name == "KERNEL32.dll!InitializeCriticalSection" ||
+                       name == "KERNEL32.dll!InitializeCriticalSectionAndSpinCount") {
+                // Hot-path sync APIs: treat as no-op success and keep logs quiet.
+                handler->ctx.set_eax(1);
             } else if (name == "OLEAUT32.dll!Ordinal_9") {
                 handler->ctx.set_eax(0);
                 std::cout << "\n[API CALL] [OK] Intercepted SysFreeString.\n";
-            } else if (name == "KERNEL32.dll!FlsGetValue" || name == "KERNEL32.dll!TlsGetValue" || name == "KERNEL32.dll!GetLastError" ||
+            } else if (name == "KERNEL32.dll!TlsAlloc" || name == "KERNEL32.dll!FlsAlloc") {
+                const char* prefix = (name == "KERNEL32.dll!TlsAlloc") ? "tls_" : "fls_";
+                const char* next_key = (name == "KERNEL32.dll!TlsAlloc") ? "tls_next_alloc_index" : "fls_next_alloc_index";
+                uint64_t next_index = handler->ctx.global_state[next_key];
+                if (next_index >= 1088u) {
+                    handler->ctx.set_eax(0xFFFFFFFFu);
+                    handler->ctx.global_state["LastError"] = 0x103u; // ERROR_NO_MORE_ITEMS
+                } else {
+                    uint32_t idx = static_cast<uint32_t>(next_index);
+                    handler->ctx.global_state[next_key] = next_index + 1;
+                    handler->ctx.global_state[std::string(prefix) + std::to_string(idx)] = 0;
+                    handler->ctx.set_eax(idx);
+                    handler->ctx.global_state["LastError"] = 0;
+                }
+            } else if (name == "KERNEL32.dll!TlsSetValue" || name == "KERNEL32.dll!FlsSetValue") {
+                uint32_t idx = handler->ctx.get_arg(0);
+                uint32_t value = handler->ctx.get_arg(1);
+                const char* prefix = (name == "KERNEL32.dll!TlsSetValue") ? "tls_" : "fls_";
+                if (idx >= 1088u) {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 87; // ERROR_INVALID_PARAMETER
+                } else {
+                    handler->ctx.global_state[std::string(prefix) + std::to_string(idx)] = value;
+                    handler->ctx.set_eax(1);
+                    handler->ctx.global_state["LastError"] = 0;
+                }
+            } else if (name == "KERNEL32.dll!TlsGetValue" || name == "KERNEL32.dll!FlsGetValue") {
+                uint32_t idx = handler->ctx.get_arg(0);
+                const char* prefix = (name == "KERNEL32.dll!TlsGetValue") ? "tls_" : "fls_";
+                uint32_t result = 0;
+                if (idx < 1088u) {
+                    auto itv = handler->ctx.global_state.find(std::string(prefix) + std::to_string(idx));
+                    if (itv != handler->ctx.global_state.end()) {
+                        result = static_cast<uint32_t>(itv->second);
+                    }
+                }
+                handler->ctx.set_eax(result);
+                handler->ctx.global_state["LastError"] = 0;
+            } else if (name == "KERNEL32.dll!FlsFree") {
+                uint32_t idx = handler->ctx.get_arg(0);
+                if (idx >= 1088u) {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 87; // ERROR_INVALID_PARAMETER
+                } else {
+                    handler->ctx.global_state.erase("fls_" + std::to_string(idx));
+                    handler->ctx.set_eax(1);
+                    handler->ctx.global_state["LastError"] = 0;
+                }
+            } else if (name == "KERNEL32.dll!GetLastError" ||
                        name == "KERNEL32.dll!GetFileVersionInfoSizeA" || name == "KERNEL32.dll!GetFileVersionInfoA" || name == "KERNEL32.dll!VerQueryValueA") {
                 handler->ctx.set_eax(0);
                 std::cout << "\n[API CALL] [OK] Intercepted call to " << name << " returning 0.\n";
@@ -1674,7 +1850,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                           << std::hex << hFile << ") -> handle=0x" << handle << std::dec << "\n";
             } else if (name == "KERNEL32.dll!OpenFileMappingA") {
                 uint32_t lpName = handler->ctx.get_arg(2);
-                std::string map_name = read_guest_c_string(handler->ctx.uc, lpName, 256);
+                std::string map_name = read_guest_c_string(handler->ctx, lpName, 256);
                 std::string key = "OpenFileMap:" + map_name;
                 uint32_t handle = 0;
                 auto it_existing = handler->ctx.global_state.find(key);
@@ -1739,7 +1915,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 if (handler->ctx.global_state.find("MapViewBase") == handler->ctx.global_state.end()) {
                     uint32_t base = 0x32000000;
                     uint32_t size = 0x10000000; // 256MB map-view arena
-                    uc_mem_map(handler->ctx.uc, base, size, UC_PROT_ALL);
+                    handler->backend.mem_map(base, size, UC_PROT_ALL);
                     handler->ctx.global_state["MapViewBase"] = base;
                     handler->ctx.global_state["MapViewLimit"] = base + size;
                     handler->ctx.global_state["MapViewTop"] = base;
@@ -1756,13 +1932,13 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 handler->ctx.global_state["MapViewTop"] = view_ptr + aligned;
 
                 std::vector<uint8_t> zeros(aligned, 0);
-                uc_mem_write(handler->ctx.uc, view_ptr, zeros.data(), zeros.size());
+                handler->backend.mem_write(view_ptr, zeros.data(), zeros.size());
 
                 if (source && offset < source->size()) {
                     size_t available = source->size() - static_cast<size_t>(offset);
                     size_t to_copy = std::min<size_t>(available, map_size);
                     if (to_copy > 0) {
-                        uc_mem_write(handler->ctx.uc, view_ptr, source->data() + static_cast<size_t>(offset), to_copy);
+                        handler->backend.mem_write(view_ptr, source->data() + static_cast<size_t>(offset), to_copy);
                     }
                 }
 
@@ -1778,7 +1954,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t phmx = handler->ctx.get_arg(0);
                 if (phmx != 0) {
                     uint32_t hmx = 0x1;
-                    uc_mem_write(handler->ctx.uc, phmx, &hmx, 4);
+                    handler->backend.mem_write(phmx, &hmx, 4);
                 }
                 handler->ctx.set_eax(0); // MMSYSERR_NOERROR
             } else if (name == "WINMM.dll!mixerClose") {
@@ -1793,7 +1969,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                         uint32_t cDestinations = 0;
                         std::memcpy(caps.data() + 44, &cDestinations, sizeof(cDestinations));
                     }
-                    uc_mem_write(handler->ctx.uc, caps_ptr, caps.data(), caps.size());
+                    handler->backend.mem_write(caps_ptr, caps.data(), caps.size());
                 }
                 handler->ctx.set_eax(0); // MMSYSERR_NOERROR
             } else if (name == "WINMM.dll!mixerGetNumDevs") {
@@ -1810,7 +1986,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t riid = handler->ctx.get_arg(1);
                 uint32_t ppvObj = handler->ctx.get_arg(2);
                 uint8_t guid[16];
-                uc_mem_read(handler->ctx.uc, riid, guid, 16);
+                handler->backend.mem_read(riid, guid, 16);
                 
                 std::cout << "\n[API CALL] QueryInterface requested GUID: ";
                 for (int i=0; i<16; i++) std::cout << std::hex << (int)guid[i] << " ";
@@ -1825,7 +2001,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     } else {
                         dummy_obj = handler->create_fake_com_object("GenericCOM", 50);
                     }
-                    uc_mem_write(handler->ctx.uc, ppvObj, &dummy_obj, 4);
+                    handler->backend.mem_write(ppvObj, &dummy_obj, 4);
                 }
                 handler->ctx.set_eax(0); // S_OK
                 std::cout << "[API CALL] [OK] IDirectDraw7::QueryInterface -> Wrote Object to 0x" << std::hex << ppvObj << std::dec << "\n";
@@ -1834,7 +2010,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t lplpD3DDevice = handler->ctx.get_arg(3);
                 if (lplpD3DDevice) {
                     uint32_t dummy_device = handler->create_fake_com_object("IDirect3DDevice7", 100);
-                    uc_mem_write(handler->ctx.uc, lplpD3DDevice, &dummy_device, 4);
+                    handler->backend.mem_write(lplpD3DDevice, &dummy_device, 4);
                 }
                 handler->ctx.set_eax(0); // D3D_OK
                 std::cout << "\n[API CALL] [OK] IDirect3D7::CreateDevice -> Returned Dummy IDirect3DDevice7 object.\n";
@@ -1843,7 +2019,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t lplpDDSurface = handler->ctx.get_arg(2);
                 if (lplpDDSurface) {
                     uint32_t dummy_surface = handler->create_fake_com_object("IDirectDrawSurface7", 50);
-                    uc_mem_write(handler->ctx.uc, lplpDDSurface, &dummy_surface, 4);
+                    handler->backend.mem_write(lplpDDSurface, &dummy_surface, 4);
                 }
                 handler->ctx.set_eax(0); // DD_OK
                 std::cout << "\n[API CALL] [OK] IDirectDraw7::CreateSurface -> Wrote surface to 0x" << std::hex << lplpDDSurface << std::dec << ".\n";
@@ -1852,7 +2028,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t riid = handler->ctx.get_arg(1);
                 uint32_t ppvObj = handler->ctx.get_arg(2);
                 uint8_t guid[16];
-                uc_mem_read(handler->ctx.uc, riid, guid, 16);
+                handler->backend.mem_read(riid, guid, 16);
                 
                 std::cout << "\n[API CALL] IDirectDrawSurface7::QueryInterface requested GUID: ";
                 for (int i=0; i<16; i++) std::cout << std::hex << (int)guid[i] << " ";
@@ -1865,7 +2041,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     } else {
                         dummy_obj = handler->create_fake_com_object("GenericCOM", 50);
                     }
-                    uc_mem_write(handler->ctx.uc, ppvObj, &dummy_obj, 4);
+                    handler->backend.mem_write(ppvObj, &dummy_obj, 4);
                 }
                 handler->ctx.set_eax(0); // S_OK
                 std::cout << "[API CALL] [OK] IDirectDrawSurface7::QueryInterface -> Wrote Object to 0x" << std::hex << ppvObj << std::dec << "\n";                
@@ -1882,7 +2058,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 } else {
                     if (handler->ctx.global_state.find("SurfaceHeap") == handler->ctx.global_state.end()) {
                         handler->ctx.global_state["SurfaceHeap"] = 0x30000000;
-                        uc_mem_map(handler->ctx.uc, 0x30000000, 0x10000000, UC_PROT_ALL);
+                        handler->backend.mem_map(0x30000000, 0x10000000, UC_PROT_ALL);
                     }
                     pixel_buffer = handler->ctx.global_state["SurfaceHeap"];
                     handler->ctx.global_state["SurfaceHeap"] += (800 * 600 * 4);
@@ -1896,12 +2072,12 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                         uint32_t ddsd_size = 124;
                         uint32_t ddsd_flags = 0x100F; // CAPS|HEIGHT|WIDTH|PITCH|PIXELFORMAT
 
-                        uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 0, &ddsd_size, 4);
-                        uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 4, &ddsd_flags, 4);
-	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 8, &height, 4);
-	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 12, &width, 4);
-	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 16, &pitch, 4);
-	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 36, &pixel_buffer, 4);
+                        handler->backend.mem_write(lpDDSurfaceDesc + 0, &ddsd_size, 4);
+                        handler->backend.mem_write(lpDDSurfaceDesc + 4, &ddsd_flags, 4);
+	                    handler->backend.mem_write(lpDDSurfaceDesc + 8, &height, 4);
+	                    handler->backend.mem_write(lpDDSurfaceDesc + 12, &width, 4);
+	                    handler->backend.mem_write(lpDDSurfaceDesc + 16, &pitch, 4);
+	                    handler->backend.mem_write(lpDDSurfaceDesc + 36, &pixel_buffer, 4);
 	                    
                         uint32_t pf_size = 32;
 	                    uint32_t pf_flags = 0x40; // DDPF_RGB
@@ -1912,13 +2088,13 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                         uint32_t a_mask = 0x00000000;
 	                    
                         // DDPIXELFORMAT starts at +72
-	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 72, &pf_size, 4);
-	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 76, &pf_flags, 4);
-	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 84, &bpp, 4);
-	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 88, &r_mask, 4);
-	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 92, &g_mask, 4);
-	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 96, &b_mask, 4);
-	                    uc_mem_write(handler->ctx.uc, lpDDSurfaceDesc + 100, &a_mask, 4);
+	                    handler->backend.mem_write(lpDDSurfaceDesc + 72, &pf_size, 4);
+	                    handler->backend.mem_write(lpDDSurfaceDesc + 76, &pf_flags, 4);
+	                    handler->backend.mem_write(lpDDSurfaceDesc + 84, &bpp, 4);
+	                    handler->backend.mem_write(lpDDSurfaceDesc + 88, &r_mask, 4);
+	                    handler->backend.mem_write(lpDDSurfaceDesc + 92, &g_mask, 4);
+	                    handler->backend.mem_write(lpDDSurfaceDesc + 96, &b_mask, 4);
+	                    handler->backend.mem_write(lpDDSurfaceDesc + 100, &a_mask, 4);
 	                }
                 
                 handler->ctx.set_eax(0);
@@ -1931,7 +2107,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t lplpDD = handler->ctx.get_arg(1); // Arg 1 is out-pointer to interface
                 if (lplpDD) {
                     uint32_t dummy_ddraw_obj = handler->create_fake_com_object("IDirectDraw7", 50);
-                    uc_mem_write(handler->ctx.uc, lplpDD, &dummy_ddraw_obj, 4);
+                    handler->backend.mem_write(lplpDD, &dummy_ddraw_obj, 4);
                 }
                 handler->ctx.set_eax(0); // S_OK
                 std::cout << "\n[API CALL] [OK] Intercepted DirectDrawCreateEx -> Wrote IDirectDraw7 to 0x" << std::hex << lplpDD << std::dec << "\n";
@@ -1939,7 +2115,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t lplpDS = handler->ctx.get_arg(1); // LPDIRECTSOUND*
                 if (lplpDS) {
                     uint32_t dummy_ds_obj = handler->create_fake_com_object("IDirectSound", 40);
-                    uc_mem_write(handler->ctx.uc, lplpDS, &dummy_ds_obj, 4);
+                    handler->backend.mem_write(lplpDS, &dummy_ds_obj, 4);
                 }
                 handler->ctx.set_eax(0); // DS_OK
                 std::cout << "\n[API CALL] [OK] Intercepted DirectSoundCreate -> Wrote IDirectSound to 0x"
@@ -1960,7 +2136,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 uint32_t pMode = handler->ctx.get_arg(1);
                 if (pMode) {
                     uint32_t mode_data[4] = {800, 600, 60, 22}; // Width=800, Height=600, RefreshRate=60, Format=D3DFMT_X8R8G8B8 (22)
-                    uc_mem_write(handler->ctx.uc, pMode, mode_data, 16);
+                    handler->backend.mem_write(pMode, mode_data, 16);
                 }
                 handler->ctx.set_eax(0); // D3D_OK
                 std::cout << "\n[API CALL] [OK] IDirect3D8::GetAdapterDisplayMode spoofed 800x600.\n";
@@ -1974,8 +2150,8 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                           << ") -> stopping emulation.\n";
                 // ExitProcess never returns. Force a clean stop path.
                 uint32_t finished_eip = 0;
-                uc_reg_write(handler->ctx.uc, UC_X86_REG_EIP, &finished_eip);
-                uc_emu_stop(handler->ctx.uc);
+                handler->backend.reg_write(UC_X86_REG_EIP, &finished_eip);
+                handler->backend.emu_stop();
                 return;
             } else if (name == "KERNEL32.dll!TerminateProcess") {
                 uint32_t h_process = handler->ctx.get_arg(0);
@@ -1985,8 +2161,8 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     std::cout << "\n[API CALL] [OK] TerminateProcess(current, exit_code="
                               << exit_code << ") -> stopping emulation.\n";
                     uint32_t finished_eip = 0;
-                    uc_reg_write(handler->ctx.uc, UC_X86_REG_EIP, &finished_eip);
-                    uc_emu_stop(handler->ctx.uc);
+                    handler->backend.reg_write(UC_X86_REG_EIP, &finished_eip);
+                    handler->backend.emu_stop();
                     return;
                 }
                 std::cout << "\n[API CALL] [OK] TerminateProcess(0x" << std::hex << h_process
@@ -1994,7 +2170,9 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             } else {
                 // For other trivial APIs, return 1 (Success) by default to avoid zero-checks failing
                 handler->ctx.set_eax(1);
-                std::cout << "\n[API CALL] [OK] Intercepted call to " << name << std::endl;
+                if (!is_noisy_fastpath_api(name)) {
+                    std::cout << "\n[API CALL] [OK] Intercepted call to " << name << std::endl;
+                }
             }
         } else {
             std::cout << "\n[API CALL] [UNKNOWN] Calling LLM API Compiler for " << name << std::endl;

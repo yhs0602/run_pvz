@@ -24,7 +24,7 @@ extern "C" void mock_FindFirstFileA(APIContext* ctx) {
 
         for (uint32_t i = 0; i < 260; ++i) {
             char ch = 0;
-            if (uc_mem_read(ctx->uc, lpFileName + i, &ch, 1) != UC_ERR_OK || ch == '\0') {
+            if (ctx->backend->mem_read(lpFileName + i, &ch, 1) != UC_ERR_OK || ch == '\0') {
                 break;
             }
             pattern.push_back(ch);
@@ -56,20 +56,20 @@ extern "C" void mock_FindFirstFileA(APIContext* ctx) {
             }
 
             uint8_t zero[320] = {};
-            uc_mem_write(ctx->uc, lpFindFileData, zero, sizeof(zero));
+            ctx->backend->mem_write(lpFindFileData, zero, sizeof(zero));
 
             uint32_t attrs = FILE_ATTRIBUTE_NORMAL;
-            uc_mem_write(ctx->uc, lpFindFileData, &attrs, sizeof(attrs));
+            ctx->backend->mem_write(lpFindFileData, &attrs, sizeof(attrs));
 
             size_t write_len = file_name.size();
             if (write_len > 259) {
                 write_len = 259;
             }
             if (write_len > 0) {
-                uc_mem_write(ctx->uc, lpFindFileData + C_FILE_NAME_OFFSET, file_name.data(), write_len);
+                ctx->backend->mem_write(lpFindFileData + C_FILE_NAME_OFFSET, file_name.data(), write_len);
             }
             uint8_t nul = 0;
-            uc_mem_write(ctx->uc, lpFindFileData + C_FILE_NAME_OFFSET + static_cast<uint32_t>(write_len), &nul, 1);
+            ctx->backend->mem_write(lpFindFileData + C_FILE_NAME_OFFSET + static_cast<uint32_t>(write_len), &nul, 1);
 
             ctx->handle_map["find_" + std::to_string(handle)] =
                 reinterpret_cast<void*>(static_cast<uintptr_t>(handle));
@@ -82,10 +82,10 @@ extern "C" void mock_FindFirstFileA(APIContext* ctx) {
     ctx->set_eax(result);
 
     uint32_t esp;
-    uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_read(UC_X86_REG_ESP, &esp);
     uint32_t ret_addr;
-    uc_mem_read(ctx->uc, esp, &ret_addr, 4);
+    ctx->backend->mem_read(esp, &ret_addr, 4);
     esp += 8 + 4; // Add arg size + 4 bytes for the return address itself
-    uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-    uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
+    ctx->backend->reg_write(UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_write(UC_X86_REG_EIP, &ret_addr);
 }

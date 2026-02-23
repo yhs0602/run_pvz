@@ -48,7 +48,7 @@ extern "C" void mock_GetFileTime(APIContext* ctx) {
             uint32_t ft[2];
             ft[0] = static_cast<uint32_t>(value & 0xFFFFFFFFull);
             ft[1] = static_cast<uint32_t>(value >> 32);
-            return uc_mem_write(ctx->uc, ptr, ft, sizeof(ft)) == UC_ERR_OK;
+            return ctx->backend->mem_write(ptr, ft, sizeof(ft)) == UC_ERR_OK;
         };
 
         const bool ok =
@@ -70,10 +70,10 @@ extern "C" void mock_GetFileTime(APIContext* ctx) {
     ctx->set_eax(result);
 
     uint32_t esp;
-    uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_read(UC_X86_REG_ESP, &esp);
     uint32_t ret_addr;
-    uc_mem_read(ctx->uc, esp, &ret_addr, 4);
+    ctx->backend->mem_read(esp, &ret_addr, 4);
     esp += 16 + 4; // Add arg size + 4 bytes for the return address itself
-    uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-    uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
+    ctx->backend->reg_write(UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_write(UC_X86_REG_EIP, &ret_addr);
 }

@@ -41,7 +41,7 @@ extern "C" void mock_MultiByteToWideChar(APIContext* ctx) {
             bool found_nul = false;
             for (uint32_t i = 0; i < kMaxScan; ++i) {
                 uint8_t b = 0;
-                if (uc_mem_read(ctx->uc, lp_multi_byte_str + i, &b, 1) != UC_ERR_OK) {
+                if (ctx->backend->mem_read(lp_multi_byte_str + i, &b, 1) != UC_ERR_OK) {
                     fail(ERROR_INVALID_PARAMETER);
                     break;
                 }
@@ -57,7 +57,7 @@ extern "C" void mock_MultiByteToWideChar(APIContext* ctx) {
         } else {
             input.resize(static_cast<size_t>(cb_multi_byte));
             if (!input.empty() &&
-                uc_mem_read(ctx->uc, lp_multi_byte_str, input.data(), input.size()) != UC_ERR_OK) {
+                ctx->backend->mem_read(lp_multi_byte_str, input.data(), input.size()) != UC_ERR_OK) {
                 fail(ERROR_INVALID_PARAMETER);
             }
         }
@@ -180,7 +180,7 @@ extern "C" void mock_MultiByteToWideChar(APIContext* ctx) {
             } else if (static_cast<uint32_t>(cch_wide_char) < required) {
                 fail(ERROR_INSUFFICIENT_BUFFER);
             } else if (required > 0 &&
-                       uc_mem_write(ctx->uc, lp_wide_char_str, wide.data(), static_cast<size_t>(required) * sizeof(uint16_t)) != UC_ERR_OK) {
+                       ctx->backend->mem_write(lp_wide_char_str, wide.data(), static_cast<size_t>(required) * sizeof(uint16_t)) != UC_ERR_OK) {
                 fail(ERROR_INVALID_PARAMETER);
             } else {
                 result = required;

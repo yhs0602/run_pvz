@@ -1,0 +1,21 @@
+{
+  "address": "0x5d6480",
+  "size": 11,
+  "assembly": [
+    "movzx eax, byte ptr [eax + esi]",
+    "push eax",
+    "push edi",
+    "call 0x5d6240"
+  ],
+  "live_in": [
+    "eax",
+    "edi",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "esp"
+  ]
+}

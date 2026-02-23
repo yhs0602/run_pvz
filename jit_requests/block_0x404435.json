@@ -1,0 +1,24 @@
+{
+  "address": "0x404435",
+  "size": 17,
+  "assembly": [
+    "xor eax, eax",
+    "mov dword ptr [esi + 0x18], 0xf",
+    "mov dword ptr [esi + 0x14], eax",
+    "mov byte ptr [esi + 4], al",
+    "pop esi",
+    "ret"
+  ],
+  "live_in": [
+    "al",
+    "eax",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "eflags",
+    "esi",
+    "esp"
+  ]
+}

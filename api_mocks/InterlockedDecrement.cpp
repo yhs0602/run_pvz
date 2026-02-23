@@ -6,9 +6,9 @@ extern "C" void mock_InterlockedDecrement(APIContext* ctx) {
 
     int32_t value = 0;
     if (addend_ptr != 0) {
-        if (uc_mem_read(ctx->uc, addend_ptr, &value, sizeof(value)) == UC_ERR_OK) {
+        if (ctx->backend->mem_read(addend_ptr, &value, sizeof(value)) == UC_ERR_OK) {
             value -= 1;
-            uc_mem_write(ctx->uc, addend_ptr, &value, sizeof(value));
+            ctx->backend->mem_write(addend_ptr, &value, sizeof(value));
         }
     }
 

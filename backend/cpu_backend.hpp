@@ -1,6 +1,8 @@
 #pragma once
 
 #include "../cpu_backend_compat.hpp"
+#include <cstddef>
+#include <cstdint>
 
 class CpuBackend {
 public:
@@ -23,4 +25,3 @@ public:
     virtual uc_err hook_add(uc_hook* hook, int type, void* callback, void* user_data, uint64_t begin, uint64_t end) = 0;
     virtual const char* strerror(uc_err err) const = 0;
 };
-

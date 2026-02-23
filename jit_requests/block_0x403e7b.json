@@ -1,0 +1,22 @@
+{
+  "address": "0x403e7b",
+  "size": 12,
+  "assembly": [
+    "mov eax, dword ptr [esi + 0x14]",
+    "push eax",
+    "push edi",
+    "mov ecx, esi",
+    "call 0x404080"
+  ],
+  "live_in": [
+    "edi",
+    "eip",
+    "esi",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "ecx",
+    "esp"
+  ]
+}

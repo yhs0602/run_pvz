@@ -48,8 +48,8 @@ extern "C" void mock_FileTimeToSystemTime(APIContext* ctx) {
     } else {
         uint32_t low = 0;
         uint32_t high = 0;
-        const uc_err r0 = uc_mem_read(ctx->uc, lpFileTime, &low, sizeof(low));
-        const uc_err r1 = uc_mem_read(ctx->uc, lpFileTime + 4, &high, sizeof(high));
+        const uc_err r0 = ctx->backend->mem_read(lpFileTime, &low, sizeof(low));
+        const uc_err r1 = ctx->backend->mem_read(lpFileTime + 4, &high, sizeof(high));
 
         if (r0 != UC_ERR_OK || r1 != UC_ERR_OK) {
             ctx->global_state["LastError"] = ERROR_NOACCESS;
@@ -78,7 +78,7 @@ extern "C" void mock_FileTimeToSystemTime(APIContext* ctx) {
                 st.wSecond = static_cast<uint16_t>(sec_of_day % 60ull);
                 st.wMilliseconds = static_cast<uint16_t>(milliseconds);
 
-                if (uc_mem_write(ctx->uc, lpSystemTime, &st, sizeof(st)) == UC_ERR_OK) {
+                if (ctx->backend->mem_write(lpSystemTime, &st, sizeof(st)) == UC_ERR_OK) {
                     result = 1;
                     ctx->global_state["LastError"] = ERROR_SUCCESS;
                 } else {
@@ -91,10 +91,10 @@ extern "C" void mock_FileTimeToSystemTime(APIContext* ctx) {
     ctx->set_eax(result);
 
     uint32_t esp;
-    uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_read(UC_X86_REG_ESP, &esp);
     uint32_t ret_addr;
-    uc_mem_read(ctx->uc, esp, &ret_addr, 4);
+    ctx->backend->mem_read(esp, &ret_addr, 4);
     esp += 8 + 4; // Add arg size + 4 bytes for the return address itself
-    uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-    uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
+    ctx->backend->reg_write(UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_write(UC_X86_REG_EIP, &ret_addr);
 }

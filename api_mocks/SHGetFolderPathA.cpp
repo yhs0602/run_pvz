@@ -43,8 +43,8 @@ extern "C" void mock_SHGetFolderPathA(APIContext* ctx) {
             result = E_FAIL;
         } else {
             char zero_buf[MAX_PATH_A] = {};
-            if (uc_mem_write(ctx->uc, pszPath, zero_buf, sizeof(zero_buf)) != UC_ERR_OK ||
-                uc_mem_write(ctx->uc, pszPath, folder_path, len + 1) != UC_ERR_OK) {
+            if (ctx->backend->mem_write(pszPath, zero_buf, sizeof(zero_buf)) != UC_ERR_OK ||
+                ctx->backend->mem_write(pszPath, folder_path, len + 1) != UC_ERR_OK) {
                 result = E_FAIL;
             }
         }
@@ -53,10 +53,10 @@ extern "C" void mock_SHGetFolderPathA(APIContext* ctx) {
     ctx->set_eax(result);
 
     uint32_t esp;
-    uc_reg_read(ctx->uc, UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_read(UC_X86_REG_ESP, &esp);
     uint32_t ret_addr;
-    uc_mem_read(ctx->uc, esp, &ret_addr, 4);
+    ctx->backend->mem_read(esp, &ret_addr, 4);
     esp += 20 + 4; // Add arg size + 4 bytes for the return address itself
-    uc_reg_write(ctx->uc, UC_X86_REG_ESP, &esp);
-    uc_reg_write(ctx->uc, UC_X86_REG_EIP, &ret_addr);
+    ctx->backend->reg_write(UC_X86_REG_ESP, &esp);
+    ctx->backend->reg_write(UC_X86_REG_EIP, &ret_addr);
 }

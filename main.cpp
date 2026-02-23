@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iomanip>
 #include <filesystem>
+#include <cstdlib>
 #include <SDL.h>
 
 #if defined(__APPLE__) && defined(__aarch64__)
@@ -115,7 +116,7 @@ public:
         return false;
     }
 
-    bool execute_block(uint64_t address, uc_engine *uc) {
+    bool execute_block(uint64_t address, CpuBackend& backend) {
         if (compiled_blocks.find(address) != compiled_blocks.end()) {
             void (*func)() = (void (*)())compiled_blocks[address];
             
@@ -123,15 +124,15 @@ public:
             
             // 1. Read Unicorn State
             uint32_t eax, ebx, ecx, edx, esi, edi, ebp, esp, eip;
-            uc_reg_read(uc, UC_X86_REG_EAX, &eax);
-            uc_reg_read(uc, UC_X86_REG_EBX, &ebx);
-            uc_reg_read(uc, UC_X86_REG_ECX, &ecx);
-            uc_reg_read(uc, UC_X86_REG_EDX, &edx);
-            uc_reg_read(uc, UC_X86_REG_ESI, &esi);
-            uc_reg_read(uc, UC_X86_REG_EDI, &edi);
-            uc_reg_read(uc, UC_X86_REG_EBP, &ebp);
-            uc_reg_read(uc, UC_X86_REG_ESP, &esp);
-            uc_reg_read(uc, UC_X86_REG_EIP, &eip);
+            backend.reg_read(UC_X86_REG_EAX, &eax);
+            backend.reg_read(UC_X86_REG_EBX, &ebx);
+            backend.reg_read(UC_X86_REG_ECX, &ecx);
+            backend.reg_read(UC_X86_REG_EDX, &edx);
+            backend.reg_read(UC_X86_REG_ESI, &esi);
+            backend.reg_read(UC_X86_REG_EDI, &edi);
+            backend.reg_read(UC_X86_REG_EBP, &ebp);
+            backend.reg_read(UC_X86_REG_ESP, &esp);
+            backend.reg_read(UC_X86_REG_EIP, &eip);
 
             // 2. Perform Context Switch & Execute!
 #if defined(__APPLE__) && defined(__aarch64__)
@@ -166,15 +167,15 @@ public:
 #endif
 
             // 3. Write modified state back to Unicorn
-            uc_reg_write(uc, UC_X86_REG_EAX, &eax);
-            uc_reg_write(uc, UC_X86_REG_EBX, &ebx);
-            uc_reg_write(uc, UC_X86_REG_ECX, &ecx);
-            uc_reg_write(uc, UC_X86_REG_EDX, &edx);
-            uc_reg_write(uc, UC_X86_REG_ESI, &esi);
-            uc_reg_write(uc, UC_X86_REG_EDI, &edi);
-            uc_reg_write(uc, UC_X86_REG_EBP, &ebp);
-            uc_reg_write(uc, UC_X86_REG_ESP, &esp);
-            uc_reg_write(uc, UC_X86_REG_EIP, &eip);
+            backend.reg_write(UC_X86_REG_EAX, &eax);
+            backend.reg_write(UC_X86_REG_EBX, &ebx);
+            backend.reg_write(UC_X86_REG_ECX, &ecx);
+            backend.reg_write(UC_X86_REG_EDX, &edx);
+            backend.reg_write(UC_X86_REG_ESI, &esi);
+            backend.reg_write(UC_X86_REG_EDI, &edi);
+            backend.reg_write(UC_X86_REG_EBP, &ebp);
+            backend.reg_write(UC_X86_REG_ESP, &esp);
+            backend.reg_write(UC_X86_REG_EIP, &eip);
 
             return true;
         }
@@ -183,6 +184,9 @@ public:
 };
 
 JITDispatcher* global_jit;
+bool g_enable_native_jit = true;
+CpuBackend* g_backend = nullptr;
+bool g_watchpoint_enabled = false;
 
 // ============================================
 
@@ -229,17 +233,20 @@ int block_idx = 0;
 
 // Basic Block Hook for Capstone Live-Variable Analysis (LVA)
 void hook_mem_write(uc_engine *uc, uc_mem_type type, uint64_t address, int size, int64_t value, void *user_data) {
+    if (!g_watchpoint_enabled) return;
     if (address >= 0x801fe81c && address < 0x801fe81c + 4) {
+        if (!g_backend) return;
         uint32_t pc;
-        uc_reg_read(uc, UC_X86_REG_EIP, &pc);
+        g_backend->reg_read(UC_X86_REG_EIP, &pc);
         std::cout << "\n[WATCHPOINT] Memory write at 0x" << std::hex << address 
                   << " with value 0x" << value << " from EIP 0x" << pc << std::dec << "\n";
     }
 }
 
 void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_data) {
+    if (!g_backend) return;
     uint32_t current_esp;
-    uc_reg_read(uc, UC_X86_REG_ESP, &current_esp);
+    g_backend->reg_read(UC_X86_REG_ESP, &current_esp);
     last_blocks[block_idx % 50] = {address, current_esp};
     block_idx++;
 
@@ -252,9 +259,9 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
 
     // Try JIT Execution first if available
     // if (profile.is_jitted) {
-    //    if (global_jit->execute_block(address, uc)) {
-    //        // Stop unicorn so it doesn't execute the x86 block we just ran natively
-    //        uc_emu_stop(uc);
+    //    if (global_jit->execute_block(address, *g_backend)) {
+    //        // Stop backend so it doesn't execute the x86 block we just ran natively
+    //        g_backend->emu_stop();
     //    }
     //    return;
     // }
@@ -263,7 +270,7 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
     if (profile.execution_count == 1) {
         profile.size = size;
         vector<uint8_t> code(size);
-        uc_err err = uc_mem_read(uc, address, code.data(), size);
+        uc_err err = g_backend->mem_read(address, code.data(), size);
         if (err) return;
 
         cs_insn *insn;
@@ -305,7 +312,7 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
     }
     
     // Check if JIT translation has finished in the background (File `.bin` exists)
-    if (profile.execution_count > JIT_THRESHOLD && !profile.is_jitted) {
+    if (g_enable_native_jit && global_jit && profile.execution_count > JIT_THRESHOLD && !profile.is_jitted) {
         if (global_jit->load_compiled_block(address)) {
             profile.is_jitted = true;
             cout << "[+] JIT Dispatcher Linked ARM64 Block at 0x" << hex << address << dec << endl;
@@ -319,75 +326,132 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
-        cerr << "[!] SDL2 Initialization failed: " << SDL_GetError() << endl;
-        return 1;
+    bool headless_mode = false;
+    const char* headless_env = std::getenv("PVZ_HEADLESS");
+    if (headless_env && std::string(headless_env) != "0") {
+        headless_mode = true;
+    }
+    bool boot_trace = false;
+    const char* boot_trace_env = std::getenv("PVZ_BOOT_TRACE");
+    if (boot_trace_env && std::string(boot_trace_env) != "0") {
+        boot_trace = true;
+    }
+    auto trace = [&](const char* msg) {
+        if (boot_trace) {
+            cerr << "[TRACE] " << msg << endl;
+        }
+    };
+
+    SDL_Window* window = nullptr;
+    SDL_Renderer* renderer = nullptr;
+    SDL_Texture* texture = nullptr;
+
+    if (!headless_mode) {
+        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
+            cerr << "[!] SDL video init failed (" << SDL_GetError()
+                 << "), falling back to headless mode.\n";
+            headless_mode = true;
+        }
     }
 
-    SDL_Window* window = SDL_CreateWindow(
-        "PvZ Hybrid Emulator",
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        800, 600,
-        SDL_WINDOW_SHOWN
-    );
+    if (headless_mode) {
+        if (SDL_Init(SDL_INIT_EVENTS) != 0) {
+            cerr << "[!] SDL2 events initialization failed in headless mode: " << SDL_GetError() << endl;
+            return 1;
+        }
+        cout << "[*] Running in headless mode (PVZ_HEADLESS).\n";
+    } else {
+        window = SDL_CreateWindow(
+            "PvZ Hybrid Emulator",
+            SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+            800, 600,
+            SDL_WINDOW_SHOWN
+        );
 
-    if (!window) {
-        cerr << "[!] SDL Window creation failed: " << SDL_GetError() << endl;
-        SDL_Quit();
-        return 1;
-    }
+        if (!window) {
+            cerr << "[!] SDL Window creation failed: " << SDL_GetError() << endl;
+            SDL_Quit();
+            return 1;
+        }
 
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (!renderer) {
-        cerr << "[!] SDL accelerated renderer failed (" << SDL_GetError()
-             << "), falling back to software renderer." << endl;
-        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
-    }
-    if (!renderer) {
-        cerr << "[!] SDL Renderer creation failed: " << SDL_GetError() << endl;
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
-    }
+        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+        if (!renderer) {
+            cerr << "[!] SDL accelerated renderer failed (" << SDL_GetError()
+                 << "), falling back to software renderer." << endl;
+            renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+        }
+        if (!renderer) {
+            cerr << "[!] SDL Renderer creation failed: " << SDL_GetError() << endl;
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
 
-    SDL_Texture* texture = SDL_CreateTexture(
-        renderer,
-        SDL_PIXELFORMAT_ARGB8888,
-        SDL_TEXTUREACCESS_STREAMING,
-        800, 600
-    );
-    if (!texture) {
-        cerr << "[!] SDL Texture creation failed: " << SDL_GetError() << endl;
-        SDL_DestroyRenderer(renderer);
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
+        texture = SDL_CreateTexture(
+            renderer,
+            SDL_PIXELFORMAT_ARGB8888,
+            SDL_TEXTUREACCESS_STREAMING,
+            800, 600
+        );
+        if (!texture) {
+            cerr << "[!] SDL Texture creation failed: " << SDL_GetError() << endl;
+            SDL_DestroyRenderer(renderer);
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
     }
 
     uint32_t guest_vram = 0xA0000000;
     
     uint32_t* host_vram = new uint32_t[800 * 600];
     memset(host_vram, 0, 800 * 600 * 4);
+    trace("host_vram allocated");
 
     // Initialize Capstone (DETAIL mode ON for LVA)
+    trace("before cs_open");
     if (cs_open(CS_ARCH_X86, CS_MODE_32, &cs_handle) != CS_ERR_OK) return 1;
     cs_option(cs_handle, CS_OPT_DETAIL, CS_OPT_ON);
+    trace("after cs_open");
+
+    const char* disable_jit_env = std::getenv("PVZ_DISABLE_NATIVE_JIT");
+    if (disable_jit_env && std::string(disable_jit_env) != "0") {
+        g_enable_native_jit = false;
+    }
+    const char* watchpoint_env = std::getenv("PVZ_WATCHPOINT");
+    if (watchpoint_env && std::string(watchpoint_env) != "0") {
+        g_watchpoint_enabled = true;
+    }
 
     // Initialize CPU backend (Unicorn for now)
+    trace("before backend.open_x86_32");
     UnicornBackend unicorn_backend;
     CpuBackend& backend = unicorn_backend;
+    g_backend = &backend;
     if (!backend.open_x86_32()) return 1;
+    trace("after backend.open_x86_32");
     uc_engine* uc = backend.engine();
 
     // Map Guest VRAM
+    trace("before guest_vram map");
     backend.mem_map(guest_vram, 800 * 600 * 4, UC_PROT_ALL);
+    trace("after guest_vram map");
 
     try {
-        global_jit = new JITDispatcher();
+        trace("before jit dispatcher init");
+        if (g_enable_native_jit) {
+            global_jit = new JITDispatcher();
+        } else {
+            global_jit = nullptr;
+            cout << "[*] Native ARM64 JIT dispatcher disabled (PVZ_DISABLE_NATIVE_JIT).\n";
+        }
+        trace("after jit dispatcher init");
 
+        trace("before PE parse");
         PEModule pe_module(argv[1]);
-        WindowsEnvironment env(uc);
-        DummyAPIHandler api_handler(uc);
+        trace("after PE parse");
+        WindowsEnvironment env(backend);
+        DummyAPIHandler api_handler(backend);
         std::error_code path_ec;
         std::filesystem::path exe_path(argv[1]);
         std::filesystem::path exe_abs = std::filesystem::absolute(exe_path, path_ec);
@@ -401,8 +465,8 @@ int main(int argc, char **argv) {
         api_handler.set_guest_vram(guest_vram);
         api_handler.set_host_vram(host_vram);
 
-        pe_module.map_into(uc);
-        pe_module.resolve_imports(uc, api_handler);
+        pe_module.map_into(backend);
+        pe_module.resolve_imports(backend, api_handler);
         env.setup_system();
 
         uc_hook hook1, hook_mem;

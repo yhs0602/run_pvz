@@ -1,0 +1,19 @@
+{
+  "address": "0x4452cb",
+  "size": 9,
+  "assembly": [
+    "shl ecx, 4",
+    "push ecx",
+    "call 0x61c130"
+  ],
+  "live_in": [
+    "ecx",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "ecx",
+    "eflags",
+    "esp"
+  ]
+}

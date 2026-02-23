@@ -12,12 +12,12 @@ extern "C" void mock_InitializeCriticalSection(APIContext* ctx) {
         uint32_t lockSemaphore = 0;
         uint32_t spinCount = 0;
 
-        uc_mem_write(ctx->uc, lpCriticalSection + 0x00, &debugInfo, 4);
-        uc_mem_write(ctx->uc, lpCriticalSection + 0x04, &lockCount, 4);
-        uc_mem_write(ctx->uc, lpCriticalSection + 0x08, &recursionCount, 4);
-        uc_mem_write(ctx->uc, lpCriticalSection + 0x0C, &owningThread, 4);
-        uc_mem_write(ctx->uc, lpCriticalSection + 0x10, &lockSemaphore, 4);
-        uc_mem_write(ctx->uc, lpCriticalSection + 0x14, &spinCount, 4);
+        ctx->backend->mem_write(lpCriticalSection + 0x00, &debugInfo, 4);
+        ctx->backend->mem_write(lpCriticalSection + 0x04, &lockCount, 4);
+        ctx->backend->mem_write(lpCriticalSection + 0x08, &recursionCount, 4);
+        ctx->backend->mem_write(lpCriticalSection + 0x0C, &owningThread, 4);
+        ctx->backend->mem_write(lpCriticalSection + 0x10, &lockSemaphore, 4);
+        ctx->backend->mem_write(lpCriticalSection + 0x14, &spinCount, 4);
     }
 
     ctx->set_eax(0);

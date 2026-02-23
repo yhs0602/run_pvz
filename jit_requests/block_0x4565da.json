@@ -1,0 +1,26 @@
+{
+  "address": "0x4565da",
+  "size": 17,
+  "assembly": [
+    "add edi, 4",
+    "push eax",
+    "mov eax, dword ptr [esp + 0x20]",
+    "push eax",
+    "add edi, ebp",
+    "push edi",
+    "call 0x441a60"
+  ],
+  "live_in": [
+    "eax",
+    "ebp",
+    "edi",
+    "eip",
+    "esp"
+  ],
+  "live_out": [
+    "eax",
+    "edi",
+    "eflags",
+    "esp"
+  ]
+}
