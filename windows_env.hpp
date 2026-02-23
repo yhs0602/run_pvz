@@ -1,6 +1,6 @@
 #pragma once
 
-#include <unicorn/unicorn.h>
+#include "cpu_backend_compat.hpp"
 #include <cstdint>
 #include <iostream>
 

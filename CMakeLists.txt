@@ -7,6 +7,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+set(PVZ_CPU_BACKEND "unicorn" CACHE STRING "CPU backend (unicorn|fexcore)")
+set_property(CACHE PVZ_CPU_BACKEND PROPERTY STRINGS unicorn fexcore)
+if(NOT PVZ_CPU_BACKEND STREQUAL "unicorn")
+    message(FATAL_ERROR "PVZ_CPU_BACKEND='${PVZ_CPU_BACKEND}' is not implemented yet. Use 'unicorn'.")
+endif()
+add_compile_definitions(PVZ_CPU_BACKEND_UNICORN=1)
+
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type (Debug/Release)" FORCE)
 endif()
@@ -34,6 +41,7 @@ message(STATUS "SDL2 library dirs: ${SDL2_LIBRARY_DIRS}")
 
 add_executable(
     runner
+    backend/unicorn_backend.cpp
     main.cpp
     windows_env.cpp
     api_handler.cpp

@@ -923,6 +923,26 @@ for i in md.disasm(data, 0x54cce3):
 
 *User accepted the command `make -C build -j4 && ./build/runner pvz/main.exe > boot_trace.txt 2>&1 & sleep 3; pkill -9 -f runner; tail -n 80 boot_trace.txt`*
 
+*Edited relevant file*
+
+*Edited relevant file*
+
+*Edited relevant file*
+
+*User accepted the command `cmake -S . -B build && cmake --build build -j4`*
+
+*User accepted the command `(./build/runner pvz/main.exe > /tmp/pvz_run_smoke.log 2>&1 &) ; pid=$!; sleep 5; pkill -f "./build/runner pvz/main.exe" >/dev/null 2>&1 || true; tail -n 40 /tmp/pvz_run_smoke.log`*
+
+*Edited relevant file*
+
+*Edited relevant file*
+
+*Edited relevant file*
+
+*User accepted the command `cmake --build build -j4`*
+
+*User accepted the command `(./build/runner pvz/main.exe > /tmp/pvz_run_smoke2.log 2>&1 &) ; sleep 5; pkill -f "./build/runner pvz/main.exe" >/dev/null 2>&1 || true; head -n 25 /tmp/pvz_run_smoke2.log; echo '---'; tail -n 25 /tmp/pvz_run_smoke2.log`*
+
 *Checked command status*
 
 *Edited relevant file*

@@ -65,3 +65,41 @@
 3. 화면 진입 검증
 - SDL 렌더러 이벤트 루프와 첫 프레임(텍스처 업데이트) 시점에 명시 로그 추가.
 - “실행 유지”가 아닌 “렌더링 시작” 기준으로 단계 게이팅.
+
+## 추가 업데이트 (2026-02-23 밤)
+1. CPU 백엔드 교체 준비 작업 착수
+- Unicorn 헤더 include를 `cpu_backend_compat.hpp`로 집중.
+- CMake 옵션 `PVZ_CPU_BACKEND`(기본값 `unicorn`) 추가.
+- 현재 `fexcore` 선택은 아직 미구현으로 빌드 타임 차단(안전장치).
+
+2. libfexcore 전환 전략 문서 작성
+- 문서: `work_logs/2026-02-23_libfexcore_migration_strategy.md`
+- 내용: 단계별 마이그레이션(Phase 0~4), 리스크, 성공 지표, 즉시 실행 항목.
+
+3. Phase 2 선행 착수 (main 실행루프 래핑)
+- 파일 추가:
+  - `backend/cpu_backend.hpp`
+  - `backend/unicorn_backend.hpp`
+  - `backend/unicorn_backend.cpp`
+- `main.cpp`를 `CpuBackend` 인터페이스 타입 기반으로 실행:
+  - `CpuBackend& backend = unicorn_backend`
+- `main.cpp`의 Unicorn 직접 호출 일부를 백엔드 호출로 교체:
+  - 엔진 open/close
+  - emu_start
+  - reg read
+  - mem map/read
+  - hook_add
+- 검증:
+  - `cmake --build build -j4` 성공
+  - 5초 스모크 런에서 기존과 동일하게 부팅 로그 진행 확인
+
+4. Phase 0 지표 샘플(단독 런, 60초 관찰)
+- 로그: `/tmp/pvz_run_60s_backend.log`
+- 지표:
+  - `known=0`: 0
+  - `NOT FOUND`: 0
+  - `API CALL`: 24
+  - `UC_ERR`: 1 (`UC_ERR_FETCH_UNMAPPED`)
+- 정지 지점:
+  - `EIP = 0x1`
+  - 직전 호출 흐름: `TlsSetValue` 이후 fetch unmapped 발생

@@ -1,6 +1,7 @@
 #include "pe_loader.hpp"
 #include "windows_env.hpp"
 #include "api_handler.hpp"
+#include "backend/unicorn_backend.hpp"
 #include <capstone/capstone.h>
 #include <iostream>
 #include <set>
@@ -372,12 +373,14 @@ int main(int argc, char **argv) {
     if (cs_open(CS_ARCH_X86, CS_MODE_32, &cs_handle) != CS_ERR_OK) return 1;
     cs_option(cs_handle, CS_OPT_DETAIL, CS_OPT_ON);
 
-    // Initialize Unicorn
-    uc_engine *uc;
-    if (uc_open(UC_ARCH_X86, UC_MODE_32, &uc)) return 1;
+    // Initialize CPU backend (Unicorn for now)
+    UnicornBackend unicorn_backend;
+    CpuBackend& backend = unicorn_backend;
+    if (!backend.open_x86_32()) return 1;
+    uc_engine* uc = backend.engine();
 
     // Map Guest VRAM
-    uc_mem_map(uc, guest_vram, 800 * 600 * 4, UC_PROT_ALL);
+    backend.mem_map(guest_vram, 800 * 600 * 4, UC_PROT_ALL);
 
     try {
         global_jit = new JITDispatcher();
@@ -403,13 +406,13 @@ int main(int argc, char **argv) {
         env.setup_system();
 
         uc_hook hook1, hook_mem;
-        uc_hook_add(uc, &hook1, UC_HOOK_BLOCK, (void*)hook_block_lva, nullptr, 1, 0);
-        uc_hook_add(uc, &hook_mem, UC_HOOK_MEM_WRITE, (void*)hook_mem_write, nullptr, 1, 0);
+        backend.hook_add(&hook1, UC_HOOK_BLOCK, (void*)hook_block_lva, nullptr, 1, 0);
+        backend.hook_add(&hook_mem, UC_HOOK_MEM_WRITE, (void*)hook_mem_write, nullptr, 1, 0);
 
         cout << "\n[*] Starting C++ Engine Emulation at 0x" << hex << pe_module.entry_point << "...\n";
         
         uint32_t test_val;
-        uc_err test_err = uc_mem_read(uc, 0x38b, &test_val, 4);
+        uc_err test_err = backend.mem_read(0x38b, &test_val, 4);
         if (test_err == UC_ERR_OK) {
             std::cout << "[!!!] ALERT: 0x38b IS MAPPED!!! Val: " << test_val << "\n";
         } else {
@@ -420,30 +423,30 @@ int main(int argc, char **argv) {
         
         uint32_t pc = pe_module.entry_point;
         while (true) {
-            uc_err err = uc_emu_start(uc, pc, 0, 0, 0);
+            uc_err err = backend.emu_start(pc, 0, 0, 0);
             if (err) {
-                std::cerr << "\n[!] Emulation stopped due to error: " << uc_strerror(err) << " (Code: " << err << ")\n";
+                std::cerr << "\n[!] Emulation stopped due to error: " << backend.strerror(err) << " (Code: " << err << ")\n";
                 uint32_t val;
-                uc_reg_read(uc, UC_X86_REG_EIP, &val); std::cerr << "[!] EIP = 0x" << std::hex << val << std::dec << "\n";
-                uc_reg_read(uc, UC_X86_REG_EAX, &val); std::cerr << "EAX=0x" << std::hex << val << " ";
-                uc_reg_read(uc, UC_X86_REG_EBX, &val); std::cerr << "EBX=0x" << std::hex << val << " ";
-                uc_reg_read(uc, UC_X86_REG_ECX, &val); std::cerr << "ECX=0x" << std::hex << val << " ";
-                uc_reg_read(uc, UC_X86_REG_EDX, &val); std::cerr << "EDX=0x" << std::hex << val << "\n";
+                backend.reg_read(UC_X86_REG_EIP, &val); std::cerr << "[!] EIP = 0x" << std::hex << val << std::dec << "\n";
+                backend.reg_read(UC_X86_REG_EAX, &val); std::cerr << "EAX=0x" << std::hex << val << " ";
+                backend.reg_read(UC_X86_REG_EBX, &val); std::cerr << "EBX=0x" << std::hex << val << " ";
+                backend.reg_read(UC_X86_REG_ECX, &val); std::cerr << "ECX=0x" << std::hex << val << " ";
+                backend.reg_read(UC_X86_REG_EDX, &val); std::cerr << "EDX=0x" << std::hex << val << "\n";
                 uint32_t esi, edi, esp, ebp;
-                uc_reg_read(uc, UC_X86_REG_ESI, &esi);
-                uc_reg_read(uc, UC_X86_REG_EDI, &edi);
-                uc_reg_read(uc, UC_X86_REG_ESP, &esp);
-                uc_reg_read(uc, UC_X86_REG_EBP, &ebp);
+                backend.reg_read(UC_X86_REG_ESI, &esi);
+                backend.reg_read(UC_X86_REG_EDI, &edi);
+                backend.reg_read(UC_X86_REG_ESP, &esp);
+                backend.reg_read(UC_X86_REG_EBP, &ebp);
                 std::cerr << "ESI=0x" << std::hex << esi << " EDI=0x" << edi << " ESP=0x" << esp << " EBP=0x" << ebp << "\n";
         
                 std::cerr << "--- Stack Dump ---\n";
                 for (int i = 0; i < 8; i++) {
                     uint32_t stack_val = 0;
-                    uc_err mem_err = uc_mem_read(uc, esp + (i * 4), &stack_val, 4);
+                    uc_err mem_err = backend.mem_read(esp + (i * 4), &stack_val, 4);
                     if (mem_err == UC_ERR_OK) {
                         std::cerr << "  [ESP+" << std::hex << (i*4) << "] = 0x" << stack_val << "\n";
                     } else {
-                        std::cerr << "  [ESP+" << std::hex << (i*4) << "] = UNMAPPED (" << uc_strerror(mem_err) << ")\n";
+                        std::cerr << "  [ESP+" << std::hex << (i*4) << "] = UNMAPPED (" << backend.strerror(mem_err) << ")\n";
                     }
                 }
                 std::cerr << "------------------\n";
@@ -456,7 +459,7 @@ int main(int argc, char **argv) {
                 }
                 break;
             }
-            uc_reg_read(uc, UC_X86_REG_EIP, &pc);
+            backend.reg_read(UC_X86_REG_EIP, &pc);
             
             if (pc == 0 || pc == 0xffffffff) {
                 cout << "\n[+] Emulation cleanly finished at EIP = 0x" << hex << pc << endl;
@@ -475,7 +478,7 @@ int main(int argc, char **argv) {
     }
 
     delete global_jit;
-    uc_close(uc);
+    backend.close();
     cs_close(&cs_handle);
     
     delete[] host_vram;
