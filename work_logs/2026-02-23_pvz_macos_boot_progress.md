@@ -447,3 +447,14 @@
 - 효과:
   - 파일/리소스 열람 경로의 반환값 결정성 향상.
   - 향후 `resources/main.pak` 진입 이후 파일 루프 추적 시 false-positive(success-only) 가능성 감소.
+
+28. `SetFilePointer` 64-bit 오프셋 처리 보강
+- 문제:
+  - 기존 구현은 `lpDistanceToMoveHigh`를 무시하고 low 32-bit만 사용.
+  - 대형 파일/맵(`main.pak`) 경로에서 seek 동작 왜곡 가능성 존재.
+- 변경(`api_handler.cpp`):
+  - `lpDistanceToMoveHigh`가 제공되면 high/low를 결합한 64-bit distance로 이동.
+  - 반환 시 low DWORD를 `EAX`로 반환하고, high DWORD를 `*lpDistanceToMoveHigh`에 기록.
+  - `LastError`는 성공 시 0으로 유지.
+- 효과:
+  - 파일 seek 관련 Win32 정합성 개선(특히 큰 오프셋 처리).

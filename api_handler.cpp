@@ -2298,7 +2298,8 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
             } else if (name == "KERNEL32.dll!SetFilePointer") {
                 uint32_t hFile = handler->ctx.get_arg(0);
-                int32_t distance = static_cast<int32_t>(handler->ctx.get_arg(1));
+                uint32_t low = handler->ctx.get_arg(1);
+                uint32_t lpDistanceToMoveHigh = handler->ctx.get_arg(2);
                 uint32_t moveMethod = handler->ctx.get_arg(3); // FILE_BEGIN=0, FILE_CURRENT=1, FILE_END=2
                 auto key = "file_" + std::to_string(hFile);
                 auto itf = handler->ctx.handle_map.find(key);
@@ -2310,10 +2311,21 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     int64_t base = 0;
                     if (moveMethod == 1) base = static_cast<int64_t>(fh->pos);
                     else if (moveMethod == 2) base = static_cast<int64_t>(fh->data.size());
-                    int64_t next = base + static_cast<int64_t>(distance);
+                    int64_t distance = static_cast<int64_t>(static_cast<int32_t>(low));
+                    if (lpDistanceToMoveHigh != 0) {
+                        int32_t high = 0;
+                        handler->backend.mem_read(lpDistanceToMoveHigh, &high, 4);
+                        distance = (static_cast<int64_t>(high) << 32) | static_cast<uint64_t>(low);
+                    }
+                    int64_t next = base + distance;
                     if (next < 0) next = 0;
                     fh->pos = static_cast<size_t>(next);
-                    handler->ctx.set_eax(static_cast<uint32_t>(fh->pos));
+                    uint32_t out_low = static_cast<uint32_t>(static_cast<uint64_t>(fh->pos) & 0xFFFFFFFFu);
+                    if (lpDistanceToMoveHigh != 0) {
+                        uint32_t out_high = static_cast<uint32_t>((static_cast<uint64_t>(fh->pos) >> 32) & 0xFFFFFFFFu);
+                        handler->backend.mem_write(lpDistanceToMoveHigh, &out_high, 4);
+                    }
+                    handler->ctx.set_eax(out_low);
                     handler->ctx.global_state["LastError"] = 0;
                 }
             } else if (name == "KERNEL32.dll!FindResourceA") {
