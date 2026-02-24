@@ -75,3 +75,17 @@
     - `0x404470` strlen 루프.
   - 목적: 리소스 전처리 구간 체류 시간을 줄여 GUI thread/message 경로까지 더 빨리 도달하도록 가속.
   - 가속 적용 후 hot set가 `0x441dd0/0x441dd9/0x441d2x..0x441d7x`, `0x61e4e6/0x61e4ef`, `0x5d7c0d/0x5d7c24`로 이동.
+
+## 00:10 이후 추가 진행
+- non-blocking 운영 보강:
+  - `PVZ_AUTO_ACK_MESSAGEBOX` 추가(비대화 세션 기본 ON): `MessageBoxA/W` 팝업 없이 로그만 남기고 `IDOK` 반환.
+  - 기존 `PVZ_DISABLE_SDL_MESSAGEBOX`와 함께 unattended 장시간 런에서 메시지박스 블로킹 제거.
+- GUI 검증 도구 보강:
+  - `PVZ_VRAM_SNAPSHOT` / `PVZ_VRAM_SNAPSHOT_EVERY` / `PVZ_VRAM_SNAPSHOT_PREFIX` 추가.
+  - VRAM present 훅에서 PPM 프레임 덤프 저장 가능(렌더링 루프 진입 여부 시각 확인용).
+  - `PVZ_SYNTH_CLICK` / `PVZ_SYNTH_CLICK_DELAY_MS` / `PVZ_SYNTH_CLICK_X/Y` 추가:
+    - 지정 시점에 `WM_LBUTTONDOWN/UP`를 queue에 1회 주입해 버튼 반응 경로 테스트 가능.
+- hot set 추가 가속:
+  - `0x61e4e6`(toupper 계열) 함수 엔트리 fast-path.
+  - `0x441d20`(문자 1개 append) fast-path.
+  - 결과적으로 `0x404470`가 top hot set에서 이탈하고, 현재는 `0x441dd0/0x441dd9` 및 `0x5d7cxx` 체인이 주요 잔여 병목.

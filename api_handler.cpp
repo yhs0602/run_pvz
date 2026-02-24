@@ -116,6 +116,8 @@ static std::unordered_map<uint32_t, uint32_t> g_hwnd_owner_thread_id;
 static std::unordered_map<uint64_t, int32_t> g_window_long_values;
 static std::unordered_map<uint32_t, std::string> g_window_text_values;
 static uint32_t g_synth_idle_timer_next_ms = 0;
+static uint32_t g_synth_click_due_ms = 0;
+static bool g_synth_click_sent = false;
 static uint32_t g_hwnd_top = 0x12345678u;
 static std::unordered_map<std::string, Win32ClassReg> g_win32_class_by_name;
 static std::unordered_map<uint16_t, Win32ClassReg> g_win32_class_by_atom;
@@ -238,6 +240,8 @@ static bool is_noisy_fastpath_api(const std::string& n) {
 }
 
 constexpr size_t kWin32MessageQueueMax = 4096;
+static int env_int(const char* name, int default_value);
+static bool synth_click_enabled();
 
 static void enqueue_win32_message(const Win32_MSG& msg, uint32_t target_thread_id = 0) {
     if (g_win32_message_queue.size() >= kWin32MessageQueueMax) {
@@ -462,6 +466,50 @@ static void pump_due_win32_timers(uint32_t now_ms) {
     }
 }
 
+static void maybe_enqueue_synth_click(uint32_t now_ms) {
+    if (!synth_click_enabled() || g_synth_click_sent || g_valid_hwnds.empty()) return;
+    if (g_synth_click_due_ms == 0) {
+        int delay = env_int("PVZ_SYNTH_CLICK_DELAY_MS", 4000);
+        if (delay < 0) delay = 0;
+        g_synth_click_due_ms = now_ms + static_cast<uint32_t>(delay);
+    }
+    if (static_cast<int32_t>(now_ms - g_synth_click_due_ms) < 0) return;
+
+    int click_x = env_int("PVZ_SYNTH_CLICK_X", 400);
+    int click_y = env_int("PVZ_SYNTH_CLICK_Y", 300);
+    if (click_x < 0) click_x = 0;
+    if (click_y < 0) click_y = 0;
+
+    uint32_t hwnd = *g_valid_hwnds.begin();
+    uint32_t target_tid = 0;
+    auto it_owner = g_hwnd_owner_thread_id.find(hwnd);
+    if (it_owner != g_hwnd_owner_thread_id.end()) {
+        target_tid = it_owner->second;
+    }
+    uint32_t lparam = (static_cast<uint32_t>(click_y & 0xFFFF) << 16) |
+                      static_cast<uint32_t>(click_x & 0xFFFF);
+
+    Win32_MSG down = {};
+    down.hwnd = hwnd;
+    down.message = WM_LBUTTONDOWN;
+    down.wParam = 1;
+    down.lParam = lparam;
+    down.time = now_ms;
+    down.pt_x = click_x;
+    down.pt_y = click_y;
+    enqueue_win32_message(down, target_tid);
+
+    Win32_MSG up = down;
+    up.message = WM_LBUTTONUP;
+    up.wParam = 0;
+    enqueue_win32_message(up, target_tid);
+
+    g_synth_click_sent = true;
+    std::cout << "[SYNTH CLICK] queued WM_LBUTTONDOWN/UP hwnd=0x" << std::hex << hwnd
+              << std::dec << " x=" << click_x << " y=" << click_y
+              << " tid=" << target_tid << "\n";
+}
+
 static bool win32_message_matches_filter(const Win32_MSG& msg, uint32_t hwnd_filter, uint32_t min_filter, uint32_t max_filter) {
     if (hwnd_filter != 0 && msg.hwnd != hwnd_filter) return false;
     if (min_filter == 0 && max_filter == 0) return true;
@@ -505,6 +553,24 @@ static bool env_truthy(const char* name) {
 static bool thread_mock_trace_enabled() {
     static const bool enabled = env_truthy("PVZ_THREAD_MOCK_TRACE");
     return enabled;
+}
+
+static bool synth_click_enabled() {
+    static const bool enabled = env_truthy("PVZ_SYNTH_CLICK");
+    return enabled;
+}
+
+static bool messagebox_auto_ack_enabled() {
+    static int cached = -1;
+    if (cached >= 0) return cached != 0;
+    const char* v = std::getenv("PVZ_AUTO_ACK_MESSAGEBOX");
+    if (v && *v) {
+        cached = env_truthy("PVZ_AUTO_ACK_MESSAGEBOX") ? 1 : 0;
+        return cached != 0;
+    }
+    // Default to auto-ack in non-interactive runs.
+    cached = (isatty(STDIN_FILENO) == 0) ? 1 : 0;
+    return cached != 0;
 }
 
 static bool loader_trace_enabled() {
@@ -1233,6 +1299,8 @@ void DummyAPIHandler::cleanup_process_state() {
     g_window_long_values.clear();
     g_window_text_values.clear();
     g_synth_idle_timer_next_ms = 0;
+    g_synth_click_due_ms = 0;
+    g_synth_click_sent = false;
     g_hwnd_top = 0x12345678u;
     g_win32_class_by_name.clear();
     g_win32_class_by_atom.clear();
@@ -2049,7 +2117,9 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             std::cout << "\n[API CALL] [MSGBOX] " << name
                       << " caption='" << caption << "', text='" << text << "'\n";
 
-            if (!env_truthy("PVZ_DISABLE_SDL_MESSAGEBOX")) {
+            bool disable_sdl = env_truthy("PVZ_DISABLE_SDL_MESSAGEBOX");
+            bool auto_ack = messagebox_auto_ack_enabled();
+            if (!disable_sdl && !auto_ack) {
                 uint32_t flags = SDL_MESSAGEBOX_INFORMATION;
                 if ((uType & 0x10u) != 0) flags = SDL_MESSAGEBOX_ERROR;       // MB_ICONERROR
                 else if ((uType & 0x30u) == 0x30u) flags = SDL_MESSAGEBOX_WARNING; // MB_ICONWARNING
@@ -2059,6 +2129,10 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 if (SDL_ShowSimpleMessageBox(flags, caption.c_str(), text.c_str(), window) != 0) {
                     std::cerr << "[!] SDL_ShowSimpleMessageBox failed: " << SDL_GetError() << "\n";
                 }
+            } else {
+                std::cout << "[API CALL] [MSGBOX] auto-ack ("
+                          << (disable_sdl ? "PVZ_DISABLE_SDL_MESSAGEBOX" : "PVZ_AUTO_ACK_MESSAGEBOX/non-interactive")
+                          << ") -> IDOK\n";
             }
 
             handler->ctx.set_eax(1); // IDOK
@@ -2597,6 +2671,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             Win32_MSG msg = {0};
             SDL_PumpEvents();
             pump_due_win32_timers(SDL_GetTicks());
+            maybe_enqueue_synth_click(SDL_GetTicks());
 
             for (auto it = g_win32_message_queue.begin(); it != g_win32_message_queue.end(); ++it) {
                 if (!win32_message_matches_filter(*it, current_tid, hWnd, wMsgFilterMin, wMsgFilterMax)) {
@@ -2619,6 +2694,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 has_event = SDL_WaitEventTimeout(&event, 50); 
                 if (!has_event) {
                     pump_due_win32_timers(SDL_GetTicks());
+                    maybe_enqueue_synth_click(SDL_GetTicks());
                     for (auto it = g_win32_message_queue.begin(); it != g_win32_message_queue.end(); ++it) {
                         if (!win32_message_matches_filter(*it, current_tid, hWnd, wMsgFilterMin, wMsgFilterMax)) {
                             continue;

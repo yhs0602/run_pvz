@@ -113,6 +113,15 @@ PVZ_VRAM_PRESENT_STRIDE=8000 ./build/runner pvz/main.exe
 # MessageBoxA/W의 SDL 팝업 표시 비활성화
 PVZ_DISABLE_SDL_MESSAGEBOX=1 ./build/runner pvz/main.exe
 
+# MessageBoxA/W를 팝업 없이 자동 IDOK 처리(기본: non-interactive 세션에서는 자동 ON)
+PVZ_AUTO_ACK_MESSAGEBOX=1 ./build/runner pvz/main.exe
+
+# VRAM present 시점 프레임 덤프(PPM) 저장
+PVZ_VRAM_SNAPSHOT=1 PVZ_VRAM_SNAPSHOT_EVERY=1 PVZ_VRAM_SNAPSHOT_PREFIX=artifacts/vram_frame ./build-fex/runner pvz/main.exe
+
+# 테스트용 가짜 좌클릭 1회 주입(메시지 큐): 딜레이/좌표 커스텀 가능
+PVZ_SYNTH_CLICK=1 PVZ_SYNTH_CLICK_DELAY_MS=4000 PVZ_SYNTH_CLICK_X=400 PVZ_SYNTH_CLICK_Y=300 ./build-fex/runner pvz/main.exe
+
 # API 훅 디버그 로그 출력 활성화 (기본 OFF)
 PVZ_VERBOSE_API_HOOK=1 ./build/runner pvz/main.exe
 
@@ -138,7 +147,7 @@ PVZ_HOT_FOCUS_ADDRS=0x62ce9b,0x62cf8e,0x62118b,0x61fcd4 PVZ_HOT_FOCUS_RANGE=0x20
 PVZ_BLOCK_HOT_SAMPLE=1 PVZ_BLOCK_HOT_SAMPLE_INTERVAL=200000 ./build-fex/runner pvz/main.exe
 PVZ_BLOCK_FOCUS_TRACE=1 PVZ_BLOCK_FOCUS_ADDRS=0x441a73,0x441a79,0x441dd0,0x5d8890,0x62456a PVZ_BLOCK_FOCUS_INTERVAL=50000 PVZ_BLOCK_FOCUS_DUMP_BYTES=16 ./build-fex/runner pvz/main.exe
 
-# 리소스 단계 hot-loop 가속(선택): 0x441a73/0x5d888c/0x5d8890/0x62456a/0x404470 루프를 호스트 빠른 경로로 처리
+# 리소스 단계 hot-loop 가속(선택): 0x441a73/0x5d888c/0x5d8890/0x62456a/0x404470/0x61e4e6/0x441d20 루프를 호스트 빠른 경로로 처리
 PVZ_HOT_LOOP_ACCEL=1 ./build-fex/runner pvz/main.exe
 
 # WndProc 브릿지 상세 추적(RegisterClass/CreateWindowEx/Dispatch/SendMessage)
