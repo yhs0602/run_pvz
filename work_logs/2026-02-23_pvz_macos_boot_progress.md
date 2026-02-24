@@ -471,3 +471,17 @@
 - 관찰:
   - 75초 샘플에서 API top 병목(`HeapAlloc/HeapFree/CriticalSection`) 패턴은 동일.
   - 그러나 locale 반환값은 더 이상 mock 편차 없이 결정적으로 제공됨.
+
+30. `api_handler.cpp` 1차 구조 리팩터링 (거대 분기 분리)
+- 배경:
+  - `api_handler.cpp`가 3K+ 라인으로 커져 hook 내부의 known/unknown API 분기 가독성/리뷰 효율 저하.
+- 적용:
+  - hook의 대형 known/unknown 처리 분기를 `dispatch_known_or_unknown_api(...)` 멤버 메서드로 분리.
+  - 실제 분기 본문은 `/Users/yanghyeonseo/Developer/pvz/api_handler_known_dispatch.inl`로 추출해 관리.
+  - 공통 fast-path 판별은 `is_noisy_fastpath_api(...)`로 함수화.
+- 효과:
+  - `hook_api_call` 본문이 짧아져 흐름 추적이 쉬워짐.
+  - 기존 동작은 유지(스모크 런에서 `main.pak`, `CreateThread/WaitForSingleObject` 경로 동일 확인).
+- 다음 리팩터링 단계:
+  1. `.inl` 내부를 도메인별(`file/heap/locale/ddraw/user32`) 정적 함수로 추가 분해.
+  2. 이후 `.inl`을 별도 `.cpp` 모듈로 승격(테스트 단위 분리).
