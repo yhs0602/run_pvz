@@ -1627,6 +1627,113 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
                 handler->ctx.set_eax(1);
                 std::cout << "\n[API CALL] [OK] GetVersionExA (Spoofed Win7)" << std::endl;
+            } else if (name == "KERNEL32.dll!GetLocaleInfoA" || name == "KERNEL32.dll!GetLocaleInfoW") {
+                uint32_t locale = handler->ctx.get_arg(0);
+                uint32_t lc_type_raw = handler->ctx.get_arg(1);
+                uint32_t lp_data = handler->ctx.get_arg(2);
+                uint32_t cch_data = handler->ctx.get_arg(3);
+                bool wide = (name == "KERNEL32.dll!GetLocaleInfoW");
+
+                constexpr uint32_t LOCALE_NOUSEROVERRIDE = 0x80000000u;
+                constexpr uint32_t LOCALE_USE_CP_ACP = 0x40000000u;
+                constexpr uint32_t LOCALE_RETURN_NUMBER = 0x20000000u;
+                constexpr uint32_t LOCALE_ILANGUAGE = 0x00000001u;
+                constexpr uint32_t LOCALE_SLANGUAGE = 0x00000002u;
+                constexpr uint32_t LOCALE_SCOUNTRY = 0x00000006u;
+                constexpr uint32_t LOCALE_IDEFAULTANSICODEPAGE = 0x00001004u;
+                constexpr uint32_t LOCALE_SDECIMAL = 0x0000000Eu;
+                constexpr uint32_t LOCALE_STHOUSAND = 0x0000000Fu;
+                constexpr uint32_t LOCALE_SGROUPING = 0x00000010u;
+                constexpr uint32_t LOCALE_SDATE = 0x0000001Du;
+                constexpr uint32_t LOCALE_STIME = 0x0000001Eu;
+                constexpr uint32_t LOCALE_SSHORTDATE = 0x0000001Fu;
+                constexpr uint32_t LOCALE_SLONGDATE = 0x00000020u;
+                constexpr uint32_t LOCALE_SENGLANGUAGE = 0x00001001u;
+                constexpr uint32_t LOCALE_SENGCOUNTRY = 0x00001002u;
+                constexpr uint32_t LOCALE_SISO639LANGNAME = 0x00000059u;
+                constexpr uint32_t LOCALE_SISO3166CTRYNAME = 0x0000005Au;
+
+                uint16_t lang_id = static_cast<uint16_t>(locale & 0xFFFFu);
+                bool is_korean = (lang_id == 0x0412u);
+                uint32_t lc_type = lc_type_raw & ~(LOCALE_NOUSEROVERRIDE | LOCALE_USE_CP_ACP);
+                uint32_t base_type = lc_type & ~LOCALE_RETURN_NUMBER;
+                uint32_t result = 0;
+
+                if (lc_type & LOCALE_RETURN_NUMBER) {
+                    uint32_t numeric = 0;
+                    bool known_numeric = true;
+                    switch (base_type) {
+                        case LOCALE_ILANGUAGE:
+                            numeric = is_korean ? 0x0412u : 0x0409u;
+                            break;
+                        default:
+                            known_numeric = false;
+                            break;
+                    }
+                    if (known_numeric) {
+                        if (lp_data != 0 && cch_data >= sizeof(uint32_t)) {
+                            handler->backend.mem_write(lp_data, &numeric, sizeof(uint32_t));
+                            result = sizeof(uint32_t);
+                            handler->ctx.global_state["LastError"] = 0;
+                        } else if (cch_data == 0) {
+                            result = sizeof(uint32_t);
+                            handler->ctx.global_state["LastError"] = 0;
+                        } else {
+                            handler->ctx.global_state["LastError"] = 122; // ERROR_INSUFFICIENT_BUFFER
+                        }
+                    }
+                } else {
+                    std::string value;
+                    switch (base_type) {
+                        case LOCALE_ILANGUAGE: value = is_korean ? "0412" : "0409"; break;
+                        case LOCALE_SLANGUAGE: value = is_korean ? "Korean (Korea)" : "English (United States)"; break;
+                        case LOCALE_SCOUNTRY: value = is_korean ? "Korea" : "United States"; break;
+                        case LOCALE_IDEFAULTANSICODEPAGE: value = is_korean ? "949" : "1252"; break;
+                        case LOCALE_SDECIMAL: value = "."; break;
+                        case LOCALE_STHOUSAND: value = ","; break;
+                        case LOCALE_SGROUPING: value = "3;0"; break;
+                        case LOCALE_SDATE: value = is_korean ? "-" : "/"; break;
+                        case LOCALE_STIME: value = ":"; break;
+                        case LOCALE_SSHORTDATE: value = is_korean ? "yyyy-MM-dd" : "M/d/yyyy"; break;
+                        case LOCALE_SLONGDATE: value = is_korean ? "yyyy-MM-dd dddd" : "dddd, MMMM dd, yyyy"; break;
+                        case LOCALE_SENGLANGUAGE: value = is_korean ? "Korean" : "English"; break;
+                        case LOCALE_SENGCOUNTRY: value = is_korean ? "Korea" : "United States"; break;
+                        case LOCALE_SISO639LANGNAME: value = is_korean ? "ko" : "en"; break;
+                        case LOCALE_SISO3166CTRYNAME: value = is_korean ? "KR" : "US"; break;
+                        default: break;
+                    }
+                    if (!value.empty()) {
+                        uint32_t required = static_cast<uint32_t>(value.size() + 1);
+                        if (wide) {
+                            if (cch_data == 0) {
+                                result = required;
+                                handler->ctx.global_state["LastError"] = 0;
+                            } else if (lp_data != 0 && cch_data >= required) {
+                                std::vector<uint16_t> wbuf(required, 0);
+                                for (size_t i = 0; i < value.size(); ++i) {
+                                    wbuf[i] = static_cast<uint16_t>(static_cast<unsigned char>(value[i]));
+                                }
+                                handler->backend.mem_write(lp_data, wbuf.data(), required * sizeof(uint16_t));
+                                result = required;
+                                handler->ctx.global_state["LastError"] = 0;
+                            } else {
+                                handler->ctx.global_state["LastError"] = 122;
+                            }
+                        } else {
+                            if (cch_data == 0) {
+                                result = required;
+                                handler->ctx.global_state["LastError"] = 0;
+                            } else if (lp_data != 0 && cch_data >= required) {
+                                handler->backend.mem_write(lp_data, value.c_str(), required);
+                                result = required;
+                                handler->ctx.global_state["LastError"] = 0;
+                            } else {
+                                handler->ctx.global_state["LastError"] = 122;
+                            }
+                        }
+                    }
+                }
+                handler->ctx.set_eax(result);
             } else if (name == "KERNEL32.dll!GetSystemDirectoryA" || name == "KERNEL32.dll!GetWindowsDirectoryA") {
                 uint32_t lpBuffer = handler->ctx.get_arg(0);
                 uint32_t uSize = handler->ctx.get_arg(1);

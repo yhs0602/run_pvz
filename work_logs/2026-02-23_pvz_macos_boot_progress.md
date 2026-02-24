@@ -458,3 +458,16 @@
   - `LastError`는 성공 시 0으로 유지.
 - 효과:
   - 파일 seek 관련 Win32 정합성 개선(특히 큰 오프셋 처리).
+
+29. Locale API 내장 구현(`GetLocaleInfoA/W`)로 더미-success 제거
+- 배경:
+  - known API 우선 HLE 정책 이후 `GetLocaleInfoA`가 generic fallback(성공코드만 반환)으로 흘러 실제 locale 버퍼/숫자 값을 채우지 못하고 있었음.
+- 적용(`api_handler.cpp`):
+  - `KERNEL32.dll!GetLocaleInfoA/W` 직접 구현.
+  - 지원 항목:
+    - `LOCALE_RETURN_NUMBER` + `LOCALE_ILANGUAGE`
+    - 문자열 계열: `SLANGUAGE`, `SCOUNTRY`, `IDEFAULTANSICODEPAGE`, `SDECIMAL`, `STHOUSAND`, `SGROUPING`, `SDATE`, `STIME`, `SSHORTDATE`, `SLONGDATE`, `SENGLANGUAGE`, `SENGCOUNTRY`, `SISO639LANGNAME`, `SISO3166CTRYNAME`
+  - `A/W` 버퍼 길이 검사 및 `ERROR_INSUFFICIENT_BUFFER(122)` 처리.
+- 관찰:
+  - 75초 샘플에서 API top 병목(`HeapAlloc/HeapFree/CriticalSection`) 패턴은 동일.
+  - 그러나 locale 반환값은 더 이상 mock 편차 없이 결정적으로 제공됨.
