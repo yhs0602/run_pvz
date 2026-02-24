@@ -26,6 +26,7 @@ private:
     uint64_t api_stats_interval = 0;
     uint32_t current_addr;
     std::string process_base_dir;
+    void cleanup_process_state();
     void dispatch_known_or_unknown_api(const std::string& name, uint64_t address, bool known);
     
 

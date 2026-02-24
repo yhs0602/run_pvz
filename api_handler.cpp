@@ -775,7 +775,42 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
     backend.hook_add(&trace, UC_HOOK_BLOCK, (void*)hook_api_call, this, 1, 0); // Catch all blocks
 }
 
+void DummyAPIHandler::cleanup_process_state() {
+    for (auto& kv : ctx.handle_map) {
+        const std::string& key = kv.first;
+        void* ptr = kv.second;
+        if (!ptr) continue;
+        if (key.rfind("file_", 0) == 0) {
+            delete static_cast<HostFileHandle*>(ptr);
+        } else if (key.rfind("find_", 0) == 0) {
+            delete static_cast<FindHandle*>(ptr);
+        } else if (key.rfind("mapping_", 0) == 0) {
+            delete static_cast<MappingHandle*>(ptr);
+        } else if (key.rfind("event_", 0) == 0) {
+            delete static_cast<EventHandle*>(ptr);
+        } else if (key.rfind("reg_", 0) == 0) {
+            delete static_cast<RegistryKeyHandle*>(ptr);
+        }
+    }
+    ctx.handle_map.clear();
+    ctx.global_state.clear();
+
+    g_win32_message_queue.clear();
+    g_heap_sizes.clear();
+    g_heap_free_by_size.clear();
+    g_mapview_live_sizes.clear();
+    g_mapview_free_by_size.clear();
+    g_registry_values.clear();
+    g_registry_types.clear();
+    g_resource_ptr_by_handle.clear();
+    g_resource_size_by_handle.clear();
+    g_resource_handle_top = 0xB000;
+    g_resource_heap_top = 0x36000000;
+    g_resource_heap_mapped = false;
+}
+
 DummyAPIHandler::~DummyAPIHandler() {
+    cleanup_process_state();
     for (auto& pair : dylib_handles) {
         if (pair.second) dlclose(pair.second);
     }

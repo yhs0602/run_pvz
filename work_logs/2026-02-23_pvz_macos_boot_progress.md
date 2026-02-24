@@ -485,3 +485,19 @@
 - 다음 리팩터링 단계:
   1. `.inl` 내부를 도메인별(`file/heap/locale/ddraw/user32`) 정적 함수로 추가 분해.
   2. 이후 `.inl`을 별도 `.cpp` 모듈로 승격(테스트 단위 분리).
+
+31. 멀티스레드 종료 경로(프로세스 cleanup) 점검 및 보강
+- 점검 포인트:
+  - SexyApp 기반 멀티스레드 가정에서 `ExitProcess/TerminateProcess/CorExitProcess` 종료 시 handle/resource 정리 누락 여부 확인.
+- 발견:
+  - 기존 `DummyAPIHandler::~DummyAPIHandler()`는 dylib 핸들만 `dlclose`하고,
+    `ctx.handle_map`의 동적 리소스(`file/find/mapping/event/reg`)는 해제하지 않았음.
+  - `ExitProcess`, `TerminateProcess(current)`, `CorExitProcess`도 emu_stop 이전에 명시 cleanup을 호출하지 않았음.
+- 적용:
+  - `cleanup_process_state()` 추가:
+    - `ctx.handle_map` 내부 동적 handle 리소스 전부 해제.
+    - `ctx.handle_map/global_state`, 메시지 큐, heap/mapview/registry/resource 상태 캐시 초기화.
+  - 종료 API 경로에서 emu_stop 전에 `cleanup_process_state()` 호출.
+  - 소멸자에서도 `cleanup_process_state()` 호출(종료 경로 이외 케이스 대비).
+- 결과:
+  - 멀티스레드 앱 종료 시 host-side 리소스 누수/잔존 상태 위험을 줄임.

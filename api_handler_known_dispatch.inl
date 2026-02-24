@@ -1065,6 +1065,7 @@
                 std::cout << "\n[API CALL] [OK] Intercepted call to " << name
                           << " (exit_code=" << exit_code
                           << ") -> stopping emulation.\n";
+                handler->cleanup_process_state();
                 uint32_t finished_eip = 0;
                 handler->backend.reg_write(UC_X86_REG_EIP, &finished_eip);
                 handler->backend.emu_stop();
@@ -1708,6 +1709,7 @@
                           << " (exit_code=" << exit_code
                           << ") -> stopping emulation.\n";
                 // ExitProcess never returns. Force a clean stop path.
+                handler->cleanup_process_state();
                 uint32_t finished_eip = 0;
                 handler->backend.reg_write(UC_X86_REG_EIP, &finished_eip);
                 handler->backend.emu_stop();
@@ -1719,6 +1721,7 @@
                 if (h_process == 0xFFFFFFFFu) {
                     std::cout << "\n[API CALL] [OK] TerminateProcess(current, exit_code="
                               << exit_code << ") -> stopping emulation.\n";
+                    handler->cleanup_process_state();
                     uint32_t finished_eip = 0;
                     handler->backend.reg_write(UC_X86_REG_EIP, &finished_eip);
                     handler->backend.emu_stop();
