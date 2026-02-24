@@ -10,6 +10,7 @@
 #include <iterator>
 #include <deque>
 #include <map>
+#include <sstream>
 #include <cctype>
 #include <cstring>
 #include <cstdlib>
@@ -58,6 +59,13 @@ struct EventHandle {
     bool signaled = false;
 };
 
+struct ThreadHandle {
+    uint32_t start_address = 0;
+    uint32_t parameter = 0;
+    bool started = false;
+    bool finished = false;
+};
+
 struct MappingHandle {
     uint32_t file_handle = 0xFFFFFFFFu; // INVALID_HANDLE_VALUE means page-file backed mapping
 };
@@ -80,6 +88,7 @@ static uint32_t g_resource_handle_top = 0xB000;
 static uint32_t g_resource_heap_top = 0x36000000;
 static bool g_resource_heap_mapped = false;
 static std::deque<Win32_MSG> g_win32_message_queue;
+static std::unordered_map<uint32_t, uint32_t> g_thread_start_to_handle;
 
 static std::string read_guest_c_string(APIContext& ctx, uint32_t guest_ptr, size_t max_len = 512) {
     if (guest_ptr == 0) return "";
@@ -213,6 +222,11 @@ static bool env_truthy(const char* name) {
     return !(s.empty() || s == "0" || s == "false" || s == "off" || s == "no");
 }
 
+static bool thread_mock_trace_enabled() {
+    static const bool enabled = env_truthy("PVZ_THREAD_MOCK_TRACE");
+    return enabled;
+}
+
 static int env_int(const char* name, int default_value) {
     const char* v = std::getenv(name);
     if (!v || !*v) return default_value;
@@ -222,6 +236,31 @@ static int env_int(const char* name, int default_value) {
     if (parsed > std::numeric_limits<int>::max()) return std::numeric_limits<int>::max();
     if (parsed < std::numeric_limits<int>::min()) return std::numeric_limits<int>::min();
     return static_cast<int>(parsed);
+}
+
+static uint32_t parse_u32_auto(const std::string& s, uint32_t fallback = 0) {
+    if (s.empty()) return fallback;
+    char* end = nullptr;
+    unsigned long v = std::strtoul(s.c_str(), &end, 0);
+    if (!end || *end != '\0') return fallback;
+    if (v > 0xFFFFFFFFul) return 0xFFFFFFFFu;
+    return static_cast<uint32_t>(v);
+}
+
+static std::vector<uint32_t> parse_u32_list_csv(const char* env_value) {
+    std::vector<uint32_t> out;
+    if (!env_value || !*env_value) return out;
+    std::stringstream ss(env_value);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        size_t first = token.find_first_not_of(" \t");
+        if (first == std::string::npos) continue;
+        size_t last = token.find_last_not_of(" \t");
+        token = token.substr(first, last - first + 1);
+        uint32_t value = parse_u32_auto(token, 0);
+        if (value != 0) out.push_back(value);
+    }
+    return out;
 }
 
 static std::string resolve_case_insensitive_path(const std::string& raw_path) {
@@ -714,6 +753,18 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
     if (hot_cap > 0) eip_hot_page_cap = static_cast<size_t>(hot_cap);
     int hot_addr_cap = env_int("PVZ_EIP_HOT_ADDR_CAP", 16384);
     if (hot_addr_cap > 0) eip_hot_addr_cap = static_cast<size_t>(hot_addr_cap);
+    hot_loop_api_trace_enabled = env_truthy("PVZ_HOT_LOOP_API_TRACE");
+    int hot_loop_interval = env_int("PVZ_HOT_LOOP_API_TRACE_INTERVAL", 50000);
+    if (hot_loop_interval > 0) hot_loop_api_trace_interval = static_cast<uint64_t>(hot_loop_interval);
+    int hot_loop_cap = env_int("PVZ_HOT_LOOP_API_CAP", 4096);
+    if (hot_loop_cap > 0) hot_loop_api_cap = static_cast<size_t>(hot_loop_cap);
+    int hot_focus = env_int("PVZ_HOT_FOCUS_RANGE", 0x80);
+    if (hot_focus > 0) hot_focus_range = static_cast<uint32_t>(hot_focus);
+    hot_focus_centers = {0x62ce9b, 0x62cf8e, 0x62118b, 0x61fcd4};
+    std::vector<uint32_t> hot_focus_env = parse_u32_list_csv(std::getenv("PVZ_HOT_FOCUS_ADDRS"));
+    if (!hot_focus_env.empty()) {
+        hot_focus_centers = std::move(hot_focus_env);
+    }
     std::cout << "[*] API LLM mode: " << (llm_pipeline_enabled ? "ON" : "OFF")
               << ", dylib mocks: " << (dylib_mocks_enabled ? "ON" : "OFF");
     if (llm_pipeline_enabled) {
@@ -728,6 +779,15 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
         std::cout << "[*] EIP hot sampler armed (trigger: resources.xml), interval="
                   << eip_hot_sample_interval << ", page_cap=" << eip_hot_page_cap
                   << ", addr_cap=" << eip_hot_addr_cap << "\n";
+    }
+    if (hot_loop_api_trace_enabled) {
+        std::cout << "[*] Hot-loop API trace enabled, interval=" << hot_loop_api_trace_interval
+                  << ", cap=" << hot_loop_api_cap << ", focus_range=0x" << std::hex
+                  << hot_focus_range << std::dec << ", centers=";
+        for (size_t i = 0; i < hot_focus_centers.size(); ++i) {
+            std::cout << (i == 0 ? "" : ",") << "0x" << std::hex << hot_focus_centers[i] << std::dec;
+        }
+        std::cout << "\n";
     }
     ctx.backend = &backend;
     ctx.uc = backend.engine();
@@ -812,6 +872,8 @@ void DummyAPIHandler::cleanup_process_state() {
             delete static_cast<MappingHandle*>(ptr);
         } else if (key.rfind("event_", 0) == 0) {
             delete static_cast<EventHandle*>(ptr);
+        } else if (key.rfind("thread_", 0) == 0) {
+            delete static_cast<ThreadHandle*>(ptr);
         } else if (key.rfind("reg_", 0) == 0) {
             delete static_cast<RegistryKeyHandle*>(ptr);
         }
@@ -831,12 +893,17 @@ void DummyAPIHandler::cleanup_process_state() {
     g_resource_handle_top = 0xB000;
     g_resource_heap_top = 0x36000000;
     g_resource_heap_mapped = false;
+    g_thread_start_to_handle.clear();
 
     eip_hot_page_hits.clear();
     eip_hot_addr_hits.clear();
     eip_hot_page_dropped = 0;
     eip_hot_addr_dropped = 0;
     eip_hot_sample_started = false;
+    hot_loop_api_counts.clear();
+    hot_loop_api_eax_hist.clear();
+    hot_loop_api_lasterror_hist.clear();
+    hot_loop_api_dropped = 0;
 }
 
 DummyAPIHandler::~DummyAPIHandler() {
@@ -859,6 +926,7 @@ void DummyAPIHandler::maybe_print_api_stats() {
     }
     std::cout << "\n";
     maybe_print_eip_hot_pages();
+    maybe_print_hot_loop_api_stats();
 }
 
 void DummyAPIHandler::maybe_start_eip_hot_sample(const std::string& normalized_guest_path) {
@@ -872,12 +940,26 @@ void DummyAPIHandler::maybe_start_eip_hot_sample(const std::string& normalized_g
     std::cout << "[*] EIP hot sampler started after resources.xml open.\n";
 }
 
-void DummyAPIHandler::maybe_sample_eip_hot_caller() {
-    if (!eip_hot_sample_enabled || !eip_hot_sample_started) return;
+uint32_t DummyAPIHandler::get_api_caller_ret_addr() {
     uint32_t esp = 0;
-    if (backend.reg_read(UC_X86_REG_ESP, &esp) != UC_ERR_OK) return;
+    if (backend.reg_read(UC_X86_REG_ESP, &esp) != UC_ERR_OK) return 0;
     uint32_t ret_addr = 0;
-    if (backend.mem_read(esp, &ret_addr, 4) != UC_ERR_OK) return;
+    if (backend.mem_read(esp, &ret_addr, 4) != UC_ERR_OK) return 0;
+    return ret_addr;
+}
+
+bool DummyAPIHandler::is_hot_focus_ret(uint32_t ret_addr) const {
+    if (ret_addr == 0 || ret_addr >= FAKE_API_BASE) return false;
+    if (hot_focus_centers.empty()) return false;
+    for (uint32_t center : hot_focus_centers) {
+        uint32_t diff = (ret_addr > center) ? (ret_addr - center) : (center - ret_addr);
+        if (diff <= hot_focus_range) return true;
+    }
+    return false;
+}
+
+void DummyAPIHandler::maybe_sample_eip_hot_caller(uint32_t ret_addr) {
+    if (!eip_hot_sample_enabled || !eip_hot_sample_started) return;
     if (ret_addr == 0 || ret_addr >= FAKE_API_BASE) return;
 
     uint32_t page = ret_addr & ~0xFFFu;
@@ -900,6 +982,80 @@ void DummyAPIHandler::maybe_sample_eip_hot_caller() {
         return;
     }
     eip_hot_addr_hits.emplace(ret_addr, 1);
+}
+
+void DummyAPIHandler::record_hot_loop_api_stat(uint32_t ret_addr, const std::string& api_name) {
+    if (!hot_loop_api_trace_enabled) return;
+    if (!is_hot_focus_ret(ret_addr)) return;
+    std::ostringstream oss;
+    oss << "0x" << std::hex << ret_addr << std::dec << " " << api_name;
+    const std::string key = oss.str();
+
+    auto it = hot_loop_api_counts.find(key);
+    if (it == hot_loop_api_counts.end()) {
+        if (hot_loop_api_counts.size() >= hot_loop_api_cap) {
+            hot_loop_api_dropped++;
+            return;
+        }
+        it = hot_loop_api_counts.emplace(key, 0).first;
+    }
+    it->second++;
+    uint32_t eax = 0;
+    backend.reg_read(UC_X86_REG_EAX, &eax);
+    hot_loop_api_eax_hist[key][eax]++;
+    uint32_t last_error = 0;
+    auto it_le = ctx.global_state.find("LastError");
+    if (it_le != ctx.global_state.end()) {
+        last_error = static_cast<uint32_t>(it_le->second);
+    }
+    hot_loop_api_lasterror_hist[key][last_error]++;
+}
+
+void DummyAPIHandler::maybe_print_hot_loop_api_stats() {
+    if (!hot_loop_api_trace_enabled) return;
+    if (hot_loop_api_trace_interval == 0 || api_call_total == 0 || (api_call_total % hot_loop_api_trace_interval) != 0) {
+        return;
+    }
+    std::vector<std::pair<std::string, uint64_t>> items(hot_loop_api_counts.begin(), hot_loop_api_counts.end());
+    if (items.empty()) {
+        std::cout << "[HOT LOOP API] no samples yet\n";
+        return;
+    }
+    std::sort(items.begin(), items.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+    std::cout << "[HOT LOOP API] top:";
+    const size_t limit = std::min<size_t>(12, items.size());
+    for (size_t i = 0; i < limit; ++i) {
+        const std::string& key = items[i].first;
+        uint32_t top_eax = 0;
+        uint64_t top_eax_hits = 0;
+        auto it_eax = hot_loop_api_eax_hist.find(key);
+        if (it_eax != hot_loop_api_eax_hist.end()) {
+            for (const auto& kv : it_eax->second) {
+                if (kv.second > top_eax_hits) {
+                    top_eax_hits = kv.second;
+                    top_eax = kv.first;
+                }
+            }
+        }
+        uint32_t top_le = 0;
+        uint64_t top_le_hits = 0;
+        auto it_le = hot_loop_api_lasterror_hist.find(key);
+        if (it_le != hot_loop_api_lasterror_hist.end()) {
+            for (const auto& kv : it_le->second) {
+                if (kv.second > top_le_hits) {
+                    top_le_hits = kv.second;
+                    top_le = kv.first;
+                }
+            }
+        }
+        std::cout << " [" << items[i].second << "] " << key
+                  << " eax=0x" << std::hex << top_eax
+                  << " le=" << std::dec << top_le;
+    }
+    if (hot_loop_api_dropped > 0) {
+        std::cout << " dropped=" << hot_loop_api_dropped;
+    }
+    std::cout << "\n";
 }
 
 void DummyAPIHandler::maybe_print_eip_hot_pages() {
@@ -1134,6 +1290,22 @@ void DummyAPIHandler::handle_unknown_api(const std::string& api_name, uint32_t a
 
 void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t size, void* user_data) {
     DummyAPIHandler* handler = static_cast<DummyAPIHandler*>(user_data);
+
+    auto it_thread_start = g_thread_start_to_handle.find(static_cast<uint32_t>(address));
+    if (it_thread_start != g_thread_start_to_handle.end()) {
+        uint32_t h = it_thread_start->second;
+        auto it_thread = handler->ctx.handle_map.find("thread_" + std::to_string(h));
+        if (it_thread != handler->ctx.handle_map.end()) {
+            auto* th = static_cast<ThreadHandle*>(it_thread->second);
+            if (!th->started) {
+                th->started = true;
+                if (thread_mock_trace_enabled()) {
+                    std::cout << "[THREAD MOCK] observed execution of thread handle=0x" << std::hex << h
+                              << " start=0x" << th->start_address << std::dec << "\n";
+                }
+            }
+        }
+    }
     
     auto it = handler->fake_api_map.find(address);
     if (it != handler->fake_api_map.end()) {
@@ -1747,8 +1919,10 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             std::cout << "\n[DEBUG] hook_api_call name='" << name << "', known=" << known << "\n";
         }
 
-        handler->maybe_sample_eip_hot_caller();
+        uint32_t ret_addr = handler->get_api_caller_ret_addr();
+        handler->maybe_sample_eip_hot_caller(ret_addr);
         handler->dispatch_known_or_unknown_api(name, address, known);
+        handler->record_hot_loop_api_stat(ret_addr, name);
     }
 }
 

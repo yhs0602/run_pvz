@@ -128,6 +128,15 @@ PVZ_EIP_HOT_PAGE_CAP=8192 ./build/runner pvz/main.exe
 # EIP hot-address 샘플 map cap (기본 16384)
 PVZ_EIP_HOT_ADDR_CAP=20000 ./build/runner pvz/main.exe
 
+# hot-range(기본: 0x62ce9b/0x62cf8e/0x62118b/0x61fcd4) API 반환 통계
+PVZ_HOT_LOOP_API_TRACE=1 PVZ_HOT_LOOP_API_TRACE_INTERVAL=50000 ./build/runner pvz/main.exe
+
+# hot-range 중심/반경 커스텀 (쉼표 구분, 10진/16진 허용)
+PVZ_HOT_FOCUS_ADDRS=0x62ce9b,0x62cf8e,0x62118b,0x61fcd4 PVZ_HOT_FOCUS_RANGE=0x20 ./build/runner pvz/main.exe
+
+# thread/event/postmessage 모킹 상세 추적 로그
+PVZ_THREAD_MOCK_TRACE=1 ./build/runner pvz/main.exe
+
 # 장기 실행 메모리 가드 (fexcore 기본 12288MB, 0이면 비활성화)
 PVZ_MAX_RSS_MB=8192 PVZ_RSS_GUARD_INTERVAL_BLOCKS=20000 ./build/runner pvz/main.exe
 

@@ -900,6 +900,11 @@
                 handler->ctx.handle_map["event_" + std::to_string(handle)] = ev;
                 handler->ctx.set_eax(handle);
                 handler->ctx.global_state["LastError"] = 0;
+                if (thread_mock_trace_enabled()) {
+                    std::cout << "[THREAD MOCK] CreateEvent(handle=0x" << std::hex << handle
+                              << ", manual=" << (ev->manual_reset ? 1 : 0)
+                              << ", initial=" << (ev->signaled ? 1 : 0) << std::dec << ")\n";
+                }
             } else if (name == "KERNEL32.dll!CreateThread") {
                 if (env_truthy("PVZ_CREATE_THREAD_FAIL")) {
                     handler->ctx.set_eax(0);
@@ -920,6 +925,13 @@
                     uint32_t tid = 1;
                     handler->backend.mem_write(lpThreadId, &tid, 4);
                 }
+                auto* th = new ThreadHandle();
+                th->start_address = lpStartAddress;
+                th->parameter = lpParameter;
+                th->started = false;
+                th->finished = false;
+                handler->ctx.handle_map["thread_" + std::to_string(handle)] = th;
+                g_thread_start_to_handle[lpStartAddress] = handle;
                 // Cooperative thread emulation:
                 // mark the thread-parameter block as "started" so waits and init gates can progress.
                 if (lpParameter != 0) {
@@ -929,6 +941,11 @@
                 }
                 std::cout << "\n[API CALL] [OK] CreateThread(start=0x" << std::hex << lpStartAddress
                           << ", param=0x" << lpParameter << ", handle=0x" << handle << std::dec << ")\n";
+                if (thread_mock_trace_enabled()) {
+                    std::cout << "[THREAD MOCK] registered thread handle=0x" << std::hex << handle
+                              << " start=0x" << lpStartAddress << " param=0x" << lpParameter
+                              << std::dec << "\n";
+                }
                 handler->ctx.set_eax(handle);
                 handler->ctx.global_state["LastError"] = 0;
             } else if (name == "KERNEL32.dll!SetEvent") {
@@ -960,6 +977,7 @@
                 uint32_t wait_result = 0; // WAIT_OBJECT_0
                 if (it != handler->ctx.handle_map.end()) {
                     auto* ev = static_cast<EventHandle*>(it->second);
+                    bool signaled_before = ev->signaled;
                     if (ev->signaled) {
                         wait_result = 0; // WAIT_OBJECT_0
                         if (!ev->manual_reset) ev->signaled = false;
@@ -970,6 +988,29 @@
                         wait_result = (timeout_ms == 0xFFFFFFFFu) ? 0 : 0x102;
                     }
                     handler->ctx.global_state["LastError"] = 0;
+                    if (thread_mock_trace_enabled()) {
+                        auto* ev = static_cast<EventHandle*>(it->second);
+                        std::cout << "[THREAD MOCK] WaitForSingleObject(event=0x" << std::hex << h
+                                  << ", manual=" << (ev->manual_reset ? 1 : 0)
+                                  << ", signaled_before=" << (signaled_before ? 1 : 0)
+                                  << ", timeout=" << std::dec << timeout_ms
+                                  << ") -> 0x" << std::hex << wait_result << std::dec << "\n";
+                    }
+                } else if (auto it_thread = handler->ctx.handle_map.find("thread_" + std::to_string(h));
+                           it_thread != handler->ctx.handle_map.end()) {
+                    auto* th = static_cast<ThreadHandle*>(it_thread->second);
+                    // Cooperative mode: spawned thread body is not actually scheduled yet.
+                    // Keep compatibility by reporting signaled while preserving trace visibility.
+                    wait_result = 0;
+                    handler->ctx.global_state["LastError"] = 0;
+                    if (thread_mock_trace_enabled()) {
+                        std::cout << "[THREAD MOCK] WaitForSingleObject(thread=0x" << std::hex << h
+                                  << ", start=0x" << th->start_address
+                                  << ", started=" << (th->started ? 1 : 0)
+                                  << ", finished=" << (th->finished ? 1 : 0)
+                                  << ", timeout=" << std::dec << timeout_ms
+                                  << ") -> 0x" << std::hex << wait_result << std::dec << "\n";
+                    }
                 } else {
                     // Treat non-event handles as already-signaled for compatibility.
                     wait_result = 0; // WAIT_OBJECT_0
@@ -1011,9 +1052,19 @@
                         handler->ctx.set_eax(1);
                         handler->ctx.global_state["LastError"] = 0;
                     } else {
-                        // Non-file handles are currently treated as success for compatibility.
-                        handler->ctx.set_eax(1);
-                        handler->ctx.global_state["LastError"] = 0;
+                        auto itt = handler->ctx.handle_map.find("thread_" + std::to_string(h));
+                        if (itt != handler->ctx.handle_map.end()) {
+                            auto* th = static_cast<ThreadHandle*>(itt->second);
+                            g_thread_start_to_handle.erase(th->start_address);
+                            delete th;
+                            handler->ctx.handle_map.erase(itt);
+                            handler->ctx.set_eax(1);
+                            handler->ctx.global_state["LastError"] = 0;
+                        } else {
+                            // Non-file handles are currently treated as success for compatibility.
+                            handler->ctx.set_eax(1);
+                            handler->ctx.global_state["LastError"] = 0;
+                        }
                     }
                 }
             } else if (name == "KERNEL32.dll!GetProcAddress") {
@@ -1739,6 +1790,11 @@
                     if (kv.first.rfind("event_", 0) == 0) {
                         static_cast<EventHandle*>(kv.second)->signaled = true;
                     }
+                }
+                if (thread_mock_trace_enabled()) {
+                    std::cout << "[THREAD MOCK] PostMessage(hwnd=0x" << std::hex << msg.hwnd
+                              << ", msg=0x" << msg.message << ", queue=" << std::dec
+                              << g_win32_message_queue.size() << ")\n";
                 }
                 handler->ctx.set_eax(1);
             } else if (name == "KERNEL32.dll!GetCurrentProcess") {

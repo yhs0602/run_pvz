@@ -539,3 +539,35 @@
 - 샘플 결과(70초):
   - top addrs: `0x62ce9b`, `0x62cf8e`, `0x62118b`, `0x61fcd4`가 지배적.
   - 이제 page 단위가 아니라 정확한 루프 주소 단위로 병목 고정 가능.
+
+34. hot-address API 반환값 분해 + thread mock 관측 강화
+- 배경:
+  - `0x62ce9b/0x62cf8e/0x62118b/0x61fcd4` 루프에서 어떤 API 반환값이 상태기계를 고착시키는지 추가 분해 필요.
+  - 동시에 `CreateThread` 이후 경로가 실제로 guest thread body를 타는지 검증 필요.
+- 적용:
+  - `api_handler`에 hot-loop API tracer 구현:
+    - `PVZ_HOT_LOOP_API_TRACE=1`
+    - `PVZ_HOT_LOOP_API_TRACE_INTERVAL` (기본 `50000`)
+    - `PVZ_HOT_LOOP_API_CAP` (기본 `4096`)
+    - `PVZ_HOT_FOCUS_ADDRS` (기본 중심: `0x62ce9b,0x62cf8e,0x62118b,0x61fcd4`)
+    - `PVZ_HOT_FOCUS_RANGE` (기본 `0x80`)
+    - 출력: `[HOT LOOP API] ... eax=0x..., le=...`
+  - thread mock 관측 강화:
+    - `ThreadHandle` 상태(`start_address/started/finished`) 추적.
+    - `CreateThread` 등록 시 start-address 맵(`g_thread_start_to_handle`) 생성.
+    - 블록 훅에서 start-address 실제 실행 관측 시 `[THREAD MOCK] observed execution ...` 로그 출력.
+    - `CreateEvent/WaitForSingleObject/PostMessage` 상세 trace(`PVZ_THREAD_MOCK_TRACE=1`) 추가.
+  - 문서화:
+    - `/Users/yanghyeonseo/Developer/pvz/work_logs/2026-02-24_thread_mocking_logic.md` 작성.
+- 관찰(실런):
+  - hot loop API는 일관되게 아래 4개만 지배:
+    - `0x62ce9b -> LeaveCriticalSection (eax=1, le=0)`
+    - `0x62cf8e -> EnterCriticalSection (eax=1, le=0)`
+    - `0x62118b -> HeapAlloc (eax 안정값, le=0)`
+    - `0x61fcd4 -> HeapFree (eax=1, le=0)`
+  - 파일/메시지/타이밍 API는 해당 hot loop 내부 지배 호출로 나타나지 않음.
+  - `CreateThread(start=0x5d5dc0)` 호출은 확인되지만, start-address 실제 실행 관측 로그는 없음.
+  - `IDirectDrawSurface7::Lock/Unlock` 미호출 상태 유지.
+- 중간 결론:
+  - 현 시점의 렌더링 미진입 1순위 원인은 API 반환값 불일치보다
+    "cooperative CreateThread가 실제 worker thread body를 실행하지 않는 구조"일 가능성이 높음.

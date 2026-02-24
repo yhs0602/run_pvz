@@ -3,6 +3,7 @@
 #include "backend/cpu_backend.hpp"
 #include <string>
 #include <unordered_map>
+#include <vector>
 #include <iostream>
 #include "api_context.hpp"
 
@@ -24,6 +25,15 @@ private:
     std::unordered_map<std::string, uint64_t> api_call_counts;
     std::unordered_map<uint32_t, uint64_t> eip_hot_page_hits;
     std::unordered_map<uint32_t, uint64_t> eip_hot_addr_hits;
+    bool hot_loop_api_trace_enabled = false;
+    uint64_t hot_loop_api_trace_interval = 50000;
+    uint32_t hot_focus_range = 0x80;
+    std::vector<uint32_t> hot_focus_centers;
+    size_t hot_loop_api_cap = 4096;
+    uint64_t hot_loop_api_dropped = 0;
+    std::unordered_map<std::string, uint64_t> hot_loop_api_counts;
+    std::unordered_map<std::string, std::unordered_map<uint32_t, uint64_t>> hot_loop_api_eax_hist;
+    std::unordered_map<std::string, std::unordered_map<uint32_t, uint64_t>> hot_loop_api_lasterror_hist;
     uint64_t api_call_total = 0;
     uint64_t api_stats_interval = 0;
     uint64_t eip_hot_sample_interval = 50000;
@@ -36,9 +46,13 @@ private:
     uint32_t current_addr;
     std::string process_base_dir;
     void cleanup_process_state();
+    uint32_t get_api_caller_ret_addr();
+    bool is_hot_focus_ret(uint32_t ret_addr) const;
     void maybe_start_eip_hot_sample(const std::string& normalized_guest_path);
-    void maybe_sample_eip_hot_caller();
+    void maybe_sample_eip_hot_caller(uint32_t ret_addr);
     void maybe_print_eip_hot_pages();
+    void record_hot_loop_api_stat(uint32_t ret_addr, const std::string& api_name);
+    void maybe_print_hot_loop_api_stats();
     void dispatch_known_or_unknown_api(const std::string& name, uint64_t address, bool known);
     
 
