@@ -712,6 +712,8 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
     if (hot_interval > 0) eip_hot_sample_interval = static_cast<uint64_t>(hot_interval);
     int hot_cap = env_int("PVZ_EIP_HOT_PAGE_CAP", 4096);
     if (hot_cap > 0) eip_hot_page_cap = static_cast<size_t>(hot_cap);
+    int hot_addr_cap = env_int("PVZ_EIP_HOT_ADDR_CAP", 16384);
+    if (hot_addr_cap > 0) eip_hot_addr_cap = static_cast<size_t>(hot_addr_cap);
     std::cout << "[*] API LLM mode: " << (llm_pipeline_enabled ? "ON" : "OFF")
               << ", dylib mocks: " << (dylib_mocks_enabled ? "ON" : "OFF");
     if (llm_pipeline_enabled) {
@@ -724,7 +726,8 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
     std::cout << "\n";
     if (eip_hot_sample_enabled) {
         std::cout << "[*] EIP hot sampler armed (trigger: resources.xml), interval="
-                  << eip_hot_sample_interval << ", page_cap=" << eip_hot_page_cap << "\n";
+                  << eip_hot_sample_interval << ", page_cap=" << eip_hot_page_cap
+                  << ", addr_cap=" << eip_hot_addr_cap << "\n";
     }
     ctx.backend = &backend;
     ctx.uc = backend.engine();
@@ -830,7 +833,9 @@ void DummyAPIHandler::cleanup_process_state() {
     g_resource_heap_mapped = false;
 
     eip_hot_page_hits.clear();
+    eip_hot_addr_hits.clear();
     eip_hot_page_dropped = 0;
+    eip_hot_addr_dropped = 0;
     eip_hot_sample_started = false;
 }
 
@@ -861,7 +866,9 @@ void DummyAPIHandler::maybe_start_eip_hot_sample(const std::string& normalized_g
     if (normalized_guest_path != "properties/resources.xml") return;
     eip_hot_sample_started = true;
     eip_hot_page_hits.clear();
+    eip_hot_addr_hits.clear();
     eip_hot_page_dropped = 0;
+    eip_hot_addr_dropped = 0;
     std::cout << "[*] EIP hot sampler started after resources.xml open.\n";
 }
 
@@ -877,13 +884,22 @@ void DummyAPIHandler::maybe_sample_eip_hot_caller() {
     auto it = eip_hot_page_hits.find(page);
     if (it != eip_hot_page_hits.end()) {
         it->second++;
-        return;
-    }
-    if (eip_hot_page_hits.size() >= eip_hot_page_cap) {
+    } else if (eip_hot_page_hits.size() >= eip_hot_page_cap) {
         eip_hot_page_dropped++;
+    } else {
+        eip_hot_page_hits.emplace(page, 1);
+    }
+
+    auto it_addr = eip_hot_addr_hits.find(ret_addr);
+    if (it_addr != eip_hot_addr_hits.end()) {
+        it_addr->second++;
         return;
     }
-    eip_hot_page_hits.emplace(page, 1);
+    if (eip_hot_addr_hits.size() >= eip_hot_addr_cap) {
+        eip_hot_addr_dropped++;
+        return;
+    }
+    eip_hot_addr_hits.emplace(ret_addr, 1);
 }
 
 void DummyAPIHandler::maybe_print_eip_hot_pages() {
@@ -904,6 +920,20 @@ void DummyAPIHandler::maybe_print_eip_hot_pages() {
         std::cout << " dropped=" << eip_hot_page_dropped;
     }
     std::cout << "\n";
+
+    std::vector<std::pair<uint32_t, uint64_t>> addrs(eip_hot_addr_hits.begin(), eip_hot_addr_hits.end());
+    if (!addrs.empty()) {
+        std::sort(addrs.begin(), addrs.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+        std::cout << "[EIP HOT] top_addrs:";
+        size_t addrs_limit = std::min<size_t>(10, addrs.size());
+        for (size_t i = 0; i < addrs_limit; ++i) {
+            std::cout << " [0x" << std::hex << addrs[i].first << std::dec << ":" << addrs[i].second << "]";
+        }
+        if (eip_hot_addr_dropped > 0) {
+            std::cout << " dropped=" << eip_hot_addr_dropped;
+        }
+        std::cout << "\n";
+    }
 }
 
 uint32_t DummyAPIHandler::register_fake_api(const std::string& full_name) {

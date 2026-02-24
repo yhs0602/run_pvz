@@ -125,6 +125,9 @@ PVZ_EIP_HOT_SAMPLE=1 PVZ_EIP_HOT_SAMPLE_INTERVAL=50000 ./build/runner pvz/main.e
 # EIP hot-page 샘플 map cap (기본 4096)
 PVZ_EIP_HOT_PAGE_CAP=8192 ./build/runner pvz/main.exe
 
+# EIP hot-address 샘플 map cap (기본 16384)
+PVZ_EIP_HOT_ADDR_CAP=20000 ./build/runner pvz/main.exe
+
 # 장기 실행 메모리 가드 (fexcore 기본 12288MB, 0이면 비활성화)
 PVZ_MAX_RSS_MB=8192 PVZ_RSS_GUARD_INTERVAL_BLOCKS=20000 ./build/runner pvz/main.exe
 

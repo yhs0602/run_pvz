@@ -531,3 +531,11 @@
     - 임계 초과 시 `emu_stop` + 명시 로그 후 메인 루프 종료.
   - probe 검증:
     - `PVZ_MAX_RSS_MB=1`, `PVZ_RSS_GUARD_INTERVAL_BLOCKS=1`에서 즉시 트리거 확인.
+
+33. hot-range 샘플러 정밀화 (page -> exact address)
+- `PVZ_EIP_HOT_SAMPLE` 출력 확장:
+  - 기존 `top_pages` 외에 `top_addrs`(정확한 caller return EIP) 추가.
+  - `PVZ_EIP_HOT_ADDR_CAP` (기본 `16384`)로 주소 샘플 map 상한 제어.
+- 샘플 결과(70초):
+  - top addrs: `0x62ce9b`, `0x62cf8e`, `0x62118b`, `0x61fcd4`가 지배적.
+  - 이제 page 단위가 아니라 정확한 루프 주소 단위로 병목 고정 가능.
