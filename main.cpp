@@ -214,6 +214,9 @@ bool g_vram_present_hook_enabled = true;
 int g_max_jit_llm_requests = 24;
 int g_jit_llm_requests_emitted = 0;
 bool g_jit_budget_warned = false;
+bool g_profile_blocks = false;
+size_t g_max_profile_blocks = 250000;
+bool g_profile_cap_warned = false;
 uint32_t g_guest_vram_base = 0;
 size_t g_guest_vram_size = 0;
 uint32_t* g_host_vram_ptr = nullptr;
@@ -316,7 +319,23 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
         return; 
     }
 
-    auto& profile = block_registry[address];
+    if (!g_profile_blocks) {
+        return;
+    }
+
+    auto it = block_registry.find(address);
+    if (it == block_registry.end()) {
+        if (g_max_profile_blocks > 0 && block_registry.size() >= g_max_profile_blocks) {
+            if (!g_profile_cap_warned) {
+                g_profile_cap_warned = true;
+                cout << "[*] Block profiling cap reached (" << g_max_profile_blocks
+                     << "). Skipping new block metadata collection.\n";
+            }
+            return;
+        }
+        it = block_registry.emplace(address, BlockProfile{}).first;
+    }
+    auto& profile = it->second;
     profile.execution_count++;
 
     // Try JIT Execution first if available
@@ -506,6 +525,17 @@ int main(int argc, char **argv) {
     if (vram_stride > 0) {
         g_vram_present_stride = static_cast<uint64_t>(vram_stride);
     }
+    const char* profile_env = std::getenv("PVZ_PROFILE_BLOCKS");
+    if (profile_env && *profile_env) {
+        g_profile_blocks = env_truthy("PVZ_PROFILE_BLOCKS");
+    } else {
+        // Profiling is only needed for LLM/JIT payload generation.
+        g_profile_blocks = g_enable_llm_pipeline;
+    }
+    int profile_cap = env_int("PVZ_MAX_PROFILE_BLOCKS", 250000);
+    if (profile_cap > 0) {
+        g_max_profile_blocks = static_cast<size_t>(profile_cap);
+    }
     g_max_jit_llm_requests = env_int("PVZ_MAX_JIT_REQUESTS", 24);
 
     // Initialize CPU backend
@@ -553,6 +583,11 @@ int main(int argc, char **argv) {
                      << " blocks (PVZ_MAX_JIT_REQUESTS).\n";
             }
         }
+        cout << "[*] Block profiling: " << (g_profile_blocks ? "ON" : "OFF");
+        if (g_profile_blocks) {
+            cout << ", cap=" << g_max_profile_blocks << " (PVZ_MAX_PROFILE_BLOCKS)";
+        }
+        cout << "\n";
         trace("after jit dispatcher init");
 
         trace("before PE parse");

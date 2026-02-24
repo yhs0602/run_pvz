@@ -75,6 +75,21 @@ static std::string read_guest_c_string(APIContext& ctx, uint32_t guest_ptr, size
     return out;
 }
 
+static std::string read_guest_w_string(APIContext& ctx, uint32_t guest_ptr, size_t max_chars = 512) {
+    if (guest_ptr == 0) return "";
+    std::string out;
+    out.reserve(64);
+    for (size_t i = 0; i < max_chars; ++i) {
+        uint16_t ch = 0;
+        if (!ctx.backend || ctx.backend->mem_read(guest_ptr + static_cast<uint32_t>(i * 2), &ch, 2) != UC_ERR_OK || ch == 0) {
+            break;
+        }
+        if (ch <= 0x7F) out.push_back(static_cast<char>(ch));
+        else out.push_back('?');
+    }
+    return out;
+}
+
 static std::string to_lower_ascii(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -84,6 +99,15 @@ static std::string to_lower_ascii(std::string s) {
 static bool starts_with_ascii_ci(const std::string& s, const char* prefix_lower) {
     std::string lower = to_lower_ascii(s);
     return lower.rfind(prefix_lower, 0) == 0;
+}
+
+constexpr size_t kWin32MessageQueueMax = 4096;
+
+static void enqueue_win32_message(const Win32_MSG& msg) {
+    if (g_win32_message_queue.size() >= kWin32MessageQueueMax) {
+        g_win32_message_queue.pop_front();
+    }
+    g_win32_message_queue.push_back(msg);
 }
 
 static bool env_truthy(const char* name) {
@@ -332,6 +356,7 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"USER32.dll!RegisterClassExA", 4},
     {"USER32.dll!GetAsyncKeyState", 4},
     {"USER32.dll!MessageBoxA", 16},
+    {"USER32.dll!MessageBoxW", 16},
     {"USER32.dll!SetWindowLongA", 12},
     {"USER32.dll!GetWindowLongA", 8},
     {"USER32.dll!SetWindowTextA", 8},
@@ -910,21 +935,43 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             return;
         }
 
-        if (name == "USER32.dll!MessageBoxA") {
+        if (name == "USER32.dll!MessageBoxA" || name == "USER32.dll!MessageBoxW") {
             uint32_t lpText = handler->ctx.get_arg(1);
             uint32_t lpCaption = handler->ctx.get_arg(2);
-            char text[256] = {0};
-            char caption[256] = {0};
-            if (lpText) handler->backend.mem_read(lpText, text, 255);
-            if (lpCaption) handler->backend.mem_read(lpCaption, caption, 255);
-            std::cout << "\n[API CALL] [ERROR BOX] MessageBoxA: caption='" << caption << "', text='" << text << "'\n";
+            uint32_t uType = handler->ctx.get_arg(3);
+
+            const bool is_wide = (name.find("MessageBoxW") != std::string::npos);
+            std::string text = is_wide
+                ? read_guest_w_string(handler->ctx, lpText, 512)
+                : read_guest_c_string(handler->ctx, lpText, 512);
+            std::string caption = is_wide
+                ? read_guest_w_string(handler->ctx, lpCaption, 128)
+                : read_guest_c_string(handler->ctx, lpCaption, 128);
+            if (caption.empty()) caption = "PvZ";
+            if (text.empty()) text = "(empty)";
+
+            std::cout << "\n[API CALL] [MSGBOX] " << name
+                      << " caption='" << caption << "', text='" << text << "'\n";
+
+            if (!env_truthy("PVZ_DISABLE_SDL_MESSAGEBOX")) {
+                uint32_t flags = SDL_MESSAGEBOX_INFORMATION;
+                if ((uType & 0x10u) != 0) flags = SDL_MESSAGEBOX_ERROR;       // MB_ICONERROR
+                else if ((uType & 0x30u) == 0x30u) flags = SDL_MESSAGEBOX_WARNING; // MB_ICONWARNING
+                else if ((uType & 0x40u) != 0) flags = SDL_MESSAGEBOX_INFORMATION; // MB_ICONINFORMATION
+
+                SDL_Window* window = static_cast<SDL_Window*>(handler->ctx.sdl_window);
+                if (SDL_ShowSimpleMessageBox(flags, caption.c_str(), text.c_str(), window) != 0) {
+                    std::cerr << "[!] SDL_ShowSimpleMessageBox failed: " << SDL_GetError() << "\n";
+                }
+            }
+
             handler->ctx.set_eax(1); // IDOK
-            
+
             uint32_t esp;
             handler->backend.reg_read(UC_X86_REG_ESP, &esp);
             uint32_t ret_addr;
             handler->backend.mem_read(esp, &ret_addr, 4);
-            esp += 4 + 16; 
+            esp += 4 + 16;
             handler->backend.reg_write(UC_X86_REG_ESP, &esp);
             handler->backend.reg_write(UC_X86_REG_EIP, &ret_addr);
             return;
@@ -1848,13 +1895,27 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                             uint32_t aligned = (dwBytes + 15) & ~15u;
                             handler->ctx.global_state["HeapTop"] = new_ptr + aligned;
 
-                            std::vector<uint8_t> temp(old_size, 0);
-                            handler->backend.mem_read(lpMem, temp.data(), old_size);
-                            handler->backend.mem_write(new_ptr, temp.data(), old_size);
+                            // Copy in chunks to avoid large host allocations.
+                            constexpr size_t kCopyChunk = 64 * 1024;
+                            std::vector<uint8_t> temp(std::min<size_t>(old_size, kCopyChunk), 0);
+                            uint32_t copied = 0;
+                            while (copied < old_size) {
+                                size_t chunk = std::min<size_t>(temp.size(), old_size - copied);
+                                handler->backend.mem_read(lpMem + copied, temp.data(), chunk);
+                                handler->backend.mem_write(new_ptr + copied, temp.data(), chunk);
+                                copied += static_cast<uint32_t>(chunk);
+                            }
 
                             if (dwFlags & 0x00000008u) { // HEAP_ZERO_MEMORY
-                                std::vector<uint8_t> zeros(dwBytes - old_size, 0);
-                                handler->backend.mem_write(new_ptr + old_size, zeros.data(), zeros.size());
+                                constexpr size_t kZeroChunk = 64 * 1024;
+                                std::vector<uint8_t> zeros(kZeroChunk, 0);
+                                uint32_t remain = dwBytes - old_size;
+                                uint32_t off = 0;
+                                while (off < remain) {
+                                    size_t chunk = std::min<size_t>(zeros.size(), remain - off);
+                                    handler->backend.mem_write(new_ptr + old_size + off, zeros.data(), chunk);
+                                    off += static_cast<uint32_t>(chunk);
+                                }
                             }
 
                             g_heap_sizes.erase(lpMem);
@@ -2445,14 +2506,27 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
                 handler->ctx.global_state["MapViewTop"] = view_ptr + aligned;
 
-                std::vector<uint8_t> zeros(aligned, 0);
-                handler->backend.mem_write(view_ptr, zeros.data(), zeros.size());
+                // Zero-fill mapped region in chunks to avoid large transient allocations.
+                constexpr size_t kZeroChunk = 64 * 1024;
+                std::vector<uint8_t> zeros(kZeroChunk, 0);
+                uint32_t zero_off = 0;
+                while (zero_off < aligned) {
+                    size_t chunk = std::min<size_t>(zeros.size(), aligned - zero_off);
+                    handler->backend.mem_write(view_ptr + zero_off, zeros.data(), chunk);
+                    zero_off += static_cast<uint32_t>(chunk);
+                }
 
                 if (source && offset < source->size()) {
                     size_t available = source->size() - static_cast<size_t>(offset);
                     size_t to_copy = std::min<size_t>(available, map_size);
                     if (to_copy > 0) {
-                        handler->backend.mem_write(view_ptr, source->data() + static_cast<size_t>(offset), to_copy);
+                        constexpr size_t kCopyChunk = 64 * 1024;
+                        size_t copied = 0;
+                        while (copied < to_copy) {
+                            size_t chunk = std::min<size_t>(kCopyChunk, to_copy - copied);
+                            handler->backend.mem_write(view_ptr + copied, source->data() + static_cast<size_t>(offset) + copied, chunk);
+                            copied += chunk;
+                        }
                     }
                 }
 
@@ -2804,7 +2878,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 SDL_GetMouseState(&mx, &my);
                 msg.pt_x = mx;
                 msg.pt_y = my;
-                g_win32_message_queue.push_back(msg);
+                enqueue_win32_message(msg);
                 handler->ctx.set_eax(timer_id);
             } else if (name == "USER32.dll!KillTimer") {
                 handler->ctx.set_eax(1);
@@ -2819,7 +2893,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 SDL_GetMouseState(&mx, &my);
                 msg.pt_x = mx;
                 msg.pt_y = my;
-                g_win32_message_queue.push_back(msg);
+                enqueue_win32_message(msg);
                 handler->ctx.set_eax(1);
             } else if (name == "KERNEL32.dll!GetCurrentProcess") {
                 handler->ctx.set_eax(-1); // Pseudo handle for current process
