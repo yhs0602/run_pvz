@@ -340,3 +340,42 @@
   - strict 모드 검증:
     - `PVZ_FEXCORE_STRICT=1 ./build-fex/runner pvz/main.exe`
     - 기대대로 `backend is not 'fexcore'`로 종료(무의식 fallback 방지).
+
+24. GUI 연동 안정화 라운드 (2026-02-24)
+- 목표:
+  - display 접근 허용 환경에서 full mode GUI 진입 경로를 더 안정적으로 밀기.
+  - 동적 mock 편차를 줄이고 DDRAW/USER32 메시지 경로를 내장 HLE 중심으로 고정.
+- 적용:
+  - `api_handler.cpp`
+    - `try_load_dylib` 정책 변경:
+      - `KNOWN_SIGNATURES`에 있는 API는 dylib mock 대신 내장 HLE만 사용.
+      - `DDRAW/DSOUND/D3D8` 및 `GetMessage/PeekMessage`는 dylib 우회.
+    - 메시지 큐 추가:
+      - `USER32!PostMessageA/W`, `SetTimer`, `KillTimer` 구현.
+      - `GetMessage/PeekMessage`에서 내부 큐를 SDL 이벤트보다 우선 처리.
+      - idle `GetMessage`에서 `WM_NULL` 반환(조기 `WM_QUIT` 방지).
+    - 스레드/동기화 보강:
+      - `CreateThread` 로그/파라미터 기반 cooperative 초기화 보강.
+      - `WaitForSingleObject`를 event signaled 상태/timeout에 맞게 `WAIT_OBJECT_0` 또는 `WAIT_TIMEOUT(0x102)` 반환.
+    - DDRAW/D3D HLE 보강:
+      - `IDirectDraw7_Method_12/17/22/23/27` 핸들링 추가.
+      - `IDirectDrawSurface7_Method_5/11/28/31/25/32` 시그니처/핸들링 보강.
+      - `Surface7::Unlock`에서 SDL present 경로 연결.
+    - COM 기본 반환 정책 보정:
+      - DDRAW/DSOUND/D3D8 계열 generic fallback은 `HRESULT S_OK(0)` 기본.
+  - `main.cpp`
+    - VRAM write 기반 강제 present 훅 추가:
+      - `UC_HOOK_MEM_WRITE`에서 guest VRAM 영역 write 감지 시 주기적으로 SDL texture 업데이트.
+      - 옵션:
+        - `PVZ_DISABLE_VRAM_PRESENT_HOOK=1`
+        - `PVZ_VRAM_PRESENT_STRIDE=<N>`
+- 관찰:
+  - known API가 JIT mock으로 섞이던 현상은 제거됨(동작 경로 결정성이 높아짐).
+  - `DirectSoundCreate` plugin 경유 `UC_ERR_READ_UNMAPPED` 크래시는 재현되지 않음.
+  - 현재 120~140초 샘플 기준 병목:
+    - `CreateThread -> WaitForSingleObject(event) -> PostMessage -> WaitForSingleObject(timeout)` 이후 구간에서 렌더링 API(`Surface7::Lock/Unlock`) 진입이 확인되지 않음.
+    - 즉, GUI 프레젠트 루프까지는 아직 미도달.
+- 다음 액션:
+  1. `CreateThread` 실제 start routine 진행(또는 equivalent state transition) 보강.
+  2. `IDirect3DDevice7_Method_*` 최소 동작(특히 Method_4 주변) 추가로 렌더 진입 유도.
+  3. `SetTimer/PostMessage` 기반 내부 메시지 소비 루프(`Peek/GetMessage`) 진입 여부를 block trace와 결합해 추적.

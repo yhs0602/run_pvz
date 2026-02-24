@@ -97,8 +97,17 @@ PVZ_API_STATS_INTERVAL=50000 ./build/runner pvz/main.exe
 # null-page 호환 매핑(특정 null 근처 역참조 우회)
 PVZ_MAP_NULL_PAGE=1 ./build/runner pvz/main.exe
 
+# VRAM 쓰기 기반 강제 프리젠트 훅(기본 ON) 비활성화
+PVZ_DISABLE_VRAM_PRESENT_HOOK=1 ./build/runner pvz/main.exe
+
+# VRAM 프리젠트 훅 stride 조정(기본 20000 write마다)
+PVZ_VRAM_PRESENT_STRIDE=8000 ./build/runner pvz/main.exe
+
 # 특정 watchpoint 로그 활성화 (기본 OFF)
 PVZ_WATCHPOINT=1 ./build/runner pvz/main.exe
+
+# (디버그) CreateThread를 실패로 강제
+PVZ_CREATE_THREAD_FAIL=1 ./build/runner pvz/main.exe
 
 # 권장 디버그 조합 (헤드리스 + 네이티브JIT off + dylib mock off)
 PVZ_HEADLESS=1 PVZ_DISABLE_NATIVE_JIT=1 PVZ_DISABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe
