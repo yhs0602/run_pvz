@@ -91,6 +91,9 @@ PVZ_DISABLE_DYLIB_MOCK_AUDIT=1 ./build/runner pvz/main.exe
 # no-op 의심 dylib mock 거부 비활성화 (기본 거부 ON)
 PVZ_REJECT_NOOP_DYLIB_MOCKS=0 ./build/runner pvz/main.exe
 
+# 런타임 no-op 의심 dylib mock도 거부 (기본은 경고만)
+PVZ_REJECT_RUNTIME_NOOP_DYLIB_MOCKS=1 ./build/runner pvz/main.exe
+
 # LLM 요청 예산 제한 (비용 상한, API mock은 기본 무제한)
 PVZ_ENABLE_LLM=1 PVZ_MAX_JIT_REQUESTS=24 PVZ_MAX_API_REQUESTS=200 ./build/runner pvz/main.exe
 
@@ -167,6 +170,15 @@ PVZ_LOADER_TRACE=1 ./build-fex/runner pvz/main.exe
 
 # thread/event/postmessage 모킹 상세 추적 로그
 PVZ_THREAD_MOCK_TRACE=1 ./build/runner pvz/main.exe
+
+# 메시지 큐 enqueue/dequeue/drop 통계 주기 출력
+PVZ_MSG_QUEUE_STATS_INTERVAL=20000 ./build-fex/runner pvz/main.exe
+
+# 메시지 큐 tail 중복 dedup 시작 크기(기본 1024, 0이면 비활성)
+PVZ_MSG_DEDUP_START=512 ./build-fex/runner pvz/main.exe
+
+# 메시지 dedup 강제 비활성화
+PVZ_DISABLE_MSG_DEDUP=1 ./build-fex/runner pvz/main.exe
 
 # cooperative guest thread scheduler 활성화 (CreateThread worker를 실제 guest 코드로 timeslice 실행)
 PVZ_COOP_THREADS=1 PVZ_COOP_TIMESLICE=20000 ./build-fex/runner pvz/main.exe

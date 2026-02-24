@@ -53,8 +53,10 @@ private:
     std::unordered_map<std::string, void(*)(APIContext*)> dylib_funcs;
     std::unordered_map<std::string, int> dylib_mock_audit_cache; // 1=pass, -1=suspicious
     std::unordered_set<std::string> dylib_mock_audit_warned;
+    std::unordered_set<std::string> dylib_mock_runtime_noop_warned;
     bool dylib_mock_audit_enabled = true;
     bool dylib_mock_reject_noop = true;
+    bool dylib_mock_runtime_noop_reject = false;
     std::unordered_map<std::string, uint64_t> api_call_counts;
     std::unordered_map<uint32_t, uint64_t> eip_hot_page_hits;
     std::unordered_map<uint32_t, uint64_t> eip_hot_addr_hits;

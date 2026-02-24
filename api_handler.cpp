@@ -126,6 +126,13 @@ static std::unordered_map<uint32_t, uint32_t> g_thread_start_to_handle;
 static std::unordered_map<std::string, uint32_t> g_module_handle_by_name;
 static std::unordered_map<uint32_t, std::string> g_module_name_by_handle;
 static uint32_t g_module_handle_top = 0x79000000u;
+struct Win32QueueStats {
+    uint64_t enqueued = 0;
+    uint64_t dequeued = 0;
+    uint64_t dropped_full = 0;
+    uint64_t dropped_dedup = 0;
+};
+static Win32QueueStats g_win32_queue_stats;
 
 static std::string read_guest_c_string(APIContext& ctx, uint32_t guest_ptr, size_t max_len = 512) {
     if (guest_ptr == 0) return "";
@@ -249,16 +256,68 @@ static bool is_noisy_fastpath_api(const std::string& n) {
 
 constexpr size_t kWin32MessageQueueMax = 4096;
 static int env_int(const char* name, int default_value);
+static bool env_truthy(const char* name);
 static bool synth_click_enabled();
 
-static void enqueue_win32_message(const Win32_MSG& msg, uint32_t target_thread_id = 0) {
-    if (g_win32_message_queue.size() >= kWin32MessageQueueMax) {
-        g_win32_message_queue.pop_front();
+static bool same_pending_message_key(const PendingWin32Message& a, const PendingWin32Message& b) {
+    return a.target_thread_id == b.target_thread_id &&
+           a.msg.hwnd == b.msg.hwnd &&
+           a.msg.message == b.msg.message &&
+           a.msg.wParam == b.msg.wParam &&
+           a.msg.lParam == b.msg.lParam;
+}
+
+static void maybe_log_win32_queue_stats(const char* reason, bool force = false) {
+    static const uint64_t interval =
+        static_cast<uint64_t>(std::max(0, env_int("PVZ_MSG_QUEUE_STATS_INTERVAL", 0)));
+    uint64_t total =
+        g_win32_queue_stats.enqueued + g_win32_queue_stats.dequeued +
+        g_win32_queue_stats.dropped_full + g_win32_queue_stats.dropped_dedup;
+    if (!force) {
+        if (interval == 0 || total == 0 || (total % interval) != 0) return;
+    } else if (total == 0) {
+        return;
     }
+    std::cout << "[MSG QUEUE] " << reason
+              << " size=" << g_win32_message_queue.size()
+              << " enq=" << g_win32_queue_stats.enqueued
+              << " deq=" << g_win32_queue_stats.dequeued
+              << " drop_full=" << g_win32_queue_stats.dropped_full
+              << " drop_dedup=" << g_win32_queue_stats.dropped_dedup << "\n";
+}
+
+static void enqueue_win32_message(const Win32_MSG& msg, uint32_t target_thread_id = 0) {
     PendingWin32Message pending = {};
     pending.msg = msg;
     pending.target_thread_id = target_thread_id;
+    static const size_t dedup_start =
+        static_cast<size_t>(std::max(0, env_int("PVZ_MSG_DEDUP_START", 1024)));
+    static const bool dedup_enabled = !env_truthy("PVZ_DISABLE_MSG_DEDUP");
+    if (dedup_enabled && dedup_start > 0 &&
+        g_win32_message_queue.size() >= dedup_start &&
+        !g_win32_message_queue.empty()) {
+        const auto& tail = g_win32_message_queue.back();
+        if (same_pending_message_key(tail, pending)) {
+            g_win32_queue_stats.dropped_dedup++;
+            maybe_log_win32_queue_stats("dedup-tail");
+            return;
+        }
+    }
+    if (g_win32_message_queue.size() >= kWin32MessageQueueMax) {
+        if (dedup_enabled && !g_win32_message_queue.empty()) {
+            const auto& tail = g_win32_message_queue.back();
+            if (same_pending_message_key(tail, pending)) {
+                g_win32_queue_stats.dropped_dedup++;
+                maybe_log_win32_queue_stats("dedup-full");
+                return;
+            }
+        }
+        g_win32_message_queue.pop_front();
+        g_win32_queue_stats.dropped_full++;
+    }
     g_win32_message_queue.push_back(pending);
+    g_win32_queue_stats.enqueued++;
+    maybe_log_win32_queue_stats("enqueue");
 }
 
 static uint64_t win32_timer_key(uint32_t hwnd, uint32_t timer_id) {
@@ -1149,6 +1208,10 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
     if (reject_noop_env && *reject_noop_env) {
         dylib_mock_reject_noop = env_truthy("PVZ_REJECT_NOOP_DYLIB_MOCKS");
     }
+    const char* reject_runtime_noop_env = std::getenv("PVZ_REJECT_RUNTIME_NOOP_DYLIB_MOCKS");
+    if (reject_runtime_noop_env && *reject_runtime_noop_env) {
+        dylib_mock_runtime_noop_reject = env_truthy("PVZ_REJECT_RUNTIME_NOOP_DYLIB_MOCKS");
+    }
     max_api_llm_requests = env_int("PVZ_MAX_API_REQUESTS", -1);
     api_stats_interval = static_cast<uint64_t>(std::max(0, env_int("PVZ_API_STATS_INTERVAL", 0)));
     eip_hot_sample_enabled = env_truthy("PVZ_EIP_HOT_SAMPLE");
@@ -1202,7 +1265,8 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
     if (dylib_mocks_enabled) {
         std::cout << "[*] Dylib mock audit: " << (dylib_mock_audit_enabled ? "ON" : "OFF")
                   << ", reject_noop=" << (dylib_mock_reject_noop ? "ON" : "OFF")
-                  << " (PVZ_DISABLE_DYLIB_MOCK_AUDIT / PVZ_REJECT_NOOP_DYLIB_MOCKS)\n";
+                  << ", reject_runtime_noop=" << (dylib_mock_runtime_noop_reject ? "ON" : "OFF")
+                  << " (PVZ_DISABLE_DYLIB_MOCK_AUDIT / PVZ_REJECT_NOOP_DYLIB_MOCKS / PVZ_REJECT_RUNTIME_NOOP_DYLIB_MOCKS)\n";
     }
     if (eip_hot_sample_enabled) {
         std::cout << "[*] EIP hot sampler armed (trigger: resources.xml), interval="
@@ -1304,6 +1368,9 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
 }
 
 void DummyAPIHandler::cleanup_process_state() {
+    if (g_win32_queue_stats.dropped_full != 0 || g_win32_queue_stats.dropped_dedup != 0) {
+        maybe_log_win32_queue_stats("cleanup", true);
+    }
     for (auto& kv : ctx.handle_map) {
         const std::string& key = kv.first;
         void* ptr = kv.second;
@@ -1354,6 +1421,7 @@ void DummyAPIHandler::cleanup_process_state() {
     g_module_handle_by_name.clear();
     g_module_name_by_handle.clear();
     g_module_handle_top = 0x79000000u;
+    g_win32_queue_stats = {};
 
     eip_hot_page_hits.clear();
     eip_hot_addr_hits.clear();
@@ -1364,6 +1432,7 @@ void DummyAPIHandler::cleanup_process_state() {
     hot_loop_api_eax_hist.clear();
     hot_loop_api_lasterror_hist.clear();
     hot_loop_api_dropped = 0;
+    dylib_mock_runtime_noop_warned.clear();
     coop_threads.clear();
     coop_order.clear();
     coop_current_handle = 0;
@@ -2139,7 +2208,43 @@ bool DummyAPIHandler::dispatch_dylib_mock(const std::string& api_name) {
     std::cout << "\n[API CALL] [JIT MOCK] Redirecting to " << api_name << std::endl;
     auto fn_it = dylib_funcs.find(api_name);
     if (fn_it == dylib_funcs.end()) return false;
+    uint32_t eax_before = 0;
+    uint32_t esp_before = 0;
+    backend.reg_read(UC_X86_REG_EAX, &eax_before);
+    backend.reg_read(UC_X86_REG_ESP, &esp_before);
+    auto it_last_error_before = ctx.global_state.find("LastError");
+    bool has_last_error_before = (it_last_error_before != ctx.global_state.end());
+    int64_t last_error_before = has_last_error_before ? it_last_error_before->second : 0;
+    size_t global_state_size_before = ctx.global_state.size();
+    size_t handle_map_size_before = ctx.handle_map.size();
+
     fn_it->second(&ctx);
+
+    uint32_t eax_after = 0;
+    uint32_t esp_after = 0;
+    backend.reg_read(UC_X86_REG_EAX, &eax_after);
+    backend.reg_read(UC_X86_REG_ESP, &esp_after);
+    auto it_last_error_after = ctx.global_state.find("LastError");
+    bool has_last_error_after = (it_last_error_after != ctx.global_state.end());
+    int64_t last_error_after = has_last_error_after ? it_last_error_after->second : 0;
+    bool runtime_noop =
+        eax_before == eax_after &&
+        esp_before == esp_after &&
+        global_state_size_before == ctx.global_state.size() &&
+        handle_map_size_before == ctx.handle_map.size() &&
+        has_last_error_before == has_last_error_after &&
+        (!has_last_error_before || last_error_before == last_error_after);
+    if (runtime_noop) {
+        if (dylib_mock_runtime_noop_warned.insert(api_name).second) {
+            std::cout << "[API CALL] [JIT MOCK AUDIT] runtime no-op suspicion for "
+                      << api_name
+                      << " (eax/esp/global_state/handle_map unchanged after mock call)\n";
+        }
+        if (dylib_mock_runtime_noop_reject) {
+            ctx.set_eax(1);
+            ctx.global_state["LastError"] = 0;
+        }
+    }
     return true;
 }
 
@@ -2861,6 +2966,8 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 msg = it->msg;
                 if (!is_peek || (remove_flag & 0x0001u) != 0) {
                     g_win32_message_queue.erase(it);
+                    g_win32_queue_stats.dequeued++;
+                    maybe_log_win32_queue_stats("dequeue");
                 }
                 has_event = true;
                 from_queue = true;
@@ -2882,6 +2989,8 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                         }
                         msg = it->msg;
                         g_win32_message_queue.erase(it);
+                        g_win32_queue_stats.dequeued++;
+                        maybe_log_win32_queue_stats("dequeue");
                         has_event = true;
                         from_queue = true;
                         break;
@@ -2901,6 +3010,8 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                         }
                         msg = it->msg;
                         g_win32_message_queue.erase(it);
+                        g_win32_queue_stats.dequeued++;
+                        maybe_log_win32_queue_stats("dequeue");
                         has_event = true;
                         from_queue = true;
                         break;

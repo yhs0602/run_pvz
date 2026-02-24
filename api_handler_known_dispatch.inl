@@ -1076,6 +1076,9 @@
                                   << ", timeout=" << std::dec << timeout_ms
                                   << ") -> 0x" << std::hex << wait_result << std::dec << "\n";
                     }
+                    if (handler->coop_threads_enabled() && timeout_ms != 0) {
+                        handler->coop_request_yield();
+                    }
                 } else if (auto it_thread = handler->ctx.handle_map.find("thread_" + std::to_string(h));
                            it_thread != handler->ctx.handle_map.end()) {
                     auto* th = static_cast<ThreadHandle*>(it_thread->second);
@@ -2357,6 +2360,9 @@
                               << ", msg=0x" << std::hex << msg.message << ", queue="
                               << std::dec << g_win32_message_queue.size() << ")\n";
                 }
+                if (handler->coop_threads_enabled()) {
+                    handler->coop_request_yield();
+                }
                 handler->ctx.set_eax(1);
                 handler->ctx.global_state["LastError"] = 0;
             } else if (name == "USER32.dll!PostMessageA" || name == "USER32.dll!PostMessageW") {
@@ -2405,6 +2411,9 @@
                     std::cout << "[THREAD MOCK] PostMessage(hwnd=0x" << std::hex << msg.hwnd
                               << ", msg=0x" << msg.message << ", queued=" << std::dec
                               << queued_count << ", queue=" << g_win32_message_queue.size() << ")\n";
+                }
+                if (handler->coop_threads_enabled()) {
+                    handler->coop_request_yield();
                 }
                 handler->ctx.set_eax(1);
                 handler->ctx.global_state["LastError"] = 0;

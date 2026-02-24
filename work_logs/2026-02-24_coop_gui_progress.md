@@ -135,3 +135,29 @@
   - `PVZ_REJECT_NOOP_DYLIB_MOCKS=1`(기본)일 때 의심 mock은 로딩 후 실행하지 않고 generic success fallback.
   - 감사 자체를 끄려면 `PVZ_DISABLE_DYLIB_MOCK_AUDIT=1`.
 - 기존 mock 소스 75개를 스캔해 현재 시점 no-op 의심 0개 확인.
+
+### 2026-02-25 GUI 루프 병목 추가 정리
+- `PostThreadMessage/PostMessage` cooperative 경로에서 `emu_stop()` 강제 중단 제거:
+  - 기존에는 post 호출마다 즉시 중단이 걸려 producer 쪽 과선점 + 큐 포화(`queue=4096`)가 반복될 수 있었음.
+  - 현재는 `coop_request_yield()`만 남겨 timeslice 기반 전환에 맡김.
+- Win32 메시지 큐 backpressure 보강:
+  - queue tail 동일 메시지(`hwnd/msg/wParam/lParam/target_tid`) 중복 enqueue dedup 추가.
+  - queue full(4096) 시 동일 tail 메시지는 drop, 아니면 oldest drop 후 enqueue.
+  - `PVZ_MSG_DEDUP_START`(기본 1024), `PVZ_DISABLE_MSG_DEDUP` 환경변수 추가.
+- Win32 메시지 큐 계측:
+  - `enqueued/dequeued/drop_full/drop_dedup` 누적 카운터 추가.
+  - `PVZ_MSG_QUEUE_STATS_INTERVAL`로 주기 출력 가능.
+- LLM dylib mock 의심 강화(런타임):
+  - mock 호출 전후 `EAX/ESP/LastError/global_state/handle_map` 변화가 모두 없으면 runtime no-op 의심 로그 1회 출력.
+  - 기본은 경고만, `PVZ_REJECT_RUNTIME_NOOP_DYLIB_MOCKS=1`에서 fallback success로 강제 거부.
+
+### 2026-02-25 검증 러닝 (queue guard / mock suspicion)
+- 빌드: `cmake --build build-fex -j8` 성공.
+- 실행 로그:
+  - `logs_fex_msgqueue_guard_20260225_082248.log`
+  - `logs_fex_msgqueue_guard_long_20260225_082329.log`
+  - `logs_fex_msgqueue_stats100_20260225_082521.log`
+- 관찰:
+  - 이번 샘플에서도 `CreateThread(cap hit) -> WaitForSingleObject(0x7000/0x7004) -> CreateFileA('properties\\resources.xml')` 경로까지 확인.
+  - 샘플 구간 내 `PostMessage/GetMessage` 진입은 아직 미관측(큐 통계 로그도 미발생).
+  - 따라서 queue dedup/backpressure는 코드 레벨로 적용 완료, 실제 포화 재현 로그는 다음 장기 샘플에서 추가 확인 필요.
