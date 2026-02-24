@@ -5,11 +5,9 @@
             if (name == "KERNEL32.dll!GetLastError") {
                 uint32_t last_error = handler->ctx.global_state["LastError"];
                 handler->ctx.set_eax(last_error);
-                std::cout << "\n[API CALL] [OK] GetLastError -> " << last_error << std::endl;
             } else if (name == "KERNEL32.dll!SetLastError") {
                 uint32_t err_code = handler->ctx.get_arg(0);
                 handler->ctx.global_state["LastError"] = err_code;
-                std::cout << "\n[API CALL] [OK] SetLastError(" << err_code << ")" << std::endl;
             } else if (name == "KERNEL32.dll!GetVersionExA") {
                 uint32_t lpVersionInformation = handler->ctx.get_arg(0);
                 if (lpVersionInformation) {

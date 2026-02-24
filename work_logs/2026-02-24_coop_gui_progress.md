@@ -45,3 +45,14 @@
   - 120초 런에서 Direct3D/DirectSound/BASS export 해상 단계까지 진행, unknown/fallback 없이 유지.
   - 300초 런에서도 `Unknown API` 로그 없이 진행하며 초기 그래픽/오디오 초기화 단계가 더 깊게 진행됨.
   - 현재는 `CreateSurface` 반복 및 BASS export 해상 이후 단계로 넘어가는 장주기 구간을 계속 추적 중.
+
+## 23:20 이후 추가 관찰
+- 로그 폭증/실행속도 영향 완화:
+  - `GetLastError/SetLastError`, `OutputDebugStringA/W`, `BASS/DSOUND GetProcAddress` noisy 로그를 기본적으로 축소.
+- 장주기 동작:
+  - 크래시는 재현되지 않고(`UC_ERR_READ_UNMAPPED` 미재현), 120~300초 런은 timeout 강제 종료 전까지 진행 유지.
+  - 다만 `CreateThread/Wait/PostMessage` 구간 진입 전, 자원 처리 hot block에서 시간 소모가 큼.
+- block-hot 결과(120초 샘플):
+  - 상위 루프: `0x441a73`, `0x5d8890`, `0x62456a`, `0x441dd0`, `0x404470`.
+  - focus snapshot에서 `REANIM\\...PNG`, `IM\\ZOMBIE_...PNG` 등 리소스 문자열이 지속적으로 변화.
+  - 결론: 완전 정체라기보다, 리소스 문자열/패스 처리 단계가 매우 길게 이어지는 상태.

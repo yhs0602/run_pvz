@@ -224,6 +224,8 @@ static bool is_noisy_fastpath_api(const std::string& n) {
            n == "KERNEL32.dll!FlsFree" ||
            n == "KERNEL32.dll!GetLastError" ||
            n == "KERNEL32.dll!SetLastError" ||
+           n == "KERNEL32.dll!OutputDebugStringA" ||
+           n == "KERNEL32.dll!OutputDebugStringW" ||
            n == "KERNEL32.dll!InterlockedIncrement" ||
            n == "KERNEL32.dll!InterlockedDecrement" ||
            n == "KERNEL32.dll!InterlockedExchange" ||
