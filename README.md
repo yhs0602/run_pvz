@@ -113,8 +113,11 @@ PVZ_VRAM_PRESENT_STRIDE=8000 ./build/runner pvz/main.exe
 # MessageBoxA/W의 SDL 팝업 표시 비활성화
 PVZ_DISABLE_SDL_MESSAGEBOX=1 ./build/runner pvz/main.exe
 
-# MessageBoxA/W를 팝업 없이 자동 IDOK 처리(기본: non-interactive 세션에서는 자동 ON)
+# MessageBoxA/W를 팝업 없이 자동 IDOK 처리(기본: 항상 ON)
 PVZ_AUTO_ACK_MESSAGEBOX=1 ./build/runner pvz/main.exe
+
+# MessageBoxA/W를 실제 SDL 팝업으로 강제(자동 승인 비활성화)
+PVZ_INTERACTIVE_MESSAGEBOX=1 ./build/runner pvz/main.exe
 
 # VRAM present 시점 프레임 덤프(PPM) 저장
 PVZ_VRAM_SNAPSHOT=1 PVZ_VRAM_SNAPSHOT_EVERY=1 PVZ_VRAM_SNAPSHOT_PREFIX=artifacts/vram_frame ./build-fex/runner pvz/main.exe
@@ -167,6 +170,18 @@ PVZ_COOP_THREADS=1 PVZ_COOP_TRACE=1 ./build-fex/runner pvz/main.exe
 
 # cooperative thread 기본 스택 크기(bytes, 기본 0x200000)
 PVZ_COOP_THREADS=1 PVZ_COOP_STACK_SIZE=2097152 ./build-fex/runner pvz/main.exe
+
+# cooperative scheduler 동시 live thread 상한(기본 256)
+PVZ_COOP_THREADS=1 PVZ_COOP_MAX_LIVE_THREADS=192 ./build-fex/runner pvz/main.exe
+
+# cooperative spawn 실패 시 CreateThread 실패 반환 여부(기본 ON)
+PVZ_COOP_THREADS=1 PVZ_COOP_FAIL_CREATE_THREAD_ON_SPAWN_FAILURE=1 ./build-fex/runner pvz/main.exe
+
+# thread handle map 상한(기본 8192, 초과 시 finished handle reaping 후 실패)
+PVZ_THREAD_HANDLE_CAP=8192 ./build-fex/runner pvz/main.exe
+
+# fast-worker(short-circuit) 진단 시 CreateThread 총량 상한(기본: fast-worker ON일 때 512)
+PVZ_FAST_WORKER_THREAD=1 PVZ_WORKER_THREAD_CREATE_CAP=240 ./build-fex/runner pvz/main.exe
 
 # 장기 실행 메모리 가드 (fexcore 기본 12288MB, 0이면 비활성화)
 PVZ_MAX_RSS_MB=8192 PVZ_RSS_GUARD_INTERVAL_BLOCKS=20000 ./build/runner pvz/main.exe

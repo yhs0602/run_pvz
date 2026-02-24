@@ -916,6 +916,53 @@
                 uint32_t dwStackSize = handler->ctx.get_arg(1);
                 uint32_t dwCreationFlags = handler->ctx.get_arg(4);
                 uint32_t lpThreadId = handler->ctx.get_arg(5);
+                static const bool fast_worker_enabled = env_truthy("PVZ_FAST_WORKER_THREAD");
+                static const int fast_worker_create_cap = env_int(
+                    "PVZ_WORKER_THREAD_CREATE_CAP",
+                    fast_worker_enabled ? 512 : 0);
+                if (fast_worker_create_cap > 0 && lpStartAddress == 0x5d5dc0u) {
+                    uint64_t created = 0;
+                    auto it_created = handler->ctx.global_state.find("FastWorkerCreateCount");
+                    if (it_created != handler->ctx.global_state.end()) {
+                        created = it_created->second;
+                    }
+                    if (created >= static_cast<uint64_t>(fast_worker_create_cap)) {
+                        handler->ctx.set_eax(0);
+                        handler->ctx.global_state["LastError"] = 8; // ERROR_NOT_ENOUGH_MEMORY
+                        static uint64_t fast_cap_log_count = 0;
+                        fast_cap_log_count++;
+                        if (fast_cap_log_count <= 16 || (fast_cap_log_count % 512u) == 0u) {
+                            std::cout << "[THREAD MOCK] Fast-worker CreateThread cap hit (start=0x"
+                                      << std::hex << lpStartAddress << ", cap=" << std::dec
+                                      << fast_worker_create_cap << ")\n";
+                        }
+                        return;
+                    }
+                    handler->ctx.global_state["FastWorkerCreateCount"] = created + 1;
+                }
+                static const int thread_handle_cap = env_int("PVZ_THREAD_HANDLE_CAP", 8192);
+                if (thread_handle_cap > 0 && handler->thread_handle_count() >= static_cast<size_t>(thread_handle_cap)) {
+                    size_t target_keep = static_cast<size_t>(std::max(1, thread_handle_cap - 1));
+                    size_t reaped = handler->reap_finished_thread_handles(target_keep);
+                    if (thread_mock_trace_enabled() && reaped > 0) {
+                        std::cout << "[THREAD MOCK] reaped finished thread handles=" << reaped
+                                  << " (count=" << handler->thread_handle_count() << ")\n";
+                    }
+                    if (handler->thread_handle_count() >= static_cast<size_t>(thread_handle_cap)) {
+                        handler->ctx.set_eax(0);
+                        handler->ctx.global_state["LastError"] = 8; // ERROR_NOT_ENOUGH_MEMORY
+                        static uint64_t cap_block_log_count = 0;
+                        cap_block_log_count++;
+                        if (thread_mock_trace_enabled() ||
+                            cap_block_log_count <= 16 ||
+                            (cap_block_log_count % 512u) == 0u) {
+                            std::cout << "[THREAD MOCK] CreateThread blocked by handle cap="
+                                      << thread_handle_cap << " live_handles="
+                                      << handler->thread_handle_count() << "\n";
+                        }
+                        return;
+                    }
+                }
                 uint32_t handle = 0x8000;
                 if (handler->ctx.global_state.find("ThreadHandleTop") == handler->ctx.global_state.end()) {
                     handler->ctx.global_state["ThreadHandleTop"] = handle;
@@ -934,12 +981,22 @@
                 th->started = false;
                 th->finished = false;
                 handler->ctx.handle_map["thread_" + std::to_string(handle)] = th;
+                handler->note_thread_handle_created();
                 g_thread_start_to_handle[lpStartAddress] = handle;
                 if ((dwCreationFlags & 0x4u) == 0 && handler->coop_threads_enabled()) {
                     if (!handler->coop_spawn_thread(handle, lpStartAddress, lpParameter, dwStackSize)) {
                         if (thread_mock_trace_enabled()) {
                             std::cout << "[THREAD MOCK] coop spawn failed for handle=0x"
                                       << std::hex << handle << std::dec << "\n";
+                        }
+                        if (handler->coop_fail_create_on_spawn_failure()) {
+                            g_thread_start_to_handle.erase(lpStartAddress);
+                            handler->ctx.handle_map.erase("thread_" + std::to_string(handle));
+                            delete th;
+                            handler->note_thread_handle_closed();
+                            handler->ctx.set_eax(0);
+                            handler->ctx.global_state["LastError"] = 8; // ERROR_NOT_ENOUGH_MEMORY
+                            return;
                         }
                     } else {
                         handler->coop_request_yield();
@@ -953,9 +1010,15 @@
                     handler->backend.mem_write(lpParameter, &one, 4);
                     handler->backend.mem_write(lpParameter + 4, &one, 4);
                 }
-                std::cout << "\n[API CALL] [OK] CreateThread(start=0x" << std::hex << lpStartAddress
-                          << ", param=0x" << lpParameter << ", handle=0x" << handle
-                          << ", flags=0x" << dwCreationFlags << std::dec << ")\n";
+                static uint64_t create_thread_log_count = 0;
+                create_thread_log_count++;
+                if (thread_mock_trace_enabled() ||
+                    create_thread_log_count <= 32 ||
+                    (create_thread_log_count % 1024u) == 0u) {
+                    std::cout << "\n[API CALL] [OK] CreateThread(start=0x" << std::hex << lpStartAddress
+                              << ", param=0x" << lpParameter << ", handle=0x" << handle
+                              << ", flags=0x" << dwCreationFlags << std::dec << ")\n";
+                }
                 if (thread_mock_trace_enabled()) {
                     std::cout << "[THREAD MOCK] registered thread handle=0x" << std::hex << handle
                               << " start=0x" << lpStartAddress << " param=0x" << lpParameter
@@ -1046,9 +1109,16 @@
                     handler->ctx.global_state["LastError"] = 0;
                 }
                 handler->ctx.set_eax(wait_result);
-                std::cout << "\n[API CALL] [OK] WaitForSingleObject(handle=0x" << std::hex << h
-                          << ", timeout=" << std::dec << timeout_ms << ") -> 0x" << std::hex
-                          << wait_result << std::dec << "\n";
+                static uint64_t wait_log_count = 0;
+                wait_log_count++;
+                if (thread_mock_trace_enabled() ||
+                    wait_log_count <= 32 ||
+                    (wait_log_count % 512u) == 0u ||
+                    wait_result != 0u) {
+                    std::cout << "\n[API CALL] [OK] WaitForSingleObject(handle=0x" << std::hex << h
+                              << ", timeout=" << std::dec << timeout_ms << ") -> 0x" << std::hex
+                              << wait_result << std::dec << "\n";
+                }
             } else if (name == "KERNEL32.dll!Sleep") {
                 if (handler->coop_threads_enabled()) {
                     handler->coop_request_yield();
@@ -1100,12 +1170,14 @@
                     } else {
                         auto itt = handler->ctx.handle_map.find("thread_" + std::to_string(h));
                         if (itt != handler->ctx.handle_map.end()) {
-                            auto* th = static_cast<ThreadHandle*>(itt->second);
-                            g_thread_start_to_handle.erase(th->start_address);
-                            delete th;
-                            handler->ctx.handle_map.erase(itt);
-                            handler->ctx.set_eax(1);
-                            handler->ctx.global_state["LastError"] = 0;
+                        auto* th = static_cast<ThreadHandle*>(itt->second);
+                        handler->coop_mark_thread_finished(h, "CloseHandle");
+                        g_thread_start_to_handle.erase(th->start_address);
+                        delete th;
+                        handler->ctx.handle_map.erase(itt);
+                        handler->note_thread_handle_closed();
+                        handler->ctx.set_eax(1);
+                        handler->ctx.global_state["LastError"] = 0;
                         } else {
                             // Non-file handles are currently treated as success for compatibility.
                             handler->ctx.set_eax(1);
@@ -2300,12 +2372,29 @@
                 SDL_GetMouseState(&mx, &my);
                 msg.pt_x = mx;
                 msg.pt_y = my;
-                uint32_t target_tid = 0;
-                auto it_owner = g_hwnd_owner_thread_id.find(msg.hwnd);
-                if (it_owner != g_hwnd_owner_thread_id.end()) {
-                    target_tid = it_owner->second;
+                bool broadcast = (msg.hwnd == 0x0000FFFFu || msg.hwnd == 0xFFFFFFFFu);
+                size_t queued_count = 0;
+                if (broadcast && !g_valid_hwnds.empty()) {
+                    for (uint32_t hwnd : g_valid_hwnds) {
+                        Win32_MSG per_hwnd = msg;
+                        per_hwnd.hwnd = hwnd;
+                        uint32_t target_tid = 0;
+                        auto it_owner = g_hwnd_owner_thread_id.find(hwnd);
+                        if (it_owner != g_hwnd_owner_thread_id.end()) {
+                            target_tid = it_owner->second;
+                        }
+                        enqueue_win32_message(per_hwnd, target_tid);
+                        queued_count++;
+                    }
+                } else {
+                    uint32_t target_tid = 0;
+                    auto it_owner = g_hwnd_owner_thread_id.find(msg.hwnd);
+                    if (it_owner != g_hwnd_owner_thread_id.end()) {
+                        target_tid = it_owner->second;
+                    }
+                    enqueue_win32_message(msg, target_tid);
+                    queued_count = 1;
                 }
-                enqueue_win32_message(msg, target_tid);
 
                 // Cooperative wakeup: many bootstrap paths wait on an event that the
                 // worker thread sets when it posts into the UI queue.
@@ -2316,8 +2405,8 @@
                 }
                 if (thread_mock_trace_enabled()) {
                     std::cout << "[THREAD MOCK] PostMessage(hwnd=0x" << std::hex << msg.hwnd
-                              << ", msg=0x" << msg.message << ", queue=" << std::dec
-                              << g_win32_message_queue.size() << ")\n";
+                              << ", msg=0x" << msg.message << ", queued=" << std::dec
+                              << queued_count << ", queue=" << g_win32_message_queue.size() << ")\n";
                 }
                 handler->ctx.set_eax(1);
                 handler->ctx.global_state["LastError"] = 0;

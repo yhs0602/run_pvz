@@ -274,6 +274,14 @@ unordered_map<uint32_t, uint64_t> g_block_focus_hits;
 bool g_hot_loop_accel_enabled = false;
 uint64_t g_hot_loop_accel_hits = 0;
 uint64_t g_hot_loop_accel_bytes = 0;
+bool g_crt_alloc_accel_enabled = false;
+bool g_fast_worker_thread_enabled = false;
+uint32_t g_crt_alloc_base = 0x48000000u;
+uint32_t g_crt_alloc_limit = 0x50000000u; // 128MB arena
+uint32_t g_crt_alloc_top = 0x48000000u;
+uint32_t g_crt_alloc_mapped_end = 0x48000000u;
+uint64_t g_crt_alloc_count = 0;
+uint64_t g_crt_alloc_bytes = 0;
 uint32_t g_guest_vram_base = 0;
 size_t g_guest_vram_size = 0;
 uint32_t* g_host_vram_ptr = nullptr;
@@ -403,11 +411,45 @@ static void maybe_print_block_focus(uint32_t addr32) {
     } else if (addr32 == 0x62456au) {
         print_focus_mem_sample("esi", esi, bytes);
         print_focus_mem_sample("edi", edi, bytes);
+    } else if (addr32 == 0x621111u || addr32 == 0x62111fu || addr32 == 0x621182u || addr32 == 0x61c130u) {
+        print_focus_mem_sample("arg", esp + 4u, 4);
+        print_focus_mem_sample("fnptr", 0x65219cu, 4);
+        print_focus_mem_sample("newmode", 0x6a6dd4u, 4);
     } else {
         print_focus_mem_sample("ecx", ecx, bytes);
         print_focus_mem_sample("edx", edx, bytes);
     }
     cout << "\n";
+}
+
+static uint32_t align_up_u32(uint32_t value, uint32_t align) {
+    return (value + (align - 1u)) & ~(align - 1u);
+}
+
+static bool ensure_crt_alloc_mapped(uint32_t end_addr) {
+    if (!g_backend) return false;
+    if (end_addr <= g_crt_alloc_mapped_end) return true;
+    uint32_t map_end = align_up_u32(end_addr, 0x1000u);
+    if (map_end > g_crt_alloc_limit) return false;
+    if (map_end <= g_crt_alloc_mapped_end) return true;
+    uc_err err = g_backend->mem_map(g_crt_alloc_mapped_end, map_end - g_crt_alloc_mapped_end, UC_PROT_ALL);
+    if (err != UC_ERR_OK) return false;
+    g_crt_alloc_mapped_end = map_end;
+    return true;
+}
+
+static bool crt_alloc_fast(uint32_t requested_bytes, uint32_t& out_ptr) {
+    uint32_t bytes = requested_bytes == 0 ? 1u : requested_bytes;
+    uint32_t aligned = align_up_u32(bytes, 16u);
+    if (g_crt_alloc_top + aligned < g_crt_alloc_top) return false;
+    uint32_t end = g_crt_alloc_top + aligned;
+    if (end > g_crt_alloc_limit) return false;
+    if (!ensure_crt_alloc_mapped(end)) return false;
+    out_ptr = g_crt_alloc_top;
+    g_crt_alloc_top = end;
+    g_crt_alloc_count++;
+    g_crt_alloc_bytes += aligned;
+    return true;
 }
 
 static bool accelerate_xor_copy_loop(uc_engine* uc, uint32_t addr32) {
@@ -584,6 +626,102 @@ static bool accelerate_memcmp_function_441a60(uc_engine* uc, uint32_t addr32) {
     return true;
 }
 
+static bool accelerate_compare_callsite_5d8f8x(uc_engine* uc, uint32_t addr32) {
+    if (addr32 != 0x5d8f8du && addr32 != 0x5d8f8fu) return false;
+
+    uint32_t esp = 0, eax_reg = 0, ecx = 0;
+    uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+    uc_reg_read(uc, UC_X86_REG_EAX, &eax_reg);
+    uc_reg_read(uc, UC_X86_REG_ECX, &ecx);
+
+    uint32_t arg1 = eax_reg;
+    uint32_t arg2 = 0;
+    if (g_backend->mem_read(esp + 0x0cu, &arg2, 4) != UC_ERR_OK) return false;
+    if (addr32 == 0x5d8f8du) {
+        if (g_backend->mem_read(eax_reg, &arg1, 4) != UC_ERR_OK) return false;
+    }
+    uint32_t count = ecx;
+    if (arg1 < 0x1000u || arg2 < 0x1000u) return false;
+    if (count > (1u << 24)) return false;
+
+    int32_t diff = 0;
+    if (count > 0) {
+        constexpr size_t kChunk = 4096;
+        vector<uint8_t> b1(kChunk, 0);
+        vector<uint8_t> b2(kChunk, 0);
+        uint32_t offset = 0;
+        while (offset < count) {
+            size_t n = std::min<size_t>(kChunk, static_cast<size_t>(count - offset));
+            if (g_backend->mem_read(arg1 + offset, b1.data(), n) != UC_ERR_OK) return false;
+            if (g_backend->mem_read(arg2 + offset, b2.data(), n) != UC_ERR_OK) return false;
+            for (size_t i = 0; i < n; ++i) {
+                if (b1[i] != b2[i]) {
+                    diff = static_cast<int32_t>(b1[i]) - static_cast<int32_t>(b2[i]);
+                    offset = count;
+                    break;
+                }
+            }
+            offset += static_cast<uint32_t>(n);
+        }
+    }
+
+    uint32_t eax = static_cast<uint32_t>(diff);
+    uint32_t new_esp = esp - 12u; // emulate three pushes before call 0x441a60
+    uint32_t eip = 0x5d8f9bu;     // continue at call return site
+    uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+    uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
+    uc_reg_write(uc, UC_X86_REG_EIP, &eip);
+    uc_emu_stop(uc);
+
+    g_hot_loop_accel_hits++;
+    g_hot_loop_accel_bytes += count;
+    return true;
+}
+
+static bool accelerate_crt_alloc_wrappers(uc_engine* uc, uint32_t addr32) {
+    if (!g_crt_alloc_accel_enabled) return false;
+    if (addr32 != 0x61c130u) return false;
+
+    uint32_t esp = 0;
+    uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+    uint32_t ret_addr = 0;
+    uint32_t size = 0;
+    if (g_backend->mem_read(esp, &ret_addr, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_read(esp + 4u, &size, 4) != UC_ERR_OK) return false;
+    if (size > (1u << 28)) return false;
+    uint32_t ptr = 0;
+    if (!crt_alloc_fast(size, ptr)) return false;
+
+    uint32_t new_esp = esp + 4u; // cdecl
+    uc_reg_write(uc, UC_X86_REG_EAX, &ptr);
+    uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
+    uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+    uc_emu_stop(uc);
+
+    g_hot_loop_accel_hits++;
+    g_hot_loop_accel_bytes += size;
+    return true;
+}
+
+static bool accelerate_fast_worker_thread(uc_engine* uc, uint32_t addr32) {
+    if (!g_fast_worker_thread_enabled) return false;
+    if (addr32 != 0x5d5dc0u && addr32 != 0x5d5f20u && addr32 != 0x5d5f30u) return false;
+    uint32_t esp = 0;
+    uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+    uint32_t ret_addr = 1;
+    if (g_backend->mem_read(esp, &ret_addr, 4) != UC_ERR_OK) return false;
+    if (ret_addr != 0u) return false; // only synthetic CreateThread entry (ret sentinel=0)
+
+    uint32_t eax = 0;
+    uint32_t eip = 0;
+    uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+    uc_reg_write(uc, UC_X86_REG_EIP, &eip);
+    uc_emu_stop(uc);
+
+    g_hot_loop_accel_hits++;
+    return true;
+}
+
 static bool accelerate_strlen_loop(uc_engine* uc, uint32_t addr32) {
     if (addr32 != 0x404470u) return false;
 
@@ -622,6 +760,9 @@ static bool accelerate_strlen_loop(uc_engine* uc, uint32_t addr32) {
 
 static bool accelerate_toupper_cdecl(uc_engine* uc, uint32_t addr32) {
     if (addr32 != 0x61e4e6u) return false;
+    uint32_t locale_flag = 0;
+    if (g_backend->mem_read(0x6a66f4u, &locale_flag, 4) != UC_ERR_OK) return false;
+    if (locale_flag != 0u) return false;
 
     uint32_t esp = 0;
     uc_reg_read(uc, UC_X86_REG_ESP, &esp);
@@ -638,6 +779,50 @@ static bool accelerate_toupper_cdecl(uc_engine* uc, uint32_t addr32) {
 
     uint32_t new_esp = esp + 4; // cdecl: callee pops only return address
     uc_reg_write(uc, UC_X86_REG_EAX, &result);
+    uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
+    uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+    uc_emu_stop(uc);
+
+    g_hot_loop_accel_hits++;
+    g_hot_loop_accel_bytes += 1;
+    return true;
+}
+
+static bool accelerate_single_char_store_helper_441dd0(uc_engine* uc, uint32_t addr32) {
+    if (addr32 != 0x441dd0u) return false;
+
+    uint32_t ecx = 0;
+    uint32_t esp = 0;
+    uc_reg_read(uc, UC_X86_REG_ECX, &ecx);
+    uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+    if (ecx < 0x1000u) return false;
+
+    uint32_t ret_addr = 0;
+    uint32_t index = 0;
+    uint32_t count = 0;
+    uint32_t value = 0;
+    if (g_backend->mem_read(esp, &ret_addr, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_read(esp + 4u, &index, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_read(esp + 8u, &count, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_read(esp + 12u, &value, 4) != UC_ERR_OK) return false;
+    if (count != 1u) return false;
+
+    uint32_t cap = 0;
+    if (g_backend->mem_read(ecx + 0x18u, &cap, 4) != UC_ERR_OK) return false;
+    uint32_t data_ptr = 0;
+    if (cap < 0x10u) {
+        data_ptr = ecx + 4u;
+    } else if (g_backend->mem_read(ecx + 4u, &data_ptr, 4) != UC_ERR_OK) {
+        return false;
+    }
+    if (data_ptr < 0x1000u) return false;
+
+    uint8_t ch = static_cast<uint8_t>(value & 0xFFu);
+    if (g_backend->mem_write(data_ptr + index, &ch, 1) != UC_ERR_OK) return false;
+
+    uint32_t eax = 1u;
+    uint32_t new_esp = esp + 16u; // ret + 3 args (ret 0xC)
+    uc_reg_write(uc, UC_X86_REG_EAX, &eax);
     uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
     uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
     uc_emu_stop(uc);
@@ -808,12 +993,16 @@ static bool accelerate_strlen_loop_5d8310(uc_engine* uc, uint32_t addr32) {
 
 static bool maybe_accelerate_hot_loop_block(uc_engine* uc, uint32_t addr32) {
     if (!g_hot_loop_accel_enabled) return false;
+    if (accelerate_fast_worker_thread(uc, addr32)) return true;
+    if (accelerate_crt_alloc_wrappers(uc, addr32)) return true;
+    if (accelerate_compare_callsite_5d8f8x(uc, addr32)) return true;
     if (accelerate_xor_copy_loop(uc, addr32)) return true;
     if (accelerate_rep_movsd(uc, addr32)) return true;
     if (accelerate_memcmp_function_441a60(uc, addr32)) return true;
     if (accelerate_memcmp_dword_loop(uc, addr32)) return true;
     if (accelerate_strlen_loop(uc, addr32)) return true;
     if (accelerate_toupper_cdecl(uc, addr32)) return true;
+    if (accelerate_single_char_store_helper_441dd0(uc, addr32)) return true;
     if (accelerate_string_append_one_char(uc, addr32)) return true;
     if (accelerate_uppercase_append_loop(uc, addr32)) return true;
     if (accelerate_strlen_loop_5d8310(uc, addr32)) return true;
@@ -926,7 +1115,11 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
     if (maybe_accelerate_hot_loop_block(uc, static_cast<uint32_t>(address))) {
         if ((g_hot_loop_accel_hits % 50000u) == 0u) {
             cout << "[HOT ACCEL] hits=" << g_hot_loop_accel_hits
-                 << " bytes=" << g_hot_loop_accel_bytes << "\n";
+                 << " bytes=" << g_hot_loop_accel_bytes;
+            if (g_crt_alloc_accel_enabled) {
+                cout << " crt_allocs=" << g_crt_alloc_count;
+            }
+            cout << "\n";
         }
         return;
     }
@@ -1223,6 +1416,21 @@ int main(int argc, char **argv) {
     if (env_truthy("PVZ_HOT_LOOP_ACCEL")) {
         g_hot_loop_accel_enabled = true;
     }
+    g_crt_alloc_accel_enabled = env_truthy("PVZ_CRT_ALLOC_ACCEL");
+    g_fast_worker_thread_enabled = env_truthy("PVZ_FAST_WORKER_THREAD");
+    int crt_alloc_mb = env_int("PVZ_CRT_ALLOC_ARENA_MB", 128);
+    if (crt_alloc_mb > 0) {
+        uint64_t limit64 = static_cast<uint64_t>(g_crt_alloc_base) +
+                           static_cast<uint64_t>(crt_alloc_mb) * 1024ull * 1024ull;
+        if (limit64 > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
+            limit64 = static_cast<uint64_t>(std::numeric_limits<uint32_t>::max());
+        }
+        if (limit64 > g_crt_alloc_base + 0x100000u) {
+            g_crt_alloc_limit = static_cast<uint32_t>(limit64);
+        }
+    }
+    g_crt_alloc_top = g_crt_alloc_base;
+    g_crt_alloc_mapped_end = g_crt_alloc_base;
     int block_focus_interval = env_int("PVZ_BLOCK_FOCUS_INTERVAL", 50000);
     if (block_focus_interval > 0) {
         g_block_focus_interval = static_cast<uint64_t>(block_focus_interval);
@@ -1327,8 +1535,18 @@ int main(int argc, char **argv) {
             cout << "[*] Hot loop acceleration enabled (PVZ_HOT_LOOP_ACCEL): "
                 << "0x441a60(memcmp), 0x441a73(memcmp dword), 0x5d888c/0x5d8890(xor copy), "
                 << "0x62456a(rep movsd), 0x404470(strlen loop), "
-                << "0x61e4e6(toupper), 0x441d20(string append x1), "
+                << "0x61e4e6(toupper), 0x441d20(string append x1), 0x441dd0(char store), "
                 << "0x5d7c0d(uppercase append loop), 0x5d8310(strlen loop).\n";
+            if (g_crt_alloc_accel_enabled) {
+                uint32_t arena_mb = (g_crt_alloc_limit - g_crt_alloc_base) / (1024u * 1024u);
+                cout << "[*] CRT alloc accel enabled: base=0x" << hex << g_crt_alloc_base
+                     << " limit=0x" << g_crt_alloc_limit << dec
+                     << " (" << arena_mb
+                     << "MB, PVZ_CRT_ALLOC_ACCEL / PVZ_CRT_ALLOC_ARENA_MB).\n";
+            }
+            if (g_fast_worker_thread_enabled) {
+                cout << "[*] Fast worker-thread short-circuit enabled (PVZ_FAST_WORKER_THREAD).\n";
+            }
         }
         trace("after jit dispatcher init");
 
@@ -1470,6 +1688,11 @@ int main(int argc, char **argv) {
     if (g_hot_loop_accel_enabled && g_hot_loop_accel_hits > 0) {
         cout << "[*] Hot loop acceleration summary: hits=" << g_hot_loop_accel_hits
              << ", bytes=" << g_hot_loop_accel_bytes << "\n";
+        if (g_crt_alloc_accel_enabled && g_crt_alloc_count > 0) {
+            cout << "[*] CRT alloc accel summary: allocs=" << g_crt_alloc_count
+                 << ", bytes=" << g_crt_alloc_bytes
+                 << ", used=0x" << hex << g_crt_alloc_top << dec << "\n";
+        }
     }
 
     delete global_jit;

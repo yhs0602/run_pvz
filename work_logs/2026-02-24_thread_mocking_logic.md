@@ -96,3 +96,20 @@ Win32 스레드/동기화 API는 `api_handler_known_dispatch.inl`, 스케줄러 
 2. `PostMessage` wakeup 범위 축소:
    - 모든 event가 아니라 연관 handle만 signal 하도록 좁히기.
 3. `GetMessage/Dispatch` 경로에서 렌더 진입 전 조건 API(파일/타이밍/윈도우 상태) 정합성 집중 보강.
+
+## 7. 최근 변경(2026-02-25)
+- `MessageBoxA/W` 기본 동작 변경:
+  - 기본값을 auto-ack(`IDOK`)로 고정해 unattended 실행에서 블로킹 제거.
+  - `PVZ_INTERACTIVE_MESSAGEBOX=1`일 때만 실제 SDL 팝업 표시.
+- cooperative thread 안정화:
+  - `PVZ_COOP_MAX_LIVE_THREADS`로 동시 live guest thread 상한 설정.
+  - finished thread stack을 재사용 풀로 반환해 stack mapping 증식 방지.
+  - `PVZ_COOP_FAIL_CREATE_THREAD_ON_SPAWN_FAILURE`(기본 ON): spawn 실패 시 `CreateThread` 실패 반환.
+- CreateThread 메타데이터 폭증 보호:
+  - `PVZ_THREAD_HANDLE_CAP`(기본 8192) 추가.
+  - cap 초과 시 finished thread handle reaping 후에도 부족하면 `CreateThread`를 실패 처리.
+- fast-worker 진단 가드:
+  - `PVZ_WORKER_THREAD_CREATE_CAP`(기본: fast-worker ON일 때 512) 추가.
+  - `start=0x5d5dc0` 반복 생성 루프를 cap 이후 실패로 전환.
+- 메시지 큐 정합성:
+  - `PostMessage(HWND_BROADCAST)`를 유효 HWND fan-out으로 큐잉하도록 수정.

@@ -89,3 +89,37 @@
   - `0x61e4e6`(toupper 계열) 함수 엔트리 fast-path.
   - `0x441d20`(문자 1개 append) fast-path.
   - 결과적으로 `0x404470`가 top hot set에서 이탈하고, 현재는 `0x441dd0/0x441dd9` 및 `0x5d7cxx` 체인이 주요 잔여 병목.
+
+## 2026-02-25 추가 진행 (CreateThread/Wait 경로 안정화)
+- cooperative 스레드 안정화/메모리 가드
+  - `PVZ_COOP_MAX_LIVE_THREADS`(기본 256) 추가: live guest thread 상한.
+  - finished thread stack 재사용 풀(`size -> base`) 추가: stack map 폭증 방지.
+  - `CloseHandle(thread)`/thread finish 시 stack recycle 경로 연결.
+  - `PVZ_COOP_FAIL_CREATE_THREAD_ON_SPAWN_FAILURE`(기본 ON) 추가: cooperative spawn 실패 시 `CreateThread=0`, `LastError=8` 반환.
+- CreateThread 장기 실행 보호
+  - `PVZ_THREAD_HANDLE_CAP`(기본 8192) 추가.
+  - cap 도달 시 finished thread handle reap 시도 후, 여전히 초과면 `CreateThread` 실패 반환.
+  - `CreateThread`/`WaitForSingleObject` 로그를 샘플링 출력(초기 N회 + 주기)으로 축소.
+- fast-worker 진단 가드
+  - `PVZ_WORKER_THREAD_CREATE_CAP` 추가(기본: `PVZ_FAST_WORKER_THREAD=1`이면 512).
+  - fast-worker 폭주 시 무한 CreateThread 루프를 cap 이후 실패로 전환.
+- 메시지 루프 정합성 보강
+  - `PostMessage(HWND_BROADCAST)`를 실제 유효 윈도우들로 fan-out 큐잉하도록 수정.
+- hot set 가속/정합성
+  - `0x441dd0`(single-char store helper) fast-path 추가.
+  - `0x61e4e6` fast-path에 locale flag(`0x6a66f4`) 분기 조건 반영.
+
+### 런타임 관찰
+- `logs_fex_fastworker_cap_20260225_015805.log`
+  - fast-worker cap hit 이후 `WaitForSingleObject(0x7000/0x7004)` 및 `CreateFileA('properties\\resources.xml')` 재확인.
+  - 기존 stack-map OOM으로 진행하던 경로를 제어 가능한 cap 기반으로 재현 가능.
+- `logs_fex_fastworker_cap_long_20260225_020532.log`, `logs_fex_fastworker_cap240_20260225_020850.log`
+  - cap 이후에도 `resources.xml` 단계까지는 안정적으로 진입.
+  - 본 샘플 구간에서는 `PostMessage/GetMessage` 재관측은 아직 없음.
+- `logs_fex_full_progress2_20260225_020313.log`
+  - fast-worker OFF full mode는 120초 샘플에서 여전히 초기 리소스/DirectX 초기화 구간 체류.
+
+### 메모
+- 로그가 GB 단위로 커지는 경우가 있어(특히 fast-worker + thread trace) 전체 스캔 대신:
+  - `wc -c`, `tail`, 키워드 샘플링(`rg ... | tail`) 방식으로 분석.
+  - 과대 로그는 삭제하고 요약만 업무일지에 남김.

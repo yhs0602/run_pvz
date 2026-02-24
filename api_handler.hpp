@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <map>
 #include <iostream>
 #include "api_context.hpp"
 
@@ -74,12 +75,18 @@ private:
     bool coop_threads_initialized = false;
     bool coop_trace = false;
     bool coop_force_yield = false;
+    bool coop_fail_create_thread_on_spawn_failure = true;
     uint64_t coop_timeslice_instructions = 30000;
+    uint32_t coop_max_live_threads = 256;
     uint32_t coop_main_handle = 0x1000;
     uint32_t coop_current_handle = 0;
     uint32_t coop_thread_id_top = 1;
     uint32_t coop_default_stack_size = 0x200000;
     uint32_t coop_stack_cursor = 0x2F000000;
+    uint32_t coop_live_threads = 0;
+    uint64_t coop_spawn_fail_count = 0;
+    size_t guest_thread_handle_count = 0;
+    std::multimap<uint32_t, uint32_t> coop_free_stacks_by_size; // size -> stack base
     std::vector<uint32_t> coop_order;
     std::unordered_map<uint32_t, CoopThreadState> coop_threads;
     uint32_t current_addr;
@@ -91,6 +98,12 @@ private:
     bool coop_advance_to_next_runnable();
     void coop_prune_finished_threads();
     bool coop_mark_thread_finished(uint32_t handle, const char* reason);
+    bool coop_try_reuse_stack(uint32_t stack_size, uint32_t& stack_base);
+    void coop_recycle_thread_stack(CoopThreadState& thread);
+    size_t reap_finished_thread_handles(size_t target_keep);
+    size_t thread_handle_count() const { return guest_thread_handle_count; }
+    void note_thread_handle_created() { guest_thread_handle_count++; }
+    void note_thread_handle_closed() { if (guest_thread_handle_count > 0) guest_thread_handle_count--; }
     void cleanup_process_state();
     uint32_t get_api_caller_ret_addr();
     bool is_hot_focus_ret(uint32_t ret_addr) const;
@@ -125,6 +138,7 @@ public:
     uint32_t coop_current_thread_id() const;
     bool coop_spawn_thread(uint32_t handle, uint32_t start_address, uint32_t parameter, uint32_t requested_stack_size);
     bool coop_is_thread_finished(uint32_t handle) const;
+    bool coop_fail_create_on_spawn_failure() const { return coop_fail_create_thread_on_spawn_failure; }
     void coop_request_yield() { coop_force_yield = true; }
     void coop_on_timeslice_end();
     bool coop_try_absorb_emu_error(uc_err err);

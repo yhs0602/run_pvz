@@ -568,8 +568,13 @@ static bool messagebox_auto_ack_enabled() {
         cached = env_truthy("PVZ_AUTO_ACK_MESSAGEBOX") ? 1 : 0;
         return cached != 0;
     }
-    // Default to auto-ack in non-interactive runs.
-    cached = (isatty(STDIN_FILENO) == 0) ? 1 : 0;
+    const char* interactive = std::getenv("PVZ_INTERACTIVE_MESSAGEBOX");
+    if (interactive && *interactive && env_truthy("PVZ_INTERACTIVE_MESSAGEBOX")) {
+        cached = 0;
+        return false;
+    }
+    // Default to auto-ack to avoid unattended runs blocking on guest popups.
+    cached = 1;
     return cached != 0;
 }
 
@@ -1158,6 +1163,13 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
     if (coop_timeslice > 0) coop_timeslice_instructions = static_cast<uint64_t>(coop_timeslice);
     int coop_stack = env_int("PVZ_COOP_STACK_SIZE", 0x200000);
     if (coop_stack > 0) coop_default_stack_size = static_cast<uint32_t>(coop_stack);
+    int coop_max_live = env_int("PVZ_COOP_MAX_LIVE_THREADS", 256);
+    if (coop_max_live <= 0) coop_max_live = 1;
+    coop_max_live_threads = static_cast<uint32_t>(coop_max_live);
+    const char* coop_fail_create_env = std::getenv("PVZ_COOP_FAIL_CREATE_THREAD_ON_SPAWN_FAILURE");
+    if (coop_fail_create_env && *coop_fail_create_env) {
+        coop_fail_create_thread_on_spawn_failure = env_truthy("PVZ_COOP_FAIL_CREATE_THREAD_ON_SPAWN_FAILURE");
+    }
     int heap_free_cap = env_int("PVZ_HEAP_FREE_CAP_ENTRIES", 131072);
     if (heap_free_cap < 0) {
         g_heap_free_entry_cap = 0;
@@ -1190,7 +1202,10 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
     }
     if (coop_threads_enabled_flag) {
         std::cout << "[*] Cooperative threads enabled, timeslice_insns=" << coop_timeslice_instructions
-                  << ", default_stack=0x" << std::hex << coop_default_stack_size << std::dec;
+                  << ", default_stack=0x" << std::hex << coop_default_stack_size << std::dec
+                  << ", max_live=" << coop_max_live_threads
+                  << ", create_fail_on_spawn_failure="
+                  << (coop_fail_create_thread_on_spawn_failure ? "on" : "off");
         if (coop_trace) std::cout << ", trace=on";
         std::cout << "\n";
     }
@@ -1336,6 +1351,10 @@ void DummyAPIHandler::cleanup_process_state() {
     coop_current_handle = 0;
     coop_thread_id_top = 1;
     coop_stack_cursor = 0x2F000000;
+    coop_live_threads = 0;
+    coop_spawn_fail_count = 0;
+    coop_free_stacks_by_size.clear();
+    guest_thread_handle_count = 0;
     coop_threads_initialized = false;
     coop_force_yield = false;
 }
@@ -1611,6 +1630,7 @@ bool DummyAPIHandler::coop_mark_thread_finished(uint32_t handle, const char* rea
     if (it->second.finished) return true;
     it->second.finished = true;
     it->second.runnable = false;
+    coop_recycle_thread_stack(it->second);
     if (coop_trace) {
         std::cout << "[COOP] thread 0x" << std::hex << handle << std::dec
                   << " finished";
@@ -1618,6 +1638,55 @@ bool DummyAPIHandler::coop_mark_thread_finished(uint32_t handle, const char* rea
         std::cout << "\n";
     }
     return true;
+}
+
+bool DummyAPIHandler::coop_try_reuse_stack(uint32_t stack_size, uint32_t& stack_base) {
+    auto it = coop_free_stacks_by_size.lower_bound(stack_size);
+    if (it == coop_free_stacks_by_size.end()) return false;
+    stack_base = it->second;
+    coop_free_stacks_by_size.erase(it);
+    return true;
+}
+
+void DummyAPIHandler::coop_recycle_thread_stack(CoopThreadState& thread) {
+    if (thread.is_main) return;
+    if (thread.stack_base == 0 || thread.stack_size == 0) return;
+    coop_free_stacks_by_size.emplace(thread.stack_size, thread.stack_base);
+    thread.stack_base = 0;
+    thread.stack_size = 0;
+    if (coop_live_threads > 0) coop_live_threads--;
+}
+
+size_t DummyAPIHandler::reap_finished_thread_handles(size_t target_keep) {
+    if (guest_thread_handle_count <= target_keep) return 0;
+    size_t removed = 0;
+    for (auto it = ctx.handle_map.begin();
+         it != ctx.handle_map.end() && guest_thread_handle_count > target_keep;) {
+        if (it->first.rfind("thread_", 0) != 0) {
+            ++it;
+            continue;
+        }
+        uint32_t handle = static_cast<uint32_t>(std::strtoul(it->first.c_str() + 7, nullptr, 10));
+        auto* th = static_cast<ThreadHandle*>(it->second);
+        bool finished = (th == nullptr) || th->finished;
+        if (!finished && coop_threads_enabled_flag) {
+            finished = coop_is_thread_finished(handle);
+        }
+        if (!finished) {
+            ++it;
+            continue;
+        }
+        coop_mark_thread_finished(handle, "reap finished");
+        if (th) {
+            g_thread_start_to_handle.erase(th->start_address);
+            delete th;
+        }
+        it = ctx.handle_map.erase(it);
+        note_thread_handle_closed();
+        coop_threads.erase(handle);
+        removed++;
+    }
+    return removed;
 }
 
 void DummyAPIHandler::coop_register_main_thread() {
@@ -1637,10 +1706,13 @@ void DummyAPIHandler::coop_register_main_thread() {
 
     coop_threads.clear();
     coop_order.clear();
+    coop_free_stacks_by_size.clear();
     coop_threads.emplace(main_state.handle, main_state);
     coop_order.push_back(main_state.handle);
     coop_current_handle = main_state.handle;
     coop_threads_initialized = true;
+    coop_live_threads = 1;
+    coop_spawn_fail_count = 0;
     ctx.global_state["CurrentThreadHandle"] = main_state.handle;
     ctx.global_state["CurrentThreadId"] = main_state.thread_id;
     if (coop_trace) {
@@ -1672,28 +1744,41 @@ bool DummyAPIHandler::coop_spawn_thread(uint32_t handle, uint32_t start_address,
     }
     if (start_address == 0 || handle == 0) return false;
     if (coop_threads.find(handle) != coop_threads.end()) return true;
+    if (coop_live_threads >= coop_max_live_threads) {
+        coop_spawn_fail_count++;
+        if (coop_trace || (coop_spawn_fail_count % 128u) == 1u) {
+            std::cerr << "[COOP] spawn rejected: live thread cap reached (" << coop_live_threads
+                      << "/" << coop_max_live_threads << ", handle=0x" << std::hex << handle
+                      << ", start=0x" << start_address << std::dec << ")\n";
+        }
+        return false;
+    }
 
     uint32_t stack_size = requested_stack_size ? requested_stack_size : coop_default_stack_size;
     if (stack_size < 0x10000u) stack_size = 0x10000u;
     if (stack_size > 0x01000000u) stack_size = 0x01000000u;
     stack_size = (stack_size + 0xFFFu) & ~0xFFFu;
     uint32_t stack_base = 0;
-    bool mapped = false;
-    uint32_t cursor = coop_stack_cursor;
-    for (int attempt = 0; attempt < 256; ++attempt) {
-        if (cursor <= stack_size + 0x10000u) break;
-        uint32_t candidate = (cursor - stack_size) & ~0xFFFu;
-        uc_err map_err = backend.mem_map(candidate, stack_size, UC_PROT_READ | UC_PROT_WRITE);
-        if (map_err == UC_ERR_OK) {
-            stack_base = candidate;
-            mapped = true;
-            coop_stack_cursor = candidate - 0x10000u;
-            break;
+    bool mapped_or_reused = coop_try_reuse_stack(stack_size, stack_base);
+    bool reused_stack = mapped_or_reused;
+    if (!mapped_or_reused) {
+        uint32_t cursor = coop_stack_cursor;
+        for (int attempt = 0; attempt < 256; ++attempt) {
+            if (cursor <= stack_size + 0x10000u) break;
+            uint32_t candidate = (cursor - stack_size) & ~0xFFFu;
+            uc_err map_err = backend.mem_map(candidate, stack_size, UC_PROT_READ | UC_PROT_WRITE);
+            if (map_err == UC_ERR_OK) {
+                stack_base = candidate;
+                mapped_or_reused = true;
+                coop_stack_cursor = candidate - 0x10000u;
+                break;
+            }
+            if (candidate <= 0x10000u) break;
+            cursor = candidate - 0x10000u;
         }
-        if (candidate <= 0x10000u) break;
-        cursor = candidate - 0x10000u;
     }
-    if (!mapped) {
+    if (!mapped_or_reused) {
+        coop_spawn_fail_count++;
         std::cerr << "[COOP] failed to map thread stack for handle 0x"
                   << std::hex << handle << std::dec << "\n";
         return false;
@@ -1726,6 +1811,7 @@ bool DummyAPIHandler::coop_spawn_thread(uint32_t handle, uint32_t start_address,
 
     coop_threads.emplace(handle, thread);
     coop_order.push_back(handle);
+    coop_live_threads++;
     coop_force_yield = true;
     if (coop_trace) {
         std::cout << "[COOP] spawned thread handle=0x" << std::hex << handle
@@ -1733,7 +1819,8 @@ bool DummyAPIHandler::coop_spawn_thread(uint32_t handle, uint32_t start_address,
                   << " start=0x" << std::hex << start_address
                   << " param=0x" << parameter
                   << " stack=[0x" << stack_base << ",0x" << (stack_base + stack_size)
-                  << ")" << std::dec << "\n";
+                  << ")" << (reused_stack ? " reused" : " new")
+                  << std::dec << "\n";
     }
     return true;
 }
@@ -1838,15 +1925,24 @@ uint32_t DummyAPIHandler::register_fake_api(const std::string& full_name) {
     }
 
     fake_api_map[api_addr] = full_name;
+    static const bool dump_fake_api_map = env_truthy("PVZ_DUMP_FAKE_API_MAP");
     
     auto it = KNOWN_SIGNATURES.find(full_name);
     if (it != KNOWN_SIGNATURES.end() && it->second > 0) {
         int args_bytes = it->second;
         uint8_t instruction[3] = {0xC2, static_cast<uint8_t>(args_bytes & 0xFF), static_cast<uint8_t>((args_bytes >> 8) & 0xFF)};
         backend.mem_write(api_addr, instruction, 3);
+        if (dump_fake_api_map) {
+            std::cout << "[FAKE API MAP] 0x" << std::hex << api_addr << std::dec
+                      << " <- " << full_name << " sig=" << args_bytes << "\n";
+        }
     } else {
         uint8_t instruction = 0xC3; // ret
         backend.mem_write(api_addr, &instruction, 1);
+        if (dump_fake_api_map) {
+            std::cout << "[FAKE API MAP] 0x" << std::hex << api_addr << std::dec
+                      << " <- " << full_name << " sig=0\n";
+        }
     }
     
     return api_addr;
