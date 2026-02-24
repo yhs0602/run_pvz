@@ -832,6 +832,20 @@ static bool accelerate_single_char_store_helper_441dd0(uc_engine* uc, uint32_t a
     return true;
 }
 
+static bool accelerate_small_string_cap_branch_441dd9(uc_engine* uc, uint32_t addr32) {
+    if (addr32 != 0x441dd9u) return false;
+    uint32_t ecx = 0;
+    uc_reg_read(uc, UC_X86_REG_ECX, &ecx);
+    if (ecx < 0x1000u) return false;
+    uint32_t cap = 0;
+    if (g_backend->mem_read(ecx + 0x18u, &cap, 4) != UC_ERR_OK) return false;
+    uint32_t eip = (cap < 0x10u) ? 0x441df0u : 0x441ddfu;
+    uc_reg_write(uc, UC_X86_REG_EIP, &eip);
+    uc_emu_stop(uc);
+    g_hot_loop_accel_hits++;
+    return true;
+}
+
 static bool accelerate_string_append_one_char(uc_engine* uc, uint32_t addr32) {
     if (addr32 != 0x441d20u) return false;
 
@@ -1002,6 +1016,7 @@ static bool maybe_accelerate_hot_loop_block(uc_engine* uc, uint32_t addr32) {
     if (accelerate_memcmp_dword_loop(uc, addr32)) return true;
     if (accelerate_strlen_loop(uc, addr32)) return true;
     if (accelerate_toupper_cdecl(uc, addr32)) return true;
+    if (accelerate_small_string_cap_branch_441dd9(uc, addr32)) return true;
     if (accelerate_single_char_store_helper_441dd0(uc, addr32)) return true;
     if (accelerate_string_append_one_char(uc, addr32)) return true;
     if (accelerate_uppercase_append_loop(uc, addr32)) return true;
@@ -1535,7 +1550,8 @@ int main(int argc, char **argv) {
             cout << "[*] Hot loop acceleration enabled (PVZ_HOT_LOOP_ACCEL): "
                 << "0x441a60(memcmp), 0x441a73(memcmp dword), 0x5d888c/0x5d8890(xor copy), "
                 << "0x62456a(rep movsd), 0x404470(strlen loop), "
-                << "0x61e4e6(toupper), 0x441d20(string append x1), 0x441dd0(char store), "
+                << "0x61e4e6(toupper), 0x441d20(string append x1), "
+                << "0x441dd0(char store), 0x441dd9(cap branch), "
                 << "0x5d7c0d(uppercase append loop), 0x5d8310(strlen loop).\n";
             if (g_crt_alloc_accel_enabled) {
                 uint32_t arena_mb = (g_crt_alloc_limit - g_crt_alloc_base) / (1024u * 1024u);

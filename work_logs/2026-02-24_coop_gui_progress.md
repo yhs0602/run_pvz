@@ -123,3 +123,7 @@
 - 로그가 GB 단위로 커지는 경우가 있어(특히 fast-worker + thread trace) 전체 스캔 대신:
   - `wc -c`, `tail`, 키워드 샘플링(`rg ... | tail`) 방식으로 분석.
   - 과대 로그는 삭제하고 요약만 업무일지에 남김.
+
+### 2026-02-25 추가 미세 가속
+- `0x441dd9` small-string capacity branch fast-path 추가(분기만 직접 계산).
+- `0x441dd0/0x441dd9/0x5d7c0d/0x61e4e6` 요청 hot set에 대해 모두 가속/정합성 경로 확보.
