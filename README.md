@@ -97,11 +97,21 @@ PVZ_API_STATS_INTERVAL=50000 ./build/runner pvz/main.exe
 # null-page 호환 매핑(특정 null 근처 역참조 우회)
 PVZ_MAP_NULL_PAGE=1 ./build/runner pvz/main.exe
 
+# 블록 프로파일링 강제 ON/OFF (기본: LLM ON일 때만 ON)
+PVZ_PROFILE_BLOCKS=1 ./build/runner pvz/main.exe
+PVZ_PROFILE_BLOCKS=0 ./build/runner pvz/main.exe
+
+# 블록 프로파일링 메타데이터 상한 (기본 250000)
+PVZ_MAX_PROFILE_BLOCKS=300000 ./build/runner pvz/main.exe
+
 # VRAM 쓰기 기반 강제 프리젠트 훅(기본 ON) 비활성화
 PVZ_DISABLE_VRAM_PRESENT_HOOK=1 ./build/runner pvz/main.exe
 
 # VRAM 프리젠트 훅 stride 조정(기본 20000 write마다)
 PVZ_VRAM_PRESENT_STRIDE=8000 ./build/runner pvz/main.exe
+
+# MessageBoxA/W의 SDL 팝업 표시 비활성화
+PVZ_DISABLE_SDL_MESSAGEBOX=1 ./build/runner pvz/main.exe
 
 # 특정 watchpoint 로그 활성화 (기본 OFF)
 PVZ_WATCHPOINT=1 ./build/runner pvz/main.exe

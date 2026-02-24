@@ -379,3 +379,27 @@
   1. `CreateThread` 실제 start routine 진행(또는 equivalent state transition) 보강.
   2. `IDirect3DDevice7_Method_*` 최소 동작(특히 Method_4 주변) 추가로 렌더 진입 유도.
   3. `SetTimer/PostMessage` 기반 내부 메시지 소비 루프(`Peek/GetMessage`) 진입 여부를 block trace와 결합해 추적.
+
+25. MessageBox(SDL) 점검 + 메모리 사용량(100GB+) 완화 작업
+- `MessageBoxA/W` 모킹 점검:
+  - 기존: 콘솔 로그만 출력하고 즉시 `IDOK` 반환.
+  - 변경: SDL `ShowSimpleMessageBox`를 실제 호출하도록 보강.
+    - 구현 파일: `api_handler.cpp`
+    - `MessageBoxW`도 추가 지원.
+    - `PVZ_DISABLE_SDL_MESSAGEBOX=1`로 팝업 비활성화 가능.
+- 메모리 사용량 완화(주요 후보 경로 대응):
+  1. 블록 프로파일링 기본 정책 변경 (`main.cpp`)
+     - 기존: 항상 `block_registry`에 기본블록 메타데이터(assembly/live-in/out) 축적.
+     - 변경: 기본 OFF, `PVZ_ENABLE_LLM=1`일 때만 자동 ON.
+     - 수동 제어: `PVZ_PROFILE_BLOCKS=0/1`
+     - 상한 추가: `PVZ_MAX_PROFILE_BLOCKS` (기본 `250000`)
+  2. 메시지 큐 무한 성장 방지 (`api_handler.cpp`)
+     - `PostMessage/SetTimer` 내부 큐에 최대치(`4096`) 적용.
+     - 초과 시 oldest drop.
+  3. 대형 임시 버퍼 제거 (`api_handler.cpp`)
+     - `MapViewOfFile` zero-fill/copy를 chunk(64KB) 기반으로 변경.
+     - `HeapReAlloc` grow/copy도 chunk 기반으로 변경.
+- 관측 샘플(40초, full mode):
+  - `Block profiling: OFF`
+  - `maximum resident set size: 1,277,952 KB` (약 1.22GB)
+  - 동조건에서 `PVZ_PROFILE_BLOCKS=1`도 단기 샘플에서는 동일 RSS였으나, 장기 런에서는 `block_registry` 성장 억제 효과가 기대됨.
