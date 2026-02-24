@@ -403,3 +403,30 @@
   - `Block profiling: OFF`
   - `maximum resident set size: 1,277,952 KB` (약 1.22GB)
   - 동조건에서 `PVZ_PROFILE_BLOCKS=1`도 단기 샘플에서는 동일 RSS였으나, 장기 런에서는 `block_registry` 성장 억제 효과가 기대됨.
+
+26. GUI 루프 병목 후속 추적 + 메모리(대용량 RSS) 추가 완화 시도 (2026-02-24)
+- 병목 추적 런(Full mode, fexcore/unicorn-shim, `PVZ_DISABLE_NATIVE_JIT=1`) 결과:
+  - `CreateThread -> WaitForSingleObject(event) -> PostMessage -> WaitForSingleObject(timeout)` 이후 구간은 계속 진행됨.
+  - 이후 `main.pak`/`properties\\resources.xml` 파일 경로로 진입하고, DDRAW `CreateSurface/QueryInterface`까지는 확인됨.
+  - 아직 `IDirectDrawSurface7::Lock/Unlock` 호출은 미확인(실렌더 루프는 미도달).
+- 파일/메시지 경로 보강:
+  - `MapViewOfFile/UnmapViewOfFile`에 free-list 재사용 추가(해제된 view 재활용).
+  - `PostMessageA/W` 후 event handle을 signal 처리해 `WaitForSingleObject` 진행성 보강.
+- 힙 재사용 정책 보정:
+  - `HeapAlloc/HeapReAlloc` free-list 재사용 시 블록 분할(splitting) 적용.
+  - 작은 alloc이 큰 free block 전체 크기를 상속하지 않도록 수정.
+  - `HeapReAlloc` shrink 시 tail 블록을 free-list로 환원.
+- 로그/디버그 비용 절감:
+  - API 훅 디버그 출력은 `PVZ_VERBOSE_API_HOOK=1`일 때만 활성화(기본 OFF).
+- 백엔드 인터페이스 확장:
+  - `CpuBackend::flush_tb_cache()` 추가.
+  - `UnicornBackend`, `FexCoreBackend`, `pvz_fexcore_bridge`에 TB flush 경로 구현.
+  - `PVZ_TB_FLUSH_INTERVAL_BLOCKS` 실험 옵션 추가(기본 OFF).
+- 메모리 관측:
+  - 60초 샘플 RSS: 대략 4.2~4.7GB 범위.
+  - `vmmap`(35초 시점) 기준 `DefaultMallocZone`의 `MALLOC_LARGE` 비중이 지배적(번역/런타임 내부 대형 할당 누적 추정).
+  - `PVZ_TB_FLUSH_INTERVAL_BLOCKS=20000` 기본화 실험은 RSS 악화 경향이 있어 기본값 OFF로 유지.
+- 결론/다음 액션:
+  1. `resources.xml` 이후 루프에서 heap/chritical hot path 원인을 block-level로 좁히기(특정 EIP 범위 샘플링).
+  2. `IDirectDrawSurface7::Lock/Unlock` 경로 강제 진입을 위해 `CreateSurface` 생성 객체/flags 반환값 정합성 추가 보강.
+  3. (근본) `unicorn-shim` 대신 실제 libfexcore 엔진 브릿지 구현 우선순위 상향(메모리/성능 공통 해결 가능성).

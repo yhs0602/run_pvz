@@ -96,6 +96,7 @@ bool FexCoreBackend::open_bridge() {
     bridge_.reg_write = load_sym<uc_err (*)(void*, int, const void*)>(bridge_.handle, "pvz_fex_reg_write");
     bridge_.emu_start = load_sym<uc_err (*)(void*, uint64_t, uint64_t, uint64_t, size_t)>(bridge_.handle, "pvz_fex_emu_start");
     bridge_.emu_stop = load_sym<uc_err (*)(void*)>(bridge_.handle, "pvz_fex_emu_stop");
+    bridge_.flush_tb = load_sym<uc_err (*)(void*)>(bridge_.handle, "pvz_fex_flush_tb");
     bridge_.hook_add = load_sym<uc_err (*)(void*, uc_hook*, int, void*, void*, uint64_t, uint64_t)>(bridge_.handle, "pvz_fex_hook_add");
     bridge_.strerror = load_sym<const char* (*)(uc_err)>(bridge_.handle, "pvz_fex_strerror");
     bridge_.backend_name = load_sym<const char* (*)()>(bridge_.handle, "pvz_fex_bridge_backend_name");
@@ -235,6 +236,14 @@ uc_err FexCoreBackend::emu_start(uint64_t begin, uint64_t until, uint64_t timeou
 uc_err FexCoreBackend::emu_stop() {
     if (using_bridge_) return bridge_.emu_stop(bridge_ctx_);
     return unicorn_fallback_->emu_stop();
+}
+
+uc_err FexCoreBackend::flush_tb_cache() {
+    if (using_bridge_) {
+        if (bridge_.flush_tb) return bridge_.flush_tb(bridge_ctx_);
+        return UC_ERR_OK;
+    }
+    return unicorn_fallback_ ? unicorn_fallback_->flush_tb_cache() : UC_ERR_HANDLE;
 }
 
 uc_err FexCoreBackend::hook_add(uc_hook* hook, int type, void* callback, void* user_data, uint64_t begin, uint64_t end) {

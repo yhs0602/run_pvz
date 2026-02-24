@@ -21,6 +21,7 @@ public:
 
     virtual uc_err emu_start(uint64_t begin, uint64_t until, uint64_t timeout, size_t count) = 0;
     virtual uc_err emu_stop() = 0;
+    virtual uc_err flush_tb_cache() { return UC_ERR_OK; }
 
     virtual uc_err hook_add(uc_hook* hook, int type, void* callback, void* user_data, uint64_t begin, uint64_t end) = 0;
     virtual const char* strerror(uc_err err) const = 0;

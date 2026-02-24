@@ -96,6 +96,12 @@ PVZ_FEX_EXPORT uc_err pvz_fex_emu_stop(void* opaque_ctx) {
     return uc_emu_stop(ctx->uc);
 }
 
+PVZ_FEX_EXPORT uc_err pvz_fex_flush_tb(void* opaque_ctx) {
+    BridgeContext* ctx = as_ctx(opaque_ctx);
+    if (!ctx || !ctx->uc) return UC_ERR_HANDLE;
+    return uc_ctl_flush_tb(ctx->uc);
+}
+
 PVZ_FEX_EXPORT uc_err pvz_fex_hook_add(
     void* opaque_ctx,
     uc_hook* hook,

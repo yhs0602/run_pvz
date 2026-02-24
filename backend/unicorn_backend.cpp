@@ -46,6 +46,11 @@ uc_err UnicornBackend::emu_stop() {
     return uc_emu_stop(uc_);
 }
 
+uc_err UnicornBackend::flush_tb_cache() {
+    if (!uc_) return UC_ERR_HANDLE;
+    return uc_ctl_flush_tb(uc_);
+}
+
 uc_err UnicornBackend::hook_add(uc_hook* hook, int type, void* callback, void* user_data, uint64_t begin, uint64_t end) {
     return uc_hook_add(uc_, hook, type, callback, user_data, begin, end);
 }
@@ -53,4 +58,3 @@ uc_err UnicornBackend::hook_add(uc_hook* hook, int type, void* callback, void* u
 const char* UnicornBackend::strerror(uc_err err) const {
     return uc_strerror(err);
 }
-

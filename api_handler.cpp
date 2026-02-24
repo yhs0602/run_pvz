@@ -5,9 +5,11 @@
 #include <unistd.h>
 #include <SDL.h>
 #include <algorithm>
+#include <array>
 #include <vector>
 #include <iterator>
 #include <deque>
+#include <map>
 #include <cctype>
 #include <cstring>
 #include <cstdlib>
@@ -56,6 +58,11 @@ struct RegistryKeyHandle {
 static std::unordered_map<std::string, std::vector<uint8_t>> g_registry_values;
 static std::unordered_map<std::string, uint32_t> g_registry_types;
 static std::unordered_map<uint32_t, uint32_t> g_heap_sizes;
+static std::multimap<uint32_t, uint32_t> g_heap_free_by_size; // size -> ptr
+static constexpr uint32_t kHeapBase = 0x20000000;
+static constexpr uint32_t kHeapSize = 0x10000000; // 256MB
+static std::unordered_map<uint32_t, uint32_t> g_mapview_live_sizes; // base -> aligned size
+static std::multimap<uint32_t, uint32_t> g_mapview_free_by_size;    // size -> base
 static std::unordered_map<uint32_t, uint32_t> g_resource_ptr_by_handle;
 static std::unordered_map<uint32_t, uint32_t> g_resource_size_by_handle;
 static uint32_t g_resource_handle_top = 0xB000;
@@ -1531,7 +1538,8 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
 
         bool known = (KNOWN_SIGNATURES.find(name) != KNOWN_SIGNATURES.end());
         if (name.find("GetProcAddress") != std::string::npos) known = true;
-        if (!is_noisy_fastpath_api(name)) {
+        static const bool verbose_api_hook = env_truthy("PVZ_VERBOSE_API_HOOK");
+        if (verbose_api_hook && !is_noisy_fastpath_api(name)) {
             std::cout << "\n[DEBUG] hook_api_call name='" << name << "', known=" << known << "\n";
         }
         
@@ -1819,29 +1827,66 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             } else if (name == "KERNEL32.dll!HeapAlloc") {
                 uint32_t dwFlags = handler->ctx.get_arg(1);
                 uint32_t dwBytes = handler->ctx.get_arg(2);
-                
-                // Extremely simple bump allocator
+
+                if (dwBytes == 0) dwBytes = 1;
+                uint32_t aligned_bytes = (dwBytes + 15u) & ~15u;
+
                 if (handler->ctx.global_state.find("HeapTop") == handler->ctx.global_state.end()) {
-                    handler->ctx.global_state["HeapTop"] = 0x20000000;
-                    handler->backend.mem_map(0x20000000, 0x10000000, UC_PROT_ALL); // 256MB Heap
+                    handler->ctx.global_state["HeapTop"] = kHeapBase;
+                    handler->ctx.global_state["HeapLimit"] = kHeapBase + kHeapSize;
+                    handler->backend.mem_map(kHeapBase, kHeapSize, UC_PROT_ALL);
                 }
-                
-                uint32_t ptr = handler->ctx.global_state["HeapTop"];
-                // 16-byte align
-                uint32_t aligned_bytes = (dwBytes + 15) & ~15;
-                handler->ctx.global_state["HeapTop"] += aligned_bytes;
-                
-                if (dwFlags & 8) { // HEAP_ZERO_MEMORY
-                    // Memory is already zeroed by uc_mem_map initially, but let's be safe
-                    // For a bump allocator, fresh memory is zeroed.
+
+                uint32_t ptr = 0;
+                auto free_it = g_heap_free_by_size.lower_bound(aligned_bytes);
+                if (free_it != g_heap_free_by_size.end()) {
+                    uint32_t free_size = free_it->first;
+                    ptr = free_it->second;
+                    g_heap_free_by_size.erase(free_it);
+                    // Split oversized free block so small allocations do not inherit huge payload sizes.
+                    if (free_size > aligned_bytes) {
+                        uint32_t remain_size = free_size - aligned_bytes;
+                        uint32_t remain_ptr = ptr + aligned_bytes;
+                        if (remain_size > 0) {
+                            g_heap_free_by_size.emplace(remain_size, remain_ptr);
+                        }
+                    }
+                    g_heap_sizes[ptr] = aligned_bytes;
+                } else {
+                    uint32_t heap_top = static_cast<uint32_t>(handler->ctx.global_state["HeapTop"]);
+                    uint32_t heap_limit = static_cast<uint32_t>(handler->ctx.global_state["HeapLimit"]);
+                    if (heap_top + aligned_bytes < heap_top || heap_top + aligned_bytes > heap_limit) {
+                        handler->ctx.set_eax(0);
+                        handler->ctx.global_state["LastError"] = 8; // ERROR_NOT_ENOUGH_MEMORY
+                        return;
+                    }
+                    ptr = heap_top;
+                    handler->ctx.global_state["HeapTop"] = heap_top + aligned_bytes;
+                    g_heap_sizes[ptr] = aligned_bytes;
                 }
-                
+
+                if (dwFlags & 0x00000008u) { // HEAP_ZERO_MEMORY
+                    constexpr size_t kZeroChunk = 64 * 1024;
+                    static const std::array<uint8_t, kZeroChunk> zeros{};
+                    uint32_t zero_off = 0;
+                    while (zero_off < aligned_bytes) {
+                        size_t chunk = std::min<size_t>(zeros.size(), aligned_bytes - zero_off);
+                        handler->backend.mem_write(ptr + zero_off, zeros.data(), chunk);
+                        zero_off += static_cast<uint32_t>(chunk);
+                    }
+                }
+
                 handler->ctx.set_eax(ptr);
-                g_heap_sizes[ptr] = dwBytes;
+                handler->ctx.global_state["LastError"] = 0;
             } else if (name == "KERNEL32.dll!HeapFree") {
                 uint32_t lpMem = handler->ctx.get_arg(2);
-                g_heap_sizes.erase(lpMem);
+                auto it = g_heap_sizes.find(lpMem);
+                if (it != g_heap_sizes.end()) {
+                    g_heap_free_by_size.emplace(it->second, lpMem);
+                    g_heap_sizes.erase(it);
+                }
                 handler->ctx.set_eax(1); // Success
+                handler->ctx.global_state["LastError"] = 0;
             } else if (name == "KERNEL32.dll!HeapSize") {
                 uint32_t lpMem = handler->ctx.get_arg(2);
                 auto it = g_heap_sizes.find(lpMem);
@@ -1860,17 +1905,41 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 if (dwBytes == 0) {
                     dwBytes = 1;
                 }
+                uint32_t aligned_new = (dwBytes + 15u) & ~15u;
 
                 if (lpMem == 0) {
                     // Windows allows HeapReAlloc(NULL, ..) behavior similar to alloc in some runtimes.
                     if (handler->ctx.global_state.find("HeapTop") == handler->ctx.global_state.end()) {
-                        handler->ctx.global_state["HeapTop"] = 0x20000000;
-                        handler->backend.mem_map(0x20000000, 0x10000000, UC_PROT_ALL);
+                        handler->ctx.global_state["HeapTop"] = kHeapBase;
+                        handler->ctx.global_state["HeapLimit"] = kHeapBase + kHeapSize;
+                        handler->backend.mem_map(kHeapBase, kHeapSize, UC_PROT_ALL);
                     }
-                    uint32_t ptr = static_cast<uint32_t>(handler->ctx.global_state["HeapTop"]);
-                    uint32_t aligned = (dwBytes + 15) & ~15u;
-                    handler->ctx.global_state["HeapTop"] = ptr + aligned;
-                    g_heap_sizes[ptr] = dwBytes;
+                    uint32_t ptr = 0;
+                    auto free_it = g_heap_free_by_size.lower_bound(aligned_new);
+                    if (free_it != g_heap_free_by_size.end()) {
+                        uint32_t free_size = free_it->first;
+                        ptr = free_it->second;
+                        g_heap_free_by_size.erase(free_it);
+                        if (free_size > aligned_new) {
+                            uint32_t remain_size = free_size - aligned_new;
+                            uint32_t remain_ptr = ptr + aligned_new;
+                            if (remain_size > 0) {
+                                g_heap_free_by_size.emplace(remain_size, remain_ptr);
+                            }
+                        }
+                        g_heap_sizes[ptr] = aligned_new;
+                    } else {
+                        uint32_t heap_top = static_cast<uint32_t>(handler->ctx.global_state["HeapTop"]);
+                        uint32_t heap_limit = static_cast<uint32_t>(handler->ctx.global_state["HeapLimit"]);
+                        if (heap_top + aligned_new < heap_top || heap_top + aligned_new > heap_limit) {
+                            handler->ctx.set_eax(0);
+                            handler->ctx.global_state["LastError"] = 8;
+                            return;
+                        }
+                        ptr = heap_top;
+                        handler->ctx.global_state["HeapTop"] = heap_top + aligned_new;
+                        g_heap_sizes[ptr] = aligned_new;
+                    }
                     handler->ctx.set_eax(ptr);
                     handler->ctx.global_state["LastError"] = 0;
                 } else {
@@ -1880,27 +1949,57 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                         handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
                     } else {
                         uint32_t old_size = it->second;
-                        if (dwBytes <= old_size) {
-                            // Shrink in-place
-                            g_heap_sizes[lpMem] = dwBytes;
+                        if (aligned_new <= old_size) {
+                            // Shrink in-place and return tail to free list.
+                            g_heap_sizes[lpMem] = aligned_new;
+                            if (old_size > aligned_new) {
+                                uint32_t remain_ptr = lpMem + aligned_new;
+                                uint32_t remain_size = old_size - aligned_new;
+                                if (remain_size > 0) {
+                                    g_heap_free_by_size.emplace(remain_size, remain_ptr);
+                                }
+                            }
                             handler->ctx.set_eax(lpMem);
                             handler->ctx.global_state["LastError"] = 0;
                         } else {
-                            // Grow by allocating a new block and copying old bytes.
                             if (handler->ctx.global_state.find("HeapTop") == handler->ctx.global_state.end()) {
-                                handler->ctx.global_state["HeapTop"] = 0x20000000;
-                                handler->backend.mem_map(0x20000000, 0x10000000, UC_PROT_ALL);
+                                handler->ctx.global_state["HeapTop"] = kHeapBase;
+                                handler->ctx.global_state["HeapLimit"] = kHeapBase + kHeapSize;
+                                handler->backend.mem_map(kHeapBase, kHeapSize, UC_PROT_ALL);
                             }
-                            uint32_t new_ptr = static_cast<uint32_t>(handler->ctx.global_state["HeapTop"]);
-                            uint32_t aligned = (dwBytes + 15) & ~15u;
-                            handler->ctx.global_state["HeapTop"] = new_ptr + aligned;
+                            uint32_t new_ptr = 0;
+                            auto free_it = g_heap_free_by_size.lower_bound(aligned_new);
+                            if (free_it != g_heap_free_by_size.end()) {
+                                uint32_t free_size = free_it->first;
+                                new_ptr = free_it->second;
+                                g_heap_free_by_size.erase(free_it);
+                                if (free_size > aligned_new) {
+                                    uint32_t remain_size = free_size - aligned_new;
+                                    uint32_t remain_ptr = new_ptr + aligned_new;
+                                    if (remain_size > 0) {
+                                        g_heap_free_by_size.emplace(remain_size, remain_ptr);
+                                    }
+                                }
+                                g_heap_sizes[new_ptr] = aligned_new;
+                            } else {
+                                uint32_t heap_top = static_cast<uint32_t>(handler->ctx.global_state["HeapTop"]);
+                                uint32_t heap_limit = static_cast<uint32_t>(handler->ctx.global_state["HeapLimit"]);
+                                if (heap_top + aligned_new < heap_top || heap_top + aligned_new > heap_limit) {
+                                    handler->ctx.set_eax(0);
+                                    handler->ctx.global_state["LastError"] = 8;
+                                    return;
+                                }
+                                new_ptr = heap_top;
+                                handler->ctx.global_state["HeapTop"] = heap_top + aligned_new;
+                                g_heap_sizes[new_ptr] = aligned_new;
+                            }
 
                             // Copy in chunks to avoid large host allocations.
                             constexpr size_t kCopyChunk = 64 * 1024;
-                            std::vector<uint8_t> temp(std::min<size_t>(old_size, kCopyChunk), 0);
+                            std::array<uint8_t, kCopyChunk> temp{};
                             uint32_t copied = 0;
                             while (copied < old_size) {
-                                size_t chunk = std::min<size_t>(temp.size(), old_size - copied);
+                                size_t chunk = std::min<size_t>(kCopyChunk, old_size - copied);
                                 handler->backend.mem_read(lpMem + copied, temp.data(), chunk);
                                 handler->backend.mem_write(new_ptr + copied, temp.data(), chunk);
                                 copied += static_cast<uint32_t>(chunk);
@@ -1908,8 +2007,8 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
 
                             if (dwFlags & 0x00000008u) { // HEAP_ZERO_MEMORY
                                 constexpr size_t kZeroChunk = 64 * 1024;
-                                std::vector<uint8_t> zeros(kZeroChunk, 0);
-                                uint32_t remain = dwBytes - old_size;
+                                static const std::array<uint8_t, kZeroChunk> zeros{};
+                                uint32_t remain = aligned_new - old_size;
                                 uint32_t off = 0;
                                 while (off < remain) {
                                     size_t chunk = std::min<size_t>(zeros.size(), remain - off);
@@ -1918,8 +2017,8 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                                 }
                             }
 
+                            g_heap_free_by_size.emplace(old_size, lpMem);
                             g_heap_sizes.erase(lpMem);
-                            g_heap_sizes[new_ptr] = dwBytes;
                             handler->ctx.set_eax(new_ptr);
                             handler->ctx.global_state["LastError"] = 0;
                         }
@@ -2497,18 +2596,34 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
 
                 uint32_t aligned = (map_size + 0xFFFu) & ~0xFFFu;
-                uint32_t view_ptr = static_cast<uint32_t>(handler->ctx.global_state["MapViewTop"]);
-                uint32_t limit = static_cast<uint32_t>(handler->ctx.global_state["MapViewLimit"]);
-                if (view_ptr + aligned < view_ptr || view_ptr + aligned > limit) {
-                    handler->ctx.set_eax(0);
-                    handler->ctx.global_state["LastError"] = 8; // ERROR_NOT_ENOUGH_MEMORY
-                    return;
+                uint32_t view_ptr = 0;
+                auto free_it = g_mapview_free_by_size.lower_bound(aligned);
+                if (free_it != g_mapview_free_by_size.end()) {
+                    uint32_t free_size = free_it->first;
+                    view_ptr = free_it->second;
+                    g_mapview_free_by_size.erase(free_it);
+                    if (free_size > aligned) {
+                        uint32_t remain_size = free_size - aligned;
+                        uint32_t remain_ptr = view_ptr + aligned;
+                        if (remain_size > 0) {
+                            g_mapview_free_by_size.emplace(remain_size, remain_ptr);
+                        }
+                    }
+                } else {
+                    view_ptr = static_cast<uint32_t>(handler->ctx.global_state["MapViewTop"]);
+                    uint32_t limit = static_cast<uint32_t>(handler->ctx.global_state["MapViewLimit"]);
+                    if (view_ptr + aligned < view_ptr || view_ptr + aligned > limit) {
+                        handler->ctx.set_eax(0);
+                        handler->ctx.global_state["LastError"] = 8; // ERROR_NOT_ENOUGH_MEMORY
+                        return;
+                    }
+                    handler->ctx.global_state["MapViewTop"] = view_ptr + aligned;
                 }
-                handler->ctx.global_state["MapViewTop"] = view_ptr + aligned;
+                g_mapview_live_sizes[view_ptr] = aligned;
 
                 // Zero-fill mapped region in chunks to avoid large transient allocations.
                 constexpr size_t kZeroChunk = 64 * 1024;
-                std::vector<uint8_t> zeros(kZeroChunk, 0);
+                static const std::array<uint8_t, kZeroChunk> zeros{};
                 uint32_t zero_off = 0;
                 while (zero_off < aligned) {
                     size_t chunk = std::min<size_t>(zeros.size(), aligned - zero_off);
@@ -2536,6 +2651,12 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                           << ", off=0x" << offset << ", size=0x" << map_size
                           << ") -> 0x" << view_ptr << std::dec << "\n";
             } else if (name == "KERNEL32.dll!UnmapViewOfFile") {
+                uint32_t lpBaseAddress = handler->ctx.get_arg(0);
+                auto itv = g_mapview_live_sizes.find(lpBaseAddress);
+                if (itv != g_mapview_live_sizes.end()) {
+                    g_mapview_free_by_size.emplace(itv->second, lpBaseAddress);
+                    g_mapview_live_sizes.erase(itv);
+                }
                 handler->ctx.set_eax(1);
                 handler->ctx.global_state["LastError"] = 0;
             } else if (name == "WINMM.dll!mixerOpen") {
@@ -2894,6 +3015,14 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 msg.pt_x = mx;
                 msg.pt_y = my;
                 enqueue_win32_message(msg);
+
+                // Cooperative wakeup: many bootstrap paths wait on an event that the
+                // worker thread sets when it posts into the UI queue.
+                for (auto& kv : handler->ctx.handle_map) {
+                    if (kv.first.rfind("event_", 0) == 0) {
+                        static_cast<EventHandle*>(kv.second)->signaled = true;
+                    }
+                }
                 handler->ctx.set_eax(1);
             } else if (name == "KERNEL32.dll!GetCurrentProcess") {
                 handler->ctx.set_eax(-1); // Pseudo handle for current process

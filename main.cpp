@@ -217,6 +217,9 @@ bool g_jit_budget_warned = false;
 bool g_profile_blocks = false;
 size_t g_max_profile_blocks = 250000;
 bool g_profile_cap_warned = false;
+uint64_t g_tb_flush_interval_blocks = 0;
+uint64_t g_tb_flush_counter = 0;
+bool g_tb_flush_warned = false;
 uint32_t g_guest_vram_base = 0;
 size_t g_guest_vram_size = 0;
 uint32_t* g_host_vram_ptr = nullptr;
@@ -314,6 +317,18 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
     g_backend->reg_read(UC_X86_REG_ESP, &current_esp);
     last_blocks[block_idx % 50] = {address, current_esp};
     block_idx++;
+
+    if (g_tb_flush_interval_blocks > 0) {
+        g_tb_flush_counter++;
+        if ((g_tb_flush_counter % g_tb_flush_interval_blocks) == 0) {
+            uc_err flush_err = g_backend->flush_tb_cache();
+            if (flush_err != UC_ERR_OK && !g_tb_flush_warned) {
+                g_tb_flush_warned = true;
+                std::cerr << "[!] TB cache flush failed: " << g_backend->strerror(flush_err)
+                          << " (Code: " << flush_err << ")\n";
+            }
+        }
+    }
 
     if (address >= DummyAPIHandler::FAKE_API_BASE) {
         return; 
@@ -537,6 +552,10 @@ int main(int argc, char **argv) {
         g_max_profile_blocks = static_cast<size_t>(profile_cap);
     }
     g_max_jit_llm_requests = env_int("PVZ_MAX_JIT_REQUESTS", 24);
+    int tb_flush_blocks = env_int("PVZ_TB_FLUSH_INTERVAL_BLOCKS", 0);
+    if (tb_flush_blocks > 0) {
+        g_tb_flush_interval_blocks = static_cast<uint64_t>(tb_flush_blocks);
+    }
 
     // Initialize CPU backend
     trace("before backend.open_x86_32");
@@ -588,6 +607,10 @@ int main(int argc, char **argv) {
             cout << ", cap=" << g_max_profile_blocks << " (PVZ_MAX_PROFILE_BLOCKS)";
         }
         cout << "\n";
+        if (g_tb_flush_interval_blocks > 0) {
+            cout << "[*] TB cache flush interval: " << g_tb_flush_interval_blocks
+                 << " blocks (PVZ_TB_FLUSH_INTERVAL_BLOCKS).\n";
+        }
         trace("after jit dispatcher init");
 
         trace("before PE parse");

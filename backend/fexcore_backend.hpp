@@ -23,6 +23,7 @@ public:
 
     uc_err emu_start(uint64_t begin, uint64_t until, uint64_t timeout, size_t count) override;
     uc_err emu_stop() override;
+    uc_err flush_tb_cache() override;
 
     uc_err hook_add(uc_hook* hook, int type, void* callback, void* user_data, uint64_t begin, uint64_t end) override;
     const char* strerror(uc_err err) const override;
@@ -42,6 +43,7 @@ private:
         uc_err (*reg_write)(void*, int, const void*) = nullptr;
         uc_err (*emu_start)(void*, uint64_t, uint64_t, uint64_t, size_t) = nullptr;
         uc_err (*emu_stop)(void*) = nullptr;
+        uc_err (*flush_tb)(void*) = nullptr;
         uc_err (*hook_add)(void*, uc_hook*, int, void*, void*, uint64_t, uint64_t) = nullptr;
         const char* (*strerror)(uc_err) = nullptr;
         const char* (*backend_name)() = nullptr;

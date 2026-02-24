@@ -113,6 +113,12 @@ PVZ_VRAM_PRESENT_STRIDE=8000 ./build/runner pvz/main.exe
 # MessageBoxA/W의 SDL 팝업 표시 비활성화
 PVZ_DISABLE_SDL_MESSAGEBOX=1 ./build/runner pvz/main.exe
 
+# API 훅 디버그 로그 출력 활성화 (기본 OFF)
+PVZ_VERBOSE_API_HOOK=1 ./build/runner pvz/main.exe
+
+# (실험) Unicorn TB 캐시 주기적 flush (기본 OFF)
+PVZ_TB_FLUSH_INTERVAL_BLOCKS=20000 ./build/runner pvz/main.exe
+
 # 특정 watchpoint 로그 활성화 (기본 OFF)
 PVZ_WATCHPOINT=1 ./build/runner pvz/main.exe
 
