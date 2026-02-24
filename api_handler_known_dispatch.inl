@@ -1251,7 +1251,6 @@
             } else if (name == "KERNEL32.dll!EncodePointer" || name == "KERNEL32.dll!DecodePointer") {
                 uint32_t ptr = handler->ctx.get_arg(0);
                 handler->ctx.set_eax(ptr);
-                std::cout << "\n[API CALL] [OK] " << name << "(0x" << std::hex << ptr << std::dec << ") returning unchanged.\n";
             } else if (name == "KERNEL32.dll!InterlockedExchange") {
                 uint32_t target_ptr = handler->ctx.get_arg(0);
                 uint32_t val = handler->ctx.get_arg(1);
@@ -2024,6 +2023,95 @@
                 } else {
                     handler->ctx.set_eax(0x12345678u);
                 }
+            } else if (name == "USER32.dll!GetLastActivePopup") {
+                uint32_t hwnd = handler->ctx.get_arg(0);
+                bool exists = (g_valid_hwnds.find(hwnd) != g_valid_hwnds.end());
+                if (exists) {
+                    handler->ctx.set_eax(hwnd);
+                } else if (!g_valid_hwnds.empty()) {
+                    handler->ctx.set_eax(*g_valid_hwnds.begin());
+                } else {
+                    handler->ctx.set_eax(0x12345678u);
+                }
+            } else if (name == "USER32.dll!GetProcessWindowStation") {
+                uint32_t h_winsta = 0xB100u;
+                auto it = handler->ctx.global_state.find("ProcessWindowStationHandle");
+                if (it != handler->ctx.global_state.end()) {
+                    h_winsta = static_cast<uint32_t>(it->second);
+                } else {
+                    handler->ctx.global_state["ProcessWindowStationHandle"] = h_winsta;
+                }
+                handler->ctx.set_eax(h_winsta);
+                handler->ctx.global_state["LastError"] = 0;
+            } else if (name == "USER32.dll!GetUserObjectInformationA" ||
+                       name == "USER32.dll!GetUserObjectInformationW") {
+                uint32_t h_obj = handler->ctx.get_arg(0);
+                uint32_t n_index = handler->ctx.get_arg(1);
+                uint32_t pv_info = handler->ctx.get_arg(2);
+                uint32_t n_length = handler->ctx.get_arg(3);
+                uint32_t p_needed = handler->ctx.get_arg(4);
+                bool wide = (name == "USER32.dll!GetUserObjectInformationW");
+
+                uint32_t expected = 0xB100u;
+                auto it = handler->ctx.global_state.find("ProcessWindowStationHandle");
+                if (it != handler->ctx.global_state.end()) {
+                    expected = static_cast<uint32_t>(it->second);
+                }
+                if (h_obj != expected && h_obj != 0xFFFFFFFFu) {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
+                    return;
+                }
+
+                std::vector<uint8_t> payload;
+                if (n_index == 1u) { // UOI_FLAGS
+                    payload.resize(12, 0);
+                    uint32_t flags = 1u;
+                    std::memcpy(payload.data() + 8, &flags, 4); // USEROBJECTFLAGS.dwFlags
+                } else if (n_index == 2u) { // UOI_NAME
+                    const char* name_ascii = "WinSta0";
+                    if (wide) {
+                        std::u16string w;
+                        for (const char* p = name_ascii; *p; ++p) w.push_back(static_cast<char16_t>(*p));
+                        w.push_back(0);
+                        payload.resize(w.size() * sizeof(char16_t), 0);
+                        std::memcpy(payload.data(), w.data(), payload.size());
+                    } else {
+                        size_t len = std::strlen(name_ascii) + 1;
+                        payload.resize(len, 0);
+                        std::memcpy(payload.data(), name_ascii, len);
+                    }
+                } else if (n_index == 3u) { // UOI_TYPE
+                    const char* type_ascii = "WindowStation";
+                    if (wide) {
+                        std::u16string w;
+                        for (const char* p = type_ascii; *p; ++p) w.push_back(static_cast<char16_t>(*p));
+                        w.push_back(0);
+                        payload.resize(w.size() * sizeof(char16_t), 0);
+                        std::memcpy(payload.data(), w.data(), payload.size());
+                    } else {
+                        size_t len = std::strlen(type_ascii) + 1;
+                        payload.resize(len, 0);
+                        std::memcpy(payload.data(), type_ascii, len);
+                    }
+                } else {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 87; // ERROR_INVALID_PARAMETER
+                    return;
+                }
+
+                uint32_t needed = static_cast<uint32_t>(payload.size());
+                if (p_needed != 0) {
+                    handler->backend.mem_write(p_needed, &needed, 4);
+                }
+                if (pv_info == 0 || n_length < needed) {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 122; // ERROR_INSUFFICIENT_BUFFER
+                    return;
+                }
+                handler->backend.mem_write(pv_info, payload.data(), payload.size());
+                handler->ctx.set_eax(1);
+                handler->ctx.global_state["LastError"] = 0;
             } else if (name == "USER32.dll!SetWindowLongA" || name == "USER32.dll!SetWindowLongW") {
                 uint32_t hwnd = handler->ctx.get_arg(0);
                 int32_t index = static_cast<int32_t>(handler->ctx.get_arg(1));
@@ -2132,7 +2220,10 @@
                     SDL_WaitEventTimeout(&evt, static_cast<int>(wait_ms));
                     pump_due_win32_timers(SDL_GetTicks());
                 }
-                if (!g_win32_message_queue.empty()) {
+                uint32_t current_tid = handler->coop_threads_enabled()
+                    ? handler->coop_current_thread_id()
+                    : 1u;
+                if (win32_queue_has_message_for_thread(current_tid)) {
                     handler->ctx.set_eax(0); // WAIT_OBJECT_0 + nCount(0)
                 } else {
                     handler->ctx.set_eax(0x102); // WAIT_TIMEOUT
@@ -2190,7 +2281,7 @@
                 SDL_GetMouseState(&mx, &my);
                 msg.pt_x = mx;
                 msg.pt_y = my;
-                enqueue_win32_message(msg);
+                enqueue_win32_message(msg, id_thread);
                 if (thread_mock_trace_enabled()) {
                     std::cout << "[THREAD MOCK] PostThreadMessage(tid=" << id_thread
                               << ", msg=0x" << std::hex << msg.message << ", queue="
@@ -2209,7 +2300,12 @@
                 SDL_GetMouseState(&mx, &my);
                 msg.pt_x = mx;
                 msg.pt_y = my;
-                enqueue_win32_message(msg);
+                uint32_t target_tid = 0;
+                auto it_owner = g_hwnd_owner_thread_id.find(msg.hwnd);
+                if (it_owner != g_hwnd_owner_thread_id.end()) {
+                    target_tid = it_owner->second;
+                }
+                enqueue_win32_message(msg, target_tid);
 
                 // Cooperative wakeup: many bootstrap paths wait on an event that the
                 // worker thread sets when it posts into the UI queue.

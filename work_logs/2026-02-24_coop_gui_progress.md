@@ -56,3 +56,22 @@
   - 상위 루프: `0x441a73`, `0x5d8890`, `0x62456a`, `0x441dd0`, `0x404470`.
   - focus snapshot에서 `REANIM\\...PNG`, `IM\\ZOMBIE_...PNG` 등 리소스 문자열이 지속적으로 변화.
   - 결론: 완전 정체라기보다, 리소스 문자열/패스 처리 단계가 매우 길게 이어지는 상태.
+
+## 23:50 이후 추가 진행
+- cooperative 메시지 큐 정합성 보강:
+  - 내부 Win32 메시지 큐를 thread-aware 엔벨로프(`target_thread_id`)로 변경.
+  - `PostThreadMessage`는 지정 thread id로 라우팅, `PostMessage`/`WM_TIMER`는 `hwnd -> owner thread` 기준 라우팅.
+  - `GetMessage/PeekMessage/MsgWaitForMultipleObjects`가 현재 cooperative thread id 기준으로 메시지를 소비하도록 수정.
+- 런타임 관찰(90s/240s):
+  - `CreateThread/Wait/PostMessage` 구간은 해당 샘플 구간에서 아직 미진입.
+  - hot block는 계속 `0x441a73 / 0x5d8890 / 0x62456a / 0x441dd0 / 0x404470` 중심.
+  - `0x62ce9b/0x62cf8e/0x62118b/0x61fcd4`는 이번 샘플에서 관측되지 않음(해당 단계 이전).
+- 추가 성능 가드 도입:
+  - `PVZ_HOT_LOOP_ACCEL=1` 옵션 추가(기본 OFF).
+  - 주소별 fast-path:
+    - `0x441a73` dword memcmp 루프,
+    - `0x5d888c/0x5d8890` XOR copy 루프,
+    - `0x62456a` `rep movsd` 루프,
+    - `0x404470` strlen 루프.
+  - 목적: 리소스 전처리 구간 체류 시간을 줄여 GUI thread/message 경로까지 더 빨리 도달하도록 가속.
+  - 가속 적용 후 hot set가 `0x441dd0/0x441dd9/0x441d2x..0x441d7x`, `0x61e4e6/0x61e4ef`, `0x5d7c0d/0x5d7c24`로 이동.

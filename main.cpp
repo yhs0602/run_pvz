@@ -271,6 +271,9 @@ uint64_t g_block_focus_interval = 50000;
 size_t g_block_focus_dump_bytes = 24;
 unordered_set<uint32_t> g_block_focus_addrs;
 unordered_map<uint32_t, uint64_t> g_block_focus_hits;
+bool g_hot_loop_accel_enabled = false;
+uint64_t g_hot_loop_accel_hits = 0;
+uint64_t g_hot_loop_accel_bytes = 0;
 uint32_t g_guest_vram_base = 0;
 size_t g_guest_vram_size = 0;
 uint32_t* g_host_vram_ptr = nullptr;
@@ -375,6 +378,178 @@ static void maybe_print_block_focus(uint32_t addr32) {
     cout << "\n";
 }
 
+static bool accelerate_xor_copy_loop(uc_engine* uc, uint32_t addr32) {
+    if (addr32 != 0x5d888cu && addr32 != 0x5d8890u) return false;
+
+    uint32_t ecx = 0, edx = 0, esi = 0, edi = 0;
+    uc_reg_read(uc, UC_X86_REG_ECX, &ecx);
+    uc_reg_read(uc, UC_X86_REG_EDX, &edx);
+    uc_reg_read(uc, UC_X86_REG_ESI, &esi);
+    uc_reg_read(uc, UC_X86_REG_EDI, &edi);
+
+    uint32_t count = (addr32 == 0x5d888cu) ? edi : esi;
+    if (count > (1u << 24)) return false;
+
+    if (count > 0) {
+        vector<uint8_t> buf(count, 0);
+        if (g_backend->mem_read(ecx, buf.data(), count) != UC_ERR_OK) return false;
+        for (uint8_t& b : buf) b ^= 0xF7u;
+        if (g_backend->mem_write(edx, buf.data(), count) != UC_ERR_OK) return false;
+
+        uint32_t eax = 0;
+        uc_reg_read(uc, UC_X86_REG_EAX, &eax);
+        eax = (eax & 0xFFFFFF00u) | static_cast<uint32_t>(buf.back());
+        uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+    }
+
+    ecx += count;
+    edx += count;
+    esi = 0;
+    uc_reg_write(uc, UC_X86_REG_ECX, &ecx);
+    uc_reg_write(uc, UC_X86_REG_EDX, &edx);
+    uc_reg_write(uc, UC_X86_REG_ESI, &esi);
+
+    uint32_t eip = 0x5d88a1u;
+    uc_reg_write(uc, UC_X86_REG_EIP, &eip);
+    uc_emu_stop(uc);
+
+    g_hot_loop_accel_hits++;
+    g_hot_loop_accel_bytes += count;
+    return true;
+}
+
+static bool accelerate_rep_movsd(uc_engine* uc, uint32_t addr32) {
+    if (addr32 != 0x62456au) return false;
+
+    uint32_t ecx = 0, esi = 0, edi = 0, eflags = 0;
+    uc_reg_read(uc, UC_X86_REG_ECX, &ecx);
+    uc_reg_read(uc, UC_X86_REG_ESI, &esi);
+    uc_reg_read(uc, UC_X86_REG_EDI, &edi);
+    uc_reg_read(uc, UC_X86_REG_EFLAGS, &eflags);
+    if ((eflags & 0x400u) != 0) return false; // DF=1 path not accelerated
+
+    uint64_t byte_count64 = static_cast<uint64_t>(ecx) * 4ull;
+    if (byte_count64 == 0) {
+        uint32_t eip = 0x62456cu;
+        uc_reg_write(uc, UC_X86_REG_EIP, &eip);
+        uc_emu_stop(uc);
+        g_hot_loop_accel_hits++;
+        return true;
+    }
+    if (byte_count64 > (1ull << 27)) return false;
+    size_t byte_count = static_cast<size_t>(byte_count64);
+
+    vector<uint8_t> buf(byte_count, 0);
+    if (g_backend->mem_read(esi, buf.data(), byte_count) != UC_ERR_OK) return false;
+    if (g_backend->mem_write(edi, buf.data(), byte_count) != UC_ERR_OK) return false;
+
+    esi += static_cast<uint32_t>(byte_count);
+    edi += static_cast<uint32_t>(byte_count);
+    ecx = 0;
+    uc_reg_write(uc, UC_X86_REG_ESI, &esi);
+    uc_reg_write(uc, UC_X86_REG_EDI, &edi);
+    uc_reg_write(uc, UC_X86_REG_ECX, &ecx);
+
+    uint32_t eip = 0x62456cu;
+    uc_reg_write(uc, UC_X86_REG_EIP, &eip);
+    uc_emu_stop(uc);
+
+    g_hot_loop_accel_hits++;
+    g_hot_loop_accel_bytes += byte_count;
+    return true;
+}
+
+static bool accelerate_memcmp_dword_loop(uc_engine* uc, uint32_t addr32) {
+    if (addr32 != 0x441a73u) return false;
+
+    uint32_t eax = 0, ecx = 0, edx = 0, esi = 0;
+    uc_reg_read(uc, UC_X86_REG_EAX, &eax);
+    uc_reg_read(uc, UC_X86_REG_ECX, &ecx);
+    uc_reg_read(uc, UC_X86_REG_EDX, &edx);
+    uc_reg_read(uc, UC_X86_REG_ESI, &esi);
+    if (eax < 4) return false;
+
+    uint32_t remaining = eax;
+    uint32_t last_word = esi;
+    while (remaining >= 4) {
+        uint32_t lhs = 0;
+        uint32_t rhs = 0;
+        if (g_backend->mem_read(edx, &lhs, 4) != UC_ERR_OK) return false;
+        if (g_backend->mem_read(ecx, &rhs, 4) != UC_ERR_OK) return false;
+
+        last_word = lhs;
+        if (lhs != rhs) {
+            uc_reg_write(uc, UC_X86_REG_ESI, &lhs);
+            uint32_t eip = 0x441a8bu;
+            uc_reg_write(uc, UC_X86_REG_EIP, &eip);
+            uc_emu_stop(uc);
+            g_hot_loop_accel_hits++;
+            return true;
+        }
+
+        remaining -= 4;
+        ecx += 4;
+        edx += 4;
+    }
+
+    uc_reg_write(uc, UC_X86_REG_EAX, &remaining);
+    uc_reg_write(uc, UC_X86_REG_ECX, &ecx);
+    uc_reg_write(uc, UC_X86_REG_EDX, &edx);
+    uc_reg_write(uc, UC_X86_REG_ESI, &last_word);
+    uint32_t eip = 0x441a87u;
+    uc_reg_write(uc, UC_X86_REG_EIP, &eip);
+    uc_emu_stop(uc);
+
+    g_hot_loop_accel_hits++;
+    g_hot_loop_accel_bytes += static_cast<uint64_t>(eax - remaining);
+    return true;
+}
+
+static bool accelerate_strlen_loop(uc_engine* uc, uint32_t addr32) {
+    if (addr32 != 0x404470u) return false;
+
+    uint32_t eax = 0;
+    uc_reg_read(uc, UC_X86_REG_EAX, &eax);
+    if (eax < 0x1000u) return false;
+    uint32_t start = eax;
+
+    constexpr size_t kChunk = 4096;
+    vector<uint8_t> buf(kChunk, 0);
+    uint32_t cursor = eax;
+    while (true) {
+        if (g_backend->mem_read(cursor, buf.data(), buf.size()) != UC_ERR_OK) return false;
+        auto it = std::find(buf.begin(), buf.end(), 0u);
+        if (it != buf.end()) {
+            size_t offset = static_cast<size_t>(std::distance(buf.begin(), it));
+            eax = cursor + static_cast<uint32_t>(offset) + 1u; // loop exits after add eax,1 on NUL
+            uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+
+            uint32_t ecx = 0;
+            uc_reg_read(uc, UC_X86_REG_ECX, &ecx);
+            ecx = (ecx & 0xFFFFFF00u); // cl=0
+            uc_reg_write(uc, UC_X86_REG_ECX, &ecx);
+
+            uint32_t eip = 0x404479u;
+            uc_reg_write(uc, UC_X86_REG_EIP, &eip);
+            uc_emu_stop(uc);
+
+            g_hot_loop_accel_hits++;
+            g_hot_loop_accel_bytes += static_cast<uint64_t>(eax - start);
+            return true;
+        }
+        cursor += static_cast<uint32_t>(buf.size());
+    }
+}
+
+static bool maybe_accelerate_hot_loop_block(uc_engine* uc, uint32_t addr32) {
+    if (!g_hot_loop_accel_enabled) return false;
+    if (accelerate_xor_copy_loop(uc, addr32)) return true;
+    if (accelerate_rep_movsd(uc, addr32)) return true;
+    if (accelerate_memcmp_dword_loop(uc, addr32)) return true;
+    if (accelerate_strlen_loop(uc, addr32)) return true;
+    return false;
+}
+
 // ============================================
 
 
@@ -477,6 +652,13 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
         maybe_print_block_hot_stats();
     }
     maybe_print_block_focus(static_cast<uint32_t>(address));
+    if (maybe_accelerate_hot_loop_block(uc, static_cast<uint32_t>(address))) {
+        if ((g_hot_loop_accel_hits % 50000u) == 0u) {
+            cout << "[HOT ACCEL] hits=" << g_hot_loop_accel_hits
+                 << " bytes=" << g_hot_loop_accel_bytes << "\n";
+        }
+        return;
+    }
 
     if (g_tb_flush_interval_blocks > 0) {
         g_tb_flush_counter++;
@@ -756,6 +938,9 @@ int main(int argc, char **argv) {
     if (env_truthy("PVZ_BLOCK_FOCUS_TRACE")) {
         g_block_focus_trace_enabled = true;
     }
+    if (env_truthy("PVZ_HOT_LOOP_ACCEL")) {
+        g_hot_loop_accel_enabled = true;
+    }
     int block_focus_interval = env_int("PVZ_BLOCK_FOCUS_INTERVAL", 50000);
     if (block_focus_interval > 0) {
         g_block_focus_interval = static_cast<uint64_t>(block_focus_interval);
@@ -850,6 +1035,11 @@ int main(int argc, char **argv) {
                 n++;
             }
             cout << " (PVZ_BLOCK_FOCUS_TRACE / PVZ_BLOCK_FOCUS_ADDRS / PVZ_BLOCK_FOCUS_INTERVAL / PVZ_BLOCK_FOCUS_DUMP_BYTES).\n";
+        }
+        if (g_hot_loop_accel_enabled) {
+            cout << "[*] Hot loop acceleration enabled (PVZ_HOT_LOOP_ACCEL): "
+                 << "0x441a73(memcmp dword), 0x5d888c/0x5d8890(xor copy), "
+                 << "0x62456a(rep movsd), 0x404470(strlen loop).\n";
         }
         trace("after jit dispatcher init");
 
@@ -986,6 +1176,11 @@ int main(int argc, char **argv) {
 
     } catch (const exception& e) {
         cerr << "Exception caught: " << e.what() << endl;
+    }
+
+    if (g_hot_loop_accel_enabled && g_hot_loop_accel_hits > 0) {
+        cout << "[*] Hot loop acceleration summary: hits=" << g_hot_loop_accel_hits
+             << ", bytes=" << g_hot_loop_accel_bytes << "\n";
     }
 
     delete global_jit;

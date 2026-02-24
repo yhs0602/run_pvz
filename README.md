@@ -138,6 +138,9 @@ PVZ_HOT_FOCUS_ADDRS=0x62ce9b,0x62cf8e,0x62118b,0x61fcd4 PVZ_HOT_FOCUS_RANGE=0x20
 PVZ_BLOCK_HOT_SAMPLE=1 PVZ_BLOCK_HOT_SAMPLE_INTERVAL=200000 ./build-fex/runner pvz/main.exe
 PVZ_BLOCK_FOCUS_TRACE=1 PVZ_BLOCK_FOCUS_ADDRS=0x441a73,0x441a79,0x441dd0,0x5d8890,0x62456a PVZ_BLOCK_FOCUS_INTERVAL=50000 PVZ_BLOCK_FOCUS_DUMP_BYTES=16 ./build-fex/runner pvz/main.exe
 
+# 리소스 단계 hot-loop 가속(선택): 0x441a73/0x5d888c/0x5d8890/0x62456a/0x404470 루프를 호스트 빠른 경로로 처리
+PVZ_HOT_LOOP_ACCEL=1 ./build-fex/runner pvz/main.exe
+
 # WndProc 브릿지 상세 추적(RegisterClass/CreateWindowEx/Dispatch/SendMessage)
 PVZ_WNDPROC_TRACE=1 ./build-fex/runner pvz/main.exe
 

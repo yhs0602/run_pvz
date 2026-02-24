@@ -39,6 +39,11 @@ struct Win32_MSG {
     int32_t pt_y;
 };
 
+struct PendingWin32Message {
+    Win32_MSG msg;
+    uint32_t target_thread_id = 0; // 0 == any thread
+};
+
 struct HostFileHandle {
     std::vector<uint8_t> data;
     size_t pos = 0;
@@ -104,7 +109,7 @@ static std::unordered_map<uint32_t, uint32_t> g_resource_size_by_handle;
 static uint32_t g_resource_handle_top = 0xB000;
 static uint32_t g_resource_heap_top = 0x36000000;
 static bool g_resource_heap_mapped = false;
-static std::deque<Win32_MSG> g_win32_message_queue;
+static std::deque<PendingWin32Message> g_win32_message_queue;
 static std::unordered_map<uint64_t, Win32Timer> g_win32_timers;
 static std::unordered_set<uint32_t> g_valid_hwnds;
 static std::unordered_map<uint32_t, uint32_t> g_hwnd_owner_thread_id;
@@ -234,11 +239,14 @@ static bool is_noisy_fastpath_api(const std::string& n) {
 
 constexpr size_t kWin32MessageQueueMax = 4096;
 
-static void enqueue_win32_message(const Win32_MSG& msg) {
+static void enqueue_win32_message(const Win32_MSG& msg, uint32_t target_thread_id = 0) {
     if (g_win32_message_queue.size() >= kWin32MessageQueueMax) {
         g_win32_message_queue.pop_front();
     }
-    g_win32_message_queue.push_back(msg);
+    PendingWin32Message pending = {};
+    pending.msg = msg;
+    pending.target_thread_id = target_thread_id;
+    g_win32_message_queue.push_back(pending);
 }
 
 static uint64_t win32_timer_key(uint32_t hwnd, uint32_t timer_id) {
@@ -433,7 +441,12 @@ static void enqueue_timer_message(uint32_t hwnd, uint32_t timer_id, uint32_t now
     SDL_GetMouseState(&mx, &my);
     msg.pt_x = mx;
     msg.pt_y = my;
-    enqueue_win32_message(msg);
+    uint32_t target_thread_id = 0;
+    auto it_owner = g_hwnd_owner_thread_id.find(hwnd);
+    if (it_owner != g_hwnd_owner_thread_id.end()) {
+        target_thread_id = it_owner->second;
+    }
+    enqueue_win32_message(msg, target_thread_id);
 }
 
 static void pump_due_win32_timers(uint32_t now_ms) {
@@ -458,6 +471,28 @@ static bool win32_message_matches_filter(const Win32_MSG& msg, uint32_t hwnd_fil
     if (msg.message < lo) return false;
     if (hi != 0 && msg.message > hi) return false;
     return true;
+}
+
+static bool win32_message_matches_filter(const PendingWin32Message& pending,
+                                         uint32_t current_thread_id,
+                                         uint32_t hwnd_filter,
+                                         uint32_t min_filter,
+                                         uint32_t max_filter) {
+    if (pending.target_thread_id != 0 &&
+        current_thread_id != 0 &&
+        pending.target_thread_id != current_thread_id) {
+        return false;
+    }
+    return win32_message_matches_filter(pending.msg, hwnd_filter, min_filter, max_filter);
+}
+
+static bool win32_queue_has_message_for_thread(uint32_t current_thread_id) {
+    for (const auto& pending : g_win32_message_queue) {
+        if (pending.target_thread_id == 0 || pending.target_thread_id == current_thread_id) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static bool env_truthy(const char* name) {
@@ -753,7 +788,11 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"USER32.dll!IsWindowVisible", 4},
     {"USER32.dll!IsWindowEnabled", 4},
     {"USER32.dll!GetActiveWindow", 0},
+    {"USER32.dll!GetLastActivePopup", 4},
     {"USER32.dll!GetForegroundWindow", 0},
+    {"USER32.dll!GetProcessWindowStation", 0},
+    {"USER32.dll!GetUserObjectInformationA", 20},
+    {"USER32.dll!GetUserObjectInformationW", 20},
     {"USER32.dll!WaitMessage", 0},
     {"USER32.dll!MsgWaitForMultipleObjects", 20},
     {"USER32.dll!MsgWaitForMultipleObjectsEx", 20},
@@ -1641,6 +1680,19 @@ void DummyAPIHandler::coop_on_timeslice_end() {
     if (!coop_threads_enabled_flag || !coop_threads_initialized) return;
     auto it = coop_threads.find(coop_current_handle);
     if (it == coop_threads.end()) return;
+
+    // Fast-path: while only a single runnable guest thread exists, avoid
+    // expensive save/load register churn every timeslice.
+    if (!coop_force_yield && coop_order.size() == 1 && !it->second.finished) {
+        uint32_t eip = 0;
+        backend.reg_read(UC_X86_REG_EIP, &eip);
+        it->second.regs.eip = eip;
+        it->second.quanta++;
+        if (eip == 0 || eip == 0xFFFFFFFFu) {
+            coop_mark_thread_finished(coop_current_handle, "returned to null");
+        }
+        return;
+    }
 
     if (!it->second.finished) {
         coop_save_current_thread_regs();
@@ -2535,6 +2587,9 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             uint32_t wMsgFilterMin = handler->ctx.get_arg(2);
             uint32_t wMsgFilterMax = handler->ctx.get_arg(3);
             uint32_t remove_flag = is_peek ? handler->ctx.get_arg(4) : 1;
+            uint32_t current_tid = handler->coop_threads_enabled()
+                ? handler->coop_current_thread_id()
+                : 1u;
             
             SDL_Event event;
             bool has_event = false;
@@ -2544,10 +2599,10 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             pump_due_win32_timers(SDL_GetTicks());
 
             for (auto it = g_win32_message_queue.begin(); it != g_win32_message_queue.end(); ++it) {
-                if (!win32_message_matches_filter(*it, hWnd, wMsgFilterMin, wMsgFilterMax)) {
+                if (!win32_message_matches_filter(*it, current_tid, hWnd, wMsgFilterMin, wMsgFilterMax)) {
                     continue;
                 }
-                msg = *it;
+                msg = it->msg;
                 if (!is_peek || (remove_flag & 0x0001u) != 0) {
                     g_win32_message_queue.erase(it);
                 }
@@ -2565,10 +2620,10 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 if (!has_event) {
                     pump_due_win32_timers(SDL_GetTicks());
                     for (auto it = g_win32_message_queue.begin(); it != g_win32_message_queue.end(); ++it) {
-                        if (!win32_message_matches_filter(*it, hWnd, wMsgFilterMin, wMsgFilterMax)) {
+                        if (!win32_message_matches_filter(*it, current_tid, hWnd, wMsgFilterMin, wMsgFilterMax)) {
                             continue;
                         }
-                        msg = *it;
+                        msg = it->msg;
                         g_win32_message_queue.erase(it);
                         has_event = true;
                         from_queue = true;
@@ -2584,10 +2639,10 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     enqueue_timer_message(hwnd, 1, now_ms);
                     g_synth_idle_timer_next_ms = now_ms + 16;
                     for (auto it = g_win32_message_queue.begin(); it != g_win32_message_queue.end(); ++it) {
-                        if (!win32_message_matches_filter(*it, hWnd, wMsgFilterMin, wMsgFilterMax)) {
+                        if (!win32_message_matches_filter(*it, current_tid, hWnd, wMsgFilterMin, wMsgFilterMax)) {
                             continue;
                         }
-                        msg = *it;
+                        msg = it->msg;
                         g_win32_message_queue.erase(it);
                         has_event = true;
                         from_queue = true;
