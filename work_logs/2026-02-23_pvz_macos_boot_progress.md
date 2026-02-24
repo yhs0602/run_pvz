@@ -430,3 +430,20 @@
   1. `resources.xml` 이후 루프에서 heap/chritical hot path 원인을 block-level로 좁히기(특정 EIP 범위 샘플링).
   2. `IDirectDrawSurface7::Lock/Unlock` 경로 강제 진입을 위해 `CreateSurface` 생성 객체/flags 반환값 정합성 추가 보강.
   3. (근본) `unicorn-shim` 대신 실제 libfexcore 엔진 브릿지 구현 우선순위 상향(메모리/성능 공통 해결 가능성).
+
+27. 파일 열람 API 정합성 보강 (`FindFirstFileA/FindNextFileA/FindClose`)
+- 배경:
+  - `KNOWN_SIGNATURES`에 등록된 `FindFirstFileA/FindNextFileA/FindClose`가 실제 구현 없이 generic success 경로로 빠져 파일 탐색 결과가 왜곡될 수 있었음.
+- 적용(`api_handler.cpp`):
+  - Win32 find-handle 상태(`find_` handle) 추가.
+  - `FindFirstFileA`:
+    - guest 경로/패턴(`*`,`?`)을 host 디렉토리에 매칭.
+    - 첫 엔트리를 `WIN32_FIND_DATAA`(320B) 구조로 채워 반환.
+    - 미매치 시 `INVALID_HANDLE_VALUE`, `ERROR_FILE_NOT_FOUND(2)`.
+  - `FindNextFileA`:
+    - 다음 엔트리 순회 및 `ERROR_NO_MORE_FILES(18)` 처리.
+  - `FindClose` + `CloseHandle` 경유 cleanup:
+    - find handle 메모리 해제 및 `LastError` 정합성 유지.
+- 효과:
+  - 파일/리소스 열람 경로의 반환값 결정성 향상.
+  - 향후 `resources/main.pak` 진입 이후 파일 루프 추적 시 false-positive(success-only) 가능성 감소.

@@ -42,6 +42,17 @@ struct HostFileHandle {
     size_t pos = 0;
 };
 
+struct FindFileEntry {
+    std::string file_name;
+    uint64_t file_size = 0;
+    bool is_dir = false;
+};
+
+struct FindHandle {
+    std::vector<FindFileEntry> entries;
+    size_t index = 0;
+};
+
 struct EventHandle {
     bool manual_reset = false;
     bool signaled = false;
@@ -101,6 +112,49 @@ static std::string to_lower_ascii(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return s;
+}
+
+static bool wildcard_match_ascii_ci(const std::string& pattern_raw, const std::string& text_raw) {
+    const std::string pattern = to_lower_ascii(pattern_raw);
+    const std::string text = to_lower_ascii(text_raw);
+    size_t pi = 0;
+    size_t ti = 0;
+    size_t star = std::string::npos;
+    size_t match = 0;
+    while (ti < text.size()) {
+        if (pi < pattern.size() && (pattern[pi] == '?' || pattern[pi] == text[ti])) {
+            ++pi;
+            ++ti;
+        } else if (pi < pattern.size() && pattern[pi] == '*') {
+            star = pi++;
+            match = ti;
+        } else if (star != std::string::npos) {
+            pi = star + 1;
+            ti = ++match;
+        } else {
+            return false;
+        }
+    }
+    while (pi < pattern.size() && pattern[pi] == '*') ++pi;
+    return pi == pattern.size();
+}
+
+static void write_win32_find_data_a(APIContext& ctx, uint32_t lpFindFileData, const FindFileEntry& entry) {
+    if (lpFindFileData == 0) return;
+    // WIN32_FIND_DATAA is 320 bytes on Win32.
+    std::array<uint8_t, 320> data{};
+    uint32_t attrs = entry.is_dir ? 0x10u : 0x80u; // DIRECTORY or NORMAL
+    std::memcpy(data.data() + 0, &attrs, 4);
+    uint32_t size_high = static_cast<uint32_t>(entry.file_size >> 32);
+    uint32_t size_low = static_cast<uint32_t>(entry.file_size & 0xFFFFFFFFu);
+    std::memcpy(data.data() + 28, &size_high, 4);
+    std::memcpy(data.data() + 32, &size_low, 4);
+    const size_t copy_len = std::min<size_t>(entry.file_name.size(), 259);
+    if (copy_len > 0) {
+        std::memcpy(data.data() + 44, entry.file_name.data(), copy_len);
+    }
+    data[44 + copy_len] = 0;
+    ctx.backend->mem_write(lpFindFileData, data.data(), data.size());
 }
 
 static bool starts_with_ascii_ci(const std::string& s, const char* prefix_lower) {
@@ -2024,6 +2078,99 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                         }
                     }
                 }
+            } else if (name == "KERNEL32.dll!FindFirstFileA") {
+                uint32_t lpFileName = handler->ctx.get_arg(0);
+                uint32_t lpFindFileData = handler->ctx.get_arg(1);
+                std::string guest_path = read_guest_c_string(handler->ctx, lpFileName, 1024);
+
+                std::string normalized = guest_path;
+                std::replace(normalized.begin(), normalized.end(), '/', '\\');
+                size_t slash = normalized.find_last_of('\\');
+                std::string dir_part = (slash == std::string::npos) ? "." : normalized.substr(0, slash);
+                std::string pattern = (slash == std::string::npos) ? normalized : normalized.substr(slash + 1);
+                if (pattern.empty()) pattern = "*";
+
+                std::vector<FindFileEntry> matches;
+                std::string host_exact = resolve_guest_path_to_host(normalized, handler->process_base_dir);
+                if (host_exact.empty()) {
+                    std::string host_dir = resolve_guest_path_to_host(dir_part, handler->process_base_dir);
+                    if (!host_dir.empty()) {
+                        std::error_code ec;
+                        for (const auto& de : std::filesystem::directory_iterator(host_dir, ec)) {
+                            if (ec) break;
+                            std::string file_name = de.path().filename().string();
+                            if (!wildcard_match_ascii_ci(pattern, file_name)) continue;
+                            FindFileEntry entry;
+                            entry.file_name = file_name;
+                            entry.is_dir = de.is_directory(ec);
+                            if (!entry.is_dir) {
+                                entry.file_size = de.file_size(ec);
+                                if (ec) entry.file_size = 0;
+                            }
+                            matches.push_back(std::move(entry));
+                        }
+                    }
+                } else {
+                    std::error_code ec;
+                    std::filesystem::path p(host_exact);
+                    FindFileEntry entry;
+                    entry.file_name = p.filename().string();
+                    entry.is_dir = std::filesystem::is_directory(p, ec);
+                    if (!entry.is_dir) {
+                        entry.file_size = std::filesystem::file_size(p, ec);
+                        if (ec) entry.file_size = 0;
+                    }
+                    matches.push_back(std::move(entry));
+                }
+
+                if (matches.empty()) {
+                    handler->ctx.set_eax(0xFFFFFFFFu); // INVALID_HANDLE_VALUE
+                    handler->ctx.global_state["LastError"] = 2; // ERROR_FILE_NOT_FOUND
+                } else {
+                    auto* fh = new FindHandle();
+                    fh->entries = std::move(matches);
+                    fh->index = 0;
+                    uint32_t handle = 0x6000;
+                    if (handler->ctx.global_state.find("FindHandleTop") != handler->ctx.global_state.end()) {
+                        handle = static_cast<uint32_t>(handler->ctx.global_state["FindHandleTop"]);
+                    }
+                    handler->ctx.global_state["FindHandleTop"] = handle + 4;
+                    handler->ctx.handle_map["find_" + std::to_string(handle)] = fh;
+                    write_win32_find_data_a(handler->ctx, lpFindFileData, fh->entries[0]);
+                    handler->ctx.set_eax(handle);
+                    handler->ctx.global_state["LastError"] = 0;
+                }
+            } else if (name == "KERNEL32.dll!FindNextFileA") {
+                uint32_t hFind = handler->ctx.get_arg(0);
+                uint32_t lpFindFileData = handler->ctx.get_arg(1);
+                auto itf = handler->ctx.handle_map.find("find_" + std::to_string(hFind));
+                if (itf == handler->ctx.handle_map.end()) {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
+                } else {
+                    auto* fh = static_cast<FindHandle*>(itf->second);
+                    if (fh->index + 1 >= fh->entries.size()) {
+                        handler->ctx.set_eax(0);
+                        handler->ctx.global_state["LastError"] = 18; // ERROR_NO_MORE_FILES
+                    } else {
+                        fh->index += 1;
+                        write_win32_find_data_a(handler->ctx, lpFindFileData, fh->entries[fh->index]);
+                        handler->ctx.set_eax(1);
+                        handler->ctx.global_state["LastError"] = 0;
+                    }
+                }
+            } else if (name == "KERNEL32.dll!FindClose") {
+                uint32_t hFind = handler->ctx.get_arg(0);
+                auto itf = handler->ctx.handle_map.find("find_" + std::to_string(hFind));
+                if (itf == handler->ctx.handle_map.end()) {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
+                } else {
+                    delete static_cast<FindHandle*>(itf->second);
+                    handler->ctx.handle_map.erase(itf);
+                    handler->ctx.set_eax(1);
+                    handler->ctx.global_state["LastError"] = 0;
+                }
             } else if (name == "KERNEL32.dll!CreateFileA") {
                 uint32_t lpFileName = handler->ctx.get_arg(0);
                 uint32_t creationDisposition = handler->ctx.get_arg(4);
@@ -2320,6 +2467,14 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     handler->ctx.set_eax(1);
                     handler->ctx.global_state["LastError"] = 0;
                 } else {
+                    auto itfind = handler->ctx.handle_map.find("find_" + std::to_string(h));
+                    if (itfind != handler->ctx.handle_map.end()) {
+                        delete static_cast<FindHandle*>(itfind->second);
+                        handler->ctx.handle_map.erase(itfind);
+                        handler->ctx.set_eax(1);
+                        handler->ctx.global_state["LastError"] = 0;
+                        return;
+                    }
                     auto itm = handler->ctx.handle_map.find("mapping_" + std::to_string(h));
                     if (itm != handler->ctx.handle_map.end()) {
                         delete static_cast<MappingHandle*>(itm->second);
