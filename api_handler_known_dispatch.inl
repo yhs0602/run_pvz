@@ -1,6 +1,4 @@
-        if (handler->try_load_dylib(name)) {
-            std::cout << "\n[API CALL] [JIT MOCK] Redirecting to " << name << std::endl;
-            handler->dylib_funcs[name](&handler->ctx);
+        if (handler->dispatch_dylib_mock(name)) {
         } else if (known) {
             if (name == "KERNEL32.dll!GetLastError") {
                 uint32_t last_error = handler->ctx.global_state["LastError"];

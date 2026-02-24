@@ -127,3 +127,11 @@
 ### 2026-02-25 추가 미세 가속
 - `0x441dd9` small-string capacity branch fast-path 추가(분기만 직접 계산).
 - `0x441dd0/0x441dd9/0x5d7c0d/0x61e4e6` 요청 hot set에 대해 모두 가속/정합성 경로 확보.
+
+### 2026-02-25 LLM API Mock 감사 강화
+- `api_mocks/<Func>.cpp` 소스 정적 감사 추가:
+  - `set_eax/pop_args/memory-reg write/global_state` 등 상태 변경 토큰이 전혀 없으면 no-op 의심으로 분류.
+- 런타임 동작:
+  - `PVZ_REJECT_NOOP_DYLIB_MOCKS=1`(기본)일 때 의심 mock은 로딩 후 실행하지 않고 generic success fallback.
+  - 감사 자체를 끄려면 `PVZ_DISABLE_DYLIB_MOCK_AUDIT=1`.
+- 기존 mock 소스 75개를 스캔해 현재 시점 no-op 의심 0개 확인.

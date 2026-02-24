@@ -160,6 +160,14 @@ static std::string to_lower_ascii(std::string s) {
     return s;
 }
 
+static bool contains_any_token_ci(const std::string& haystack_lower,
+                                  std::initializer_list<const char*> needles_lower) {
+    for (const char* n : needles_lower) {
+        if (haystack_lower.find(n) != std::string::npos) return true;
+    }
+    return false;
+}
+
 static bool wildcard_match_ascii_ci(const std::string& pattern_raw, const std::string& text_raw) {
     const std::string pattern = to_lower_ascii(pattern_raw);
     const std::string text = to_lower_ascii(text_raw);
@@ -1136,6 +1144,11 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
 DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref), current_addr(FAKE_API_BASE) {
     llm_pipeline_enabled = env_truthy("PVZ_ENABLE_LLM");
     dylib_mocks_enabled = env_truthy("PVZ_ENABLE_DYLIB_MOCKS");
+    dylib_mock_audit_enabled = !env_truthy("PVZ_DISABLE_DYLIB_MOCK_AUDIT");
+    const char* reject_noop_env = std::getenv("PVZ_REJECT_NOOP_DYLIB_MOCKS");
+    if (reject_noop_env && *reject_noop_env) {
+        dylib_mock_reject_noop = env_truthy("PVZ_REJECT_NOOP_DYLIB_MOCKS");
+    }
     max_api_llm_requests = env_int("PVZ_MAX_API_REQUESTS", -1);
     api_stats_interval = static_cast<uint64_t>(std::max(0, env_int("PVZ_API_STATS_INTERVAL", 0)));
     eip_hot_sample_enabled = env_truthy("PVZ_EIP_HOT_SAMPLE");
@@ -1186,6 +1199,11 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
         }
     }
     std::cout << "\n";
+    if (dylib_mocks_enabled) {
+        std::cout << "[*] Dylib mock audit: " << (dylib_mock_audit_enabled ? "ON" : "OFF")
+                  << ", reject_noop=" << (dylib_mock_reject_noop ? "ON" : "OFF")
+                  << " (PVZ_DISABLE_DYLIB_MOCK_AUDIT / PVZ_REJECT_NOOP_DYLIB_MOCKS)\n";
+    }
     if (eip_hot_sample_enabled) {
         std::cout << "[*] EIP hot sampler armed (trigger: resources.xml), interval="
                   << eip_hot_sample_interval << ", page_cap=" << eip_hot_page_cap
@@ -2057,6 +2075,74 @@ bool DummyAPIHandler::try_load_dylib(const std::string& api_name) {
     return false;
 }
 
+bool DummyAPIHandler::audit_dylib_mock_source(const std::string& api_name, std::string* reason_out) {
+    if (!dylib_mock_audit_enabled) return false;
+    auto it_cache = dylib_mock_audit_cache.find(api_name);
+    if (it_cache != dylib_mock_audit_cache.end()) {
+        if (it_cache->second < 0 && reason_out) *reason_out = "cached suspicious";
+        return it_cache->second < 0;
+    }
+
+    size_t excla = api_name.find('!');
+    std::string func_name = (excla != std::string::npos) ? api_name.substr(excla + 1) : api_name;
+    std::string source_path = "api_mocks/" + func_name + ".cpp";
+    if (!std::filesystem::exists(source_path)) {
+        dylib_mock_audit_cache[api_name] = 1;
+        return false;
+    }
+
+    std::ifstream in(source_path, std::ios::binary);
+    if (!in.is_open()) {
+        dylib_mock_audit_cache[api_name] = 1;
+        return false;
+    }
+    std::string src((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (src.size() > (1u << 20)) { // guard: 1MB source is enough for audit
+        src.resize(1u << 20);
+    }
+    std::string lower = to_lower_ascii(src);
+
+    bool has_effect = contains_any_token_ci(lower, {
+        "ctx->set_eax(",
+        "ctx->pop_args(",
+        "ctx->backend->mem_write(",
+        "ctx->backend->reg_write(",
+        "ctx->global_state[",
+        "ctx->handle_map[",
+        "ctx->backend->emu_stop(",
+        "ctx->backend->mem_map(",
+        "ctx->backend->mem_read("
+    });
+    bool suspicious = !has_effect;
+    dylib_mock_audit_cache[api_name] = suspicious ? -1 : 1;
+    if (suspicious && reason_out) {
+        *reason_out = "no observable state mutation (set_eax/pop_args/memory/register/global_state)";
+    }
+    return suspicious;
+}
+
+bool DummyAPIHandler::dispatch_dylib_mock(const std::string& api_name) {
+    if (!try_load_dylib(api_name)) return false;
+
+    std::string reason;
+    bool suspicious = audit_dylib_mock_source(api_name, &reason);
+    if (suspicious && dylib_mock_reject_noop) {
+        if (dylib_mock_audit_warned.insert(api_name).second) {
+            std::cout << "[API CALL] [JIT MOCK AUDIT] rejected suspicious mock for "
+                      << api_name << " (" << reason << "); fallback -> generic success.\n";
+        }
+        ctx.set_eax(1);
+        ctx.global_state["LastError"] = 0;
+        return true;
+    }
+
+    std::cout << "\n[API CALL] [JIT MOCK] Redirecting to " << api_name << std::endl;
+    auto fn_it = dylib_funcs.find(api_name);
+    if (fn_it == dylib_funcs.end()) return false;
+    fn_it->second(&ctx);
+    return true;
+}
+
 void DummyAPIHandler::handle_unknown_api(const std::string& api_name, uint32_t address) {
     if (!llm_pipeline_enabled) {
         std::string key = "unknown_fallback_seen:" + api_name;
@@ -2108,8 +2194,7 @@ void DummyAPIHandler::handle_unknown_api(const std::string& api_name, uint32_t a
     }
     
     // Now load and execute directly!
-    if (try_load_dylib(api_name)) {
-        dylib_funcs[api_name](&ctx);
+    if (dispatch_dylib_mock(api_name)) {
     } else {
         std::cerr << "[!] CRITICAL: Failed to load generated mock for " << api_name << "\n";
         backend.emu_stop();

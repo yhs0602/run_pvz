@@ -3,6 +3,7 @@
 #include "backend/cpu_backend.hpp"
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <map>
 #include <iostream>
@@ -50,6 +51,10 @@ private:
     std::unordered_map<uint32_t, std::string> fake_api_map;
     std::unordered_map<std::string, void*> dylib_handles;
     std::unordered_map<std::string, void(*)(APIContext*)> dylib_funcs;
+    std::unordered_map<std::string, int> dylib_mock_audit_cache; // 1=pass, -1=suspicious
+    std::unordered_set<std::string> dylib_mock_audit_warned;
+    bool dylib_mock_audit_enabled = true;
+    bool dylib_mock_reject_noop = true;
     std::unordered_map<std::string, uint64_t> api_call_counts;
     std::unordered_map<uint32_t, uint64_t> eip_hot_page_hits;
     std::unordered_map<uint32_t, uint64_t> eip_hot_addr_hits;
@@ -113,6 +118,8 @@ private:
     void record_hot_loop_api_stat(uint32_t ret_addr, const std::string& api_name);
     void maybe_print_hot_loop_api_stats();
     void dispatch_known_or_unknown_api(const std::string& name, uint64_t address, bool known);
+    bool audit_dylib_mock_source(const std::string& api_name, std::string* reason_out);
+    bool dispatch_dylib_mock(const std::string& api_name);
     
 
 public:

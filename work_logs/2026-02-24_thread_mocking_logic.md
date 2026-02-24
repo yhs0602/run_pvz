@@ -113,3 +113,11 @@ Win32 스레드/동기화 API는 `api_handler_known_dispatch.inl`, 스케줄러 
   - `start=0x5d5dc0` 반복 생성 루프를 cap 이후 실패로 전환.
 - 메시지 큐 정합성:
   - `PostMessage(HWND_BROADCAST)`를 유효 HWND fan-out으로 큐잉하도록 수정.
+
+## 8. LLM dylib mock 감사(2026-02-25)
+- 문제 배경: LLM 생성 mock이 본문에서 상태를 전혀 바꾸지 않는 no-op 스텁일 수 있음.
+- 대응:
+  - `.dylib` 실행 전 `api_mocks/<Func>.cpp`를 정적 감사.
+  - 상태 변경 토큰이 전혀 없으면 `suspicious`로 분류.
+  - 기본 설정(`PVZ_REJECT_NOOP_DYLIB_MOCKS=1`)에서는 해당 mock 실행을 거부하고 generic fallback(`EAX=1`, `LastError=0`) 적용.
+  - `PVZ_DISABLE_DYLIB_MOCK_AUDIT=1`로 감사 자체 비활성화 가능.

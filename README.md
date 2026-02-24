@@ -85,6 +85,12 @@ PVZ_ENABLE_LLM=1 ./build/runner pvz/main.exe
 # 동적 API mock(.dylib) 로더 활성화 (기본 OFF)
 PVZ_ENABLE_DYLIB_MOCKS=1 ./build/runner pvz/main.exe
 
+# dylib mock 소스 감사 비활성화 (기본 감사 ON)
+PVZ_DISABLE_DYLIB_MOCK_AUDIT=1 ./build/runner pvz/main.exe
+
+# no-op 의심 dylib mock 거부 비활성화 (기본 거부 ON)
+PVZ_REJECT_NOOP_DYLIB_MOCKS=0 ./build/runner pvz/main.exe
+
 # LLM 요청 예산 제한 (비용 상한, API mock은 기본 무제한)
 PVZ_ENABLE_LLM=1 PVZ_MAX_JIT_REQUESTS=24 PVZ_MAX_API_REQUESTS=200 ./build/runner pvz/main.exe
 
