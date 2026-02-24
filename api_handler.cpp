@@ -7,13 +7,16 @@
 #include <algorithm>
 #include <vector>
 #include <iterator>
+#include <deque>
 #include <cctype>
 #include <cstring>
 #include <cstdlib>
 #include <limits>
 
 // --- Win32 Message Mapping ---
+constexpr uint32_t WM_NULL = 0x0000;
 constexpr uint32_t WM_QUIT = 0x0012;
+constexpr uint32_t WM_TIMER = 0x0113;
 constexpr uint32_t WM_KEYDOWN = 0x0100;
 constexpr uint32_t WM_KEYUP = 0x0101;
 constexpr uint32_t WM_MOUSEMOVE = 0x0200;
@@ -58,6 +61,7 @@ static std::unordered_map<uint32_t, uint32_t> g_resource_size_by_handle;
 static uint32_t g_resource_handle_top = 0xB000;
 static uint32_t g_resource_heap_top = 0x36000000;
 static bool g_resource_heap_mapped = false;
+static std::deque<Win32_MSG> g_win32_message_queue;
 
 static std::string read_guest_c_string(APIContext& ctx, uint32_t guest_ptr, size_t max_len = 512) {
     if (guest_ptr == 0) return "";
@@ -75,6 +79,11 @@ static std::string to_lower_ascii(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return s;
+}
+
+static bool starts_with_ascii_ci(const std::string& s, const char* prefix_lower) {
+    std::string lower = to_lower_ascii(s);
+    return lower.rfind(prefix_lower, 0) == 0;
 }
 
 static bool env_truthy(const char* name) {
@@ -373,7 +382,11 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"DDRAW.dll!IDirectDraw7_Method_6", 16},
     {"DDRAW.dll!IDirectDraw7_Method_20", 12},
     {"DDRAW.dll!IDirectDraw7_Method_21", 24},
+    {"DDRAW.dll!IDirectDraw7_Method_22", 12}, // WaitForVerticalBlank(this, flags, hEvent)
     {"DDRAW.dll!IDirectDraw7_Method_23", 16},
+    {"DDRAW.dll!IDirectDraw7_Method_27", 12}, // GetDeviceIdentifier(this, outDeviceId, flags)
+    {"DDRAW.dll!IDirectDraw7_Method_12", 8},  // GetDisplayMode(this, outSurfaceDesc)
+    {"DDRAW.dll!IDirectDraw7_Method_17", 8},  // GetVerticalBlankStatus(this, outBool)
     {"DDRAW.dll!IDirectDraw_Method_4", 16}, // CreateClipper(this, flags, outClipper, unkOuter)
     {"DDRAW.dll!IDirectDraw_Method_5", 20}, // CreatePalette(this, flags, colorTable, outPalette, unkOuter)
     {"DDRAW.dll!IDirectDraw_Method_15", 8}, // GetMonitorFrequency(this, outHz)
@@ -393,6 +406,10 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"DDRAW.dll!IDirect3D8_Method_5", 16},
     {"DDRAW.dll!IDirect3D8_Method_13", 16},
     {"DDRAW.dll!IDirect3D8_Method_15", 28},
+    {"DDRAW.dll!IDirectDrawSurface7_Method_5", 24},  // Blt
+    {"DDRAW.dll!IDirectDrawSurface7_Method_11", 12}, // Flip
+    {"DDRAW.dll!IDirectDrawSurface7_Method_28", 8},  // SetClipper
+    {"DDRAW.dll!IDirectDrawSurface7_Method_31", 8},  // SetPalette
     {"DDRAW.dll!IDirectDrawSurface7_Method_25", 20}, // Lock
     {"DDRAW.dll!IDirectDrawSurface7_Method_32", 8},  // Unlock
     {"DDRAW.dll!IDDSurface_Method_28", 8}, // SetClipper(this, clipper)
@@ -732,6 +749,11 @@ bool DummyAPIHandler::try_load_dylib(const std::string& api_name) {
     if (env_truthy("PVZ_DISABLE_DYLIB_MOCKS")) {
         return false;
     }
+    if (KNOWN_SIGNATURES.find(api_name) != KNOWN_SIGNATURES.end()) {
+        // Prefer native HLE for all known APIs. This keeps behavior deterministic
+        // and avoids runtime drift from stale generated mocks.
+        return false;
+    }
 
     // Keep core loader APIs on native HLE path for predictable calling convention behavior.
     std::string api_lower = to_lower_ascii(api_name);
@@ -746,6 +768,7 @@ bool DummyAPIHandler::try_load_dylib(const std::string& api_name) {
         is_core("!directdrawcreateex") ||
         is_core("!directdrawcreate") ||
         is_core("!direct3dcreate8") ||
+        is_core("!directsoundcreate") ||
         is_core("!interlockedincrement") ||
         is_core("!interlockeddecrement") ||
         is_core("!interlockedexchange") ||
@@ -757,6 +780,17 @@ bool DummyAPIHandler::try_load_dylib(const std::string& api_name) {
         is_core("!flssetvalue") ||
         is_core("!flsgetvalue") ||
         is_core("!flsfree")) {
+        return false;
+    }
+
+    // Keep graphics COM paths on native HLE for deterministic behavior.
+    if (api_lower.rfind("ddraw.dll!", 0) == 0 ||
+        api_lower.rfind("dsound.dll!", 0) == 0 ||
+        api_lower.rfind("d3d8.dll!", 0) == 0 ||
+        is_core("!getmessagea") ||
+        is_core("!getmessagew") ||
+        is_core("!peekmessagea") ||
+        is_core("!peekmessagew")) {
         return false;
     }
 
@@ -1330,55 +1364,87 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             
             uint32_t lpMsg = handler->ctx.get_arg(0);
             uint32_t hWnd = handler->ctx.get_arg(1);
+            uint32_t remove_flag = is_peek ? handler->ctx.get_arg(4) : 1;
             
             SDL_Event event;
             bool has_event = false;
+            bool from_queue = false;
+            Win32_MSG msg = {0};
+            SDL_PumpEvents();
+
+            if (!g_win32_message_queue.empty()) {
+                msg = g_win32_message_queue.front();
+                if (!is_peek || (remove_flag & 0x0001u) != 0) {
+                    g_win32_message_queue.pop_front();
+                }
+                has_event = true;
+                from_queue = true;
+            }
             
-            if (is_peek) {
+            if (!has_event && is_peek) {
                 has_event = SDL_PollEvent(&event);
-            } else {
+            } else if (!has_event) {
                 // GetMessage blocks until an event is available
                 // Use WaitEventTimeout to not freeze the whole JIT loop indefinitely
                 has_event = SDL_WaitEventTimeout(&event, 50); 
             }
 
             if (has_event) {
-                Win32_MSG msg = {0};
-                msg.hwnd = hWnd;
-                msg.time = SDL_GetTicks();
-                int mx, my;
-                SDL_GetMouseState(&mx, &my);
-                msg.pt_x = mx;
-                msg.pt_y = my;
+                if (!from_queue) {
+                    msg.hwnd = hWnd;
+                    msg.time = SDL_GetTicks();
+                    int mx, my;
+                    SDL_GetMouseState(&mx, &my);
+                    msg.pt_x = mx;
+                    msg.pt_y = my;
 
-                if (event.type == SDL_QUIT) {
-                    msg.message = WM_QUIT;
-                    msg.wParam = 0;
-                } else if (event.type == SDL_MOUSEMOTION) {
-                    msg.message = WM_MOUSEMOVE;
-                    msg.lParam = (event.motion.y << 16) | (event.motion.x & 0xFFFF);
-                } else if (event.type == SDL_MOUSEBUTTONDOWN) {
-                    if (event.button.button == SDL_BUTTON_LEFT) msg.message = WM_LBUTTONDOWN;
-                    else if (event.button.button == SDL_BUTTON_RIGHT) msg.message = WM_RBUTTONDOWN;
-                    msg.lParam = (event.button.y << 16) | (event.button.x & 0xFFFF);
-                } else if (event.type == SDL_MOUSEBUTTONUP) {
-                    if (event.button.button == SDL_BUTTON_LEFT) msg.message = WM_LBUTTONUP;
-                    else if (event.button.button == SDL_BUTTON_RIGHT) msg.message = WM_RBUTTONUP;
-                    msg.lParam = (event.button.y << 16) | (event.button.x & 0xFFFF);
-                } else if (event.type == SDL_KEYDOWN) {
-                    msg.message = WM_KEYDOWN;
-                    msg.wParam = event.key.keysym.sym;
-                } else if (event.type == SDL_KEYUP) {
-                    msg.message = WM_KEYUP;
-                    msg.wParam = event.key.keysym.sym;
-                } else {
-                    msg.message = 0; // Ignore
+                    if (event.type == SDL_QUIT) {
+                        msg.message = WM_QUIT;
+                        msg.wParam = 0;
+                    } else if (event.type == SDL_MOUSEMOTION) {
+                        msg.message = WM_MOUSEMOVE;
+                        msg.lParam = (event.motion.y << 16) | (event.motion.x & 0xFFFF);
+                    } else if (event.type == SDL_MOUSEBUTTONDOWN) {
+                        if (event.button.button == SDL_BUTTON_LEFT) msg.message = WM_LBUTTONDOWN;
+                        else if (event.button.button == SDL_BUTTON_RIGHT) msg.message = WM_RBUTTONDOWN;
+                        msg.lParam = (event.button.y << 16) | (event.button.x & 0xFFFF);
+                    } else if (event.type == SDL_MOUSEBUTTONUP) {
+                        if (event.button.button == SDL_BUTTON_LEFT) msg.message = WM_LBUTTONUP;
+                        else if (event.button.button == SDL_BUTTON_RIGHT) msg.message = WM_RBUTTONUP;
+                        msg.lParam = (event.button.y << 16) | (event.button.x & 0xFFFF);
+                    } else if (event.type == SDL_KEYDOWN) {
+                        msg.message = WM_KEYDOWN;
+                        msg.wParam = event.key.keysym.sym;
+                    } else if (event.type == SDL_KEYUP) {
+                        msg.message = WM_KEYUP;
+                        msg.wParam = event.key.keysym.sym;
+                    } else {
+                        msg.message = WM_NULL;
+                    }
                 }
 
                 handler->backend.mem_write(lpMsg, &msg, sizeof(msg));
-                handler->ctx.set_eax(msg.message != WM_QUIT ? 1 : 0);
+                if (is_peek) {
+                    handler->ctx.set_eax(1);
+                } else {
+                    handler->ctx.set_eax(msg.message != WM_QUIT ? 1 : 0);
+                }
             } else {
-                handler->ctx.set_eax(0);
+                if (is_peek) {
+                    handler->ctx.set_eax(0);
+                } else {
+                    // Win32 GetMessage should block; avoid returning 0 (WM_QUIT) on idle.
+                    Win32_MSG msg = {0};
+                    msg.hwnd = hWnd;
+                    msg.message = WM_NULL;
+                    msg.time = SDL_GetTicks();
+                    int mx, my;
+                    SDL_GetMouseState(&mx, &my);
+                    msg.pt_x = mx;
+                    msg.pt_y = my;
+                    handler->backend.mem_write(lpMsg, &msg, sizeof(msg));
+                    handler->ctx.set_eax(1);
+                }
             }
 
             // Clean up stack and return manually (stdcall)
@@ -2007,6 +2073,13 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 handler->ctx.set_eax(handle);
                 handler->ctx.global_state["LastError"] = 0;
             } else if (name == "KERNEL32.dll!CreateThread") {
+                if (env_truthy("PVZ_CREATE_THREAD_FAIL")) {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 8; // ERROR_NOT_ENOUGH_MEMORY
+                    return;
+                }
+                uint32_t lpStartAddress = handler->ctx.get_arg(2);
+                uint32_t lpParameter = handler->ctx.get_arg(3);
                 uint32_t lpThreadId = handler->ctx.get_arg(5);
                 uint32_t handle = 0x8000;
                 if (handler->ctx.global_state.find("ThreadHandleTop") == handler->ctx.global_state.end()) {
@@ -2019,6 +2092,15 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     uint32_t tid = 1;
                     handler->backend.mem_write(lpThreadId, &tid, 4);
                 }
+                // Cooperative thread emulation:
+                // mark the thread-parameter block as "started" so waits and init gates can progress.
+                if (lpParameter != 0) {
+                    uint32_t one = 1;
+                    handler->backend.mem_write(lpParameter, &one, 4);
+                    handler->backend.mem_write(lpParameter + 4, &one, 4);
+                }
+                std::cout << "\n[API CALL] [OK] CreateThread(start=0x" << std::hex << lpStartAddress
+                          << ", param=0x" << lpParameter << ", handle=0x" << handle << std::dec << ")\n";
                 handler->ctx.set_eax(handle);
                 handler->ctx.global_state["LastError"] = 0;
             } else if (name == "KERNEL32.dll!SetEvent") {
@@ -2045,17 +2127,30 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
             } else if (name == "KERNEL32.dll!WaitForSingleObject") {
                 uint32_t h = handler->ctx.get_arg(0);
+                uint32_t timeout_ms = handler->ctx.get_arg(1);
                 auto it = handler->ctx.handle_map.find("event_" + std::to_string(h));
+                uint32_t wait_result = 0; // WAIT_OBJECT_0
                 if (it != handler->ctx.handle_map.end()) {
                     auto* ev = static_cast<EventHandle*>(it->second);
-                    handler->ctx.set_eax(0); // WAIT_OBJECT_0
-                    if (!ev->manual_reset) ev->signaled = false;
+                    if (ev->signaled) {
+                        wait_result = 0; // WAIT_OBJECT_0
+                        if (!ev->manual_reset) ev->signaled = false;
+                    } else {
+                        // Non-blocking emulation for unsignaled events.
+                        // Infinite waits are treated as signaled to avoid deadlock,
+                        // finite waits return WAIT_TIMEOUT.
+                        wait_result = (timeout_ms == 0xFFFFFFFFu) ? 0 : 0x102;
+                    }
                     handler->ctx.global_state["LastError"] = 0;
                 } else {
                     // Treat non-event handles as already-signaled for compatibility.
-                    handler->ctx.set_eax(0); // WAIT_OBJECT_0
+                    wait_result = 0; // WAIT_OBJECT_0
                     handler->ctx.global_state["LastError"] = 0;
                 }
+                handler->ctx.set_eax(wait_result);
+                std::cout << "\n[API CALL] [OK] WaitForSingleObject(handle=0x" << std::hex << h
+                          << ", timeout=" << std::dec << timeout_ms << ") -> 0x" << std::hex
+                          << wait_result << std::dec << "\n";
             } else if (name == "KERNEL32.dll!CloseHandle") {
                 uint32_t h = handler->ctx.get_arg(0);
                 auto itf = handler->ctx.handle_map.find("file_" + std::to_string(h));
@@ -2444,6 +2539,72 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 if (out_obj2) handler->backend.mem_write(out_obj2, &dummy_clipper, 4);
                 if (out_obj3) handler->backend.mem_write(out_obj3, &dummy_clipper, 4);
                 handler->ctx.set_eax(0); // DD_OK
+            } else if (name == "DDRAW.dll!IDirectDraw7_Method_12") {
+                // HRESULT GetDisplayMode(LPDDSURFACEDESC2 outDesc)
+                uint32_t out_desc = handler->ctx.get_arg(1);
+                if (out_desc != 0) {
+                    uint32_t ddsd_size = 124;
+                    uint32_t ddsd_flags = 0x100F; // CAPS|HEIGHT|WIDTH|PITCH|PIXELFORMAT
+                    uint32_t height = 600;
+                    uint32_t width = 800;
+                    uint32_t pitch = width * 4;
+                    uint32_t pf_size = 32;
+                    uint32_t pf_flags = 0x40; // DDPF_RGB
+                    uint32_t bpp = 32;
+                    uint32_t r_mask = 0x00FF0000;
+                    uint32_t g_mask = 0x0000FF00;
+                    uint32_t b_mask = 0x000000FF;
+                    uint32_t a_mask = 0x00000000;
+                    handler->backend.mem_write(out_desc + 0, &ddsd_size, 4);
+                    handler->backend.mem_write(out_desc + 4, &ddsd_flags, 4);
+                    handler->backend.mem_write(out_desc + 8, &height, 4);
+                    handler->backend.mem_write(out_desc + 12, &width, 4);
+                    handler->backend.mem_write(out_desc + 16, &pitch, 4);
+                    handler->backend.mem_write(out_desc + 72, &pf_size, 4);
+                    handler->backend.mem_write(out_desc + 76, &pf_flags, 4);
+                    handler->backend.mem_write(out_desc + 84, &bpp, 4);
+                    handler->backend.mem_write(out_desc + 88, &r_mask, 4);
+                    handler->backend.mem_write(out_desc + 92, &g_mask, 4);
+                    handler->backend.mem_write(out_desc + 96, &b_mask, 4);
+                    handler->backend.mem_write(out_desc + 100, &a_mask, 4);
+                }
+                handler->ctx.set_eax(0);
+            } else if (name == "DDRAW.dll!IDirectDraw7_Method_17") {
+                // HRESULT GetVerticalBlankStatus(LPBOOL)
+                uint32_t out_bool = handler->ctx.get_arg(1);
+                if (out_bool != 0) {
+                    uint32_t is_blank = 0;
+                    handler->backend.mem_write(out_bool, &is_blank, 4);
+                }
+                handler->ctx.set_eax(0);
+            } else if (name == "DDRAW.dll!IDirectDraw7_Method_21") {
+                // HRESULT SetDisplayMode(width, height, bpp, refreshRate, flags)
+                uint32_t width = handler->ctx.get_arg(1);
+                uint32_t height = handler->ctx.get_arg(2);
+                if (handler->ctx.sdl_window && width > 0 && height > 0) {
+                    SDL_SetWindowSize(static_cast<SDL_Window*>(handler->ctx.sdl_window),
+                                      static_cast<int>(width), static_cast<int>(height));
+                }
+                handler->ctx.set_eax(0);
+            } else if (name == "DDRAW.dll!IDirectDraw7_Method_22") {
+                // HRESULT WaitForVerticalBlank(dwFlags, hEvent)
+                handler->ctx.set_eax(0);
+            } else if (name == "DDRAW.dll!IDirectDraw7_Method_23") {
+                // HRESULT GetAvailableVidMem(caps, *total, *free)
+                uint32_t out_total = handler->ctx.get_arg(2);
+                uint32_t out_free = handler->ctx.get_arg(3);
+                uint32_t bytes = 64 * 1024 * 1024;
+                if (out_total != 0) handler->backend.mem_write(out_total, &bytes, 4);
+                if (out_free != 0) handler->backend.mem_write(out_free, &bytes, 4);
+                handler->ctx.set_eax(0);
+            } else if (name == "DDRAW.dll!IDirectDraw7_Method_27") {
+                // HRESULT GetDeviceIdentifier(DDDEVICEIDENTIFIER2*, flags)
+                uint32_t out_device_id = handler->ctx.get_arg(1);
+                if (out_device_id != 0) {
+                    std::vector<uint8_t> zero(512, 0);
+                    handler->backend.mem_write(out_device_id, zero.data(), zero.size());
+                }
+                handler->ctx.set_eax(0);
             } else if (name == "DDRAW.dll!IDirectDraw7_Method_6") {
                 // HRESULT CreateSurface(LPDDSURFACEDESC2, LPDIRECTDRAWSURFACE7*, IUnknown*)
                 uint32_t lplpDDSurface = handler->ctx.get_arg(2);
@@ -2478,7 +2639,6 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             } else if (name == "DDRAW.dll!IDirectDrawSurface7_Method_25") {
                 // HRESULT Lock(LPRECT lpDestRect, LPDDSURFACEDESC2 lpDDSurfaceDesc, DWORD dwFlags, HANDLE hEvent)
                 uint32_t surface_ptr = handler->ctx.get_arg(0);
-                uint32_t lpDestRect = handler->ctx.get_arg(1);
                 uint32_t lpDDSurfaceDesc = handler->ctx.get_arg(2);
                 
                 std::string key = "surface_buffer_" + std::to_string(surface_ptr);
@@ -2525,14 +2685,56 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
 	                    handler->backend.mem_write(lpDDSurfaceDesc + 92, &g_mask, 4);
 	                    handler->backend.mem_write(lpDDSurfaceDesc + 96, &b_mask, 4);
 	                    handler->backend.mem_write(lpDDSurfaceDesc + 100, &a_mask, 4);
-	                }
+                }
                 
                 handler->ctx.set_eax(0);
                 std::cout << "\n[API CALL] [OK] IDirectDrawSurface7::Lock -> Buffer: 0x" << std::hex << pixel_buffer << std::dec << "\n";
+            } else if (name == "DDRAW.dll!IDirectDrawSurface7_Method_5") {
+                // HRESULT Blt(LPRECT dst, LPDIRECTDRAWSURFACE7 src, LPRECT srcRect, DWORD flags, LPDDBLTFX fx)
+                uint32_t dst_surface = handler->ctx.get_arg(0);
+                uint32_t src_surface = handler->ctx.get_arg(2);
+                std::string dst_key = "surface_buffer_" + std::to_string(dst_surface);
+                std::string src_key = "surface_buffer_" + std::to_string(src_surface);
+                uint32_t dst_buf = handler->ctx.global_state.count(dst_key) ? static_cast<uint32_t>(handler->ctx.global_state[dst_key]) : handler->ctx.guest_vram;
+                uint32_t src_buf = handler->ctx.global_state.count(src_key) ? static_cast<uint32_t>(handler->ctx.global_state[src_key]) : handler->ctx.guest_vram;
+                if (dst_buf != src_buf && dst_buf != 0 && src_buf != 0 && handler->ctx.host_vram) {
+                    std::vector<uint8_t> tmp(800 * 600 * 4);
+                    if (handler->backend.mem_read(src_buf, tmp.data(), tmp.size()) == UC_ERR_OK) {
+                        handler->backend.mem_write(dst_buf, tmp.data(), tmp.size());
+                    }
+                }
+                handler->ctx.set_eax(0);
+            } else if (name == "DDRAW.dll!IDirectDrawSurface7_Method_11") {
+                // HRESULT Flip(LPDIRECTDRAWSURFACE7 targetOverride, DWORD flags)
+                handler->ctx.set_eax(0);
             } else if (name == "DDRAW.dll!IDirectDrawSurface7_Method_32") {
                 // HRESULT Unlock(LPRECT lpRect)
+                uint32_t surface_ptr = handler->ctx.get_arg(0);
+                std::string key = "surface_buffer_" + std::to_string(surface_ptr);
+                uint32_t source_ptr = handler->ctx.guest_vram;
+                if (handler->ctx.global_state.find(key) != handler->ctx.global_state.end()) {
+                    source_ptr = static_cast<uint32_t>(handler->ctx.global_state[key]);
+                }
+
+                if (handler->ctx.sdl_texture && handler->ctx.sdl_renderer && handler->ctx.host_vram) {
+                    constexpr size_t kFrameBytes = 800 * 600 * 4;
+                    if (handler->backend.mem_read(source_ptr, handler->ctx.host_vram, kFrameBytes) != UC_ERR_OK &&
+                        source_ptr != handler->ctx.guest_vram) {
+                        handler->backend.mem_read(handler->ctx.guest_vram, handler->ctx.host_vram, kFrameBytes);
+                    }
+                    SDL_UpdateTexture(static_cast<SDL_Texture*>(handler->ctx.sdl_texture), nullptr, handler->ctx.host_vram, 800 * 4);
+                    SDL_RenderClear(static_cast<SDL_Renderer*>(handler->ctx.sdl_renderer));
+                    SDL_RenderCopy(static_cast<SDL_Renderer*>(handler->ctx.sdl_renderer),
+                                   static_cast<SDL_Texture*>(handler->ctx.sdl_texture), nullptr, nullptr);
+                    SDL_RenderPresent(static_cast<SDL_Renderer*>(handler->ctx.sdl_renderer));
+                    SDL_PumpEvents();
+                }
                 handler->ctx.set_eax(0);
-                std::cout << "\n[API CALL] [OK] IDirectDrawSurface7::Unlock\n";
+                std::cout << "\n[API CALL] [OK] IDirectDrawSurface7::Unlock (present from 0x" << std::hex
+                          << source_ptr << std::dec << ")\n";
+            } else if (name == "DDRAW.dll!IDirectDrawSurface7_Method_28" ||
+                       name == "DDRAW.dll!IDirectDrawSurface7_Method_31") {
+                handler->ctx.set_eax(0);
             } else if (name == "KERNEL32.dll!DirectDrawCreateEx" || name == "KERNEL32.dll!DirectDrawCreate") {
                 uint32_t lplpDD = handler->ctx.get_arg(1); // Arg 1 is out-pointer to interface
                 if (lplpDD) {
@@ -2582,6 +2784,43 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                                       static_cast<int>(w), static_cast<int>(h));
                 }
                 handler->ctx.set_eax(1); // BOOL success
+            } else if (name == "USER32.dll!SetTimer") {
+                uint32_t hwnd = handler->ctx.get_arg(0);
+                uint32_t timer_id = handler->ctx.get_arg(1);
+                if (timer_id == 0) {
+                    uint32_t top = 1;
+                    if (handler->ctx.global_state.find("TimerIdTop") != handler->ctx.global_state.end()) {
+                        top = static_cast<uint32_t>(handler->ctx.global_state["TimerIdTop"]);
+                    }
+                    timer_id = top;
+                    handler->ctx.global_state["TimerIdTop"] = top + 1;
+                }
+                Win32_MSG msg = {};
+                msg.hwnd = hwnd;
+                msg.message = WM_TIMER;
+                msg.wParam = timer_id;
+                msg.time = SDL_GetTicks();
+                int mx, my;
+                SDL_GetMouseState(&mx, &my);
+                msg.pt_x = mx;
+                msg.pt_y = my;
+                g_win32_message_queue.push_back(msg);
+                handler->ctx.set_eax(timer_id);
+            } else if (name == "USER32.dll!KillTimer") {
+                handler->ctx.set_eax(1);
+            } else if (name == "USER32.dll!PostMessageA" || name == "USER32.dll!PostMessageW") {
+                Win32_MSG msg = {};
+                msg.hwnd = handler->ctx.get_arg(0);
+                msg.message = handler->ctx.get_arg(1);
+                msg.wParam = handler->ctx.get_arg(2);
+                msg.lParam = handler->ctx.get_arg(3);
+                msg.time = SDL_GetTicks();
+                int mx, my;
+                SDL_GetMouseState(&mx, &my);
+                msg.pt_x = mx;
+                msg.pt_y = my;
+                g_win32_message_queue.push_back(msg);
+                handler->ctx.set_eax(1);
             } else if (name == "KERNEL32.dll!GetCurrentProcess") {
                 handler->ctx.set_eax(-1); // Pseudo handle for current process
                 std::cout << "\n[API CALL] [OK] Intercepted call to " << name << "\n";
@@ -2610,8 +2849,13 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 std::cout << "\n[API CALL] [OK] TerminateProcess(0x" << std::hex << h_process
                           << std::dec << ", " << exit_code << ") mocked as success.\n";
             } else {
-                // For other trivial APIs, return 1 (Success) by default to avoid zero-checks failing
-                handler->ctx.set_eax(1);
+                // Default success policy:
+                // - COM/DirectX style APIs generally expect HRESULT S_OK (0)
+                // - Win32 BOOL style APIs generally use non-zero success
+                bool hresult_success = starts_with_ascii_ci(name, "ddraw.dll!") ||
+                                       starts_with_ascii_ci(name, "dsound.dll!") ||
+                                       starts_with_ascii_ci(name, "d3d8.dll!");
+                handler->ctx.set_eax(hresult_success ? 0 : 1);
                 if (!is_noisy_fastpath_api(name)) {
                     std::cout << "\n[API CALL] [OK] Intercepted call to " << name << std::endl;
                 }

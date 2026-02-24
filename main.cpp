@@ -210,9 +210,19 @@ bool g_enable_native_jit = true;
 bool g_enable_llm_pipeline = false;
 CpuBackend* g_backend = nullptr;
 bool g_watchpoint_enabled = false;
+bool g_vram_present_hook_enabled = true;
 int g_max_jit_llm_requests = 24;
 int g_jit_llm_requests_emitted = 0;
 bool g_jit_budget_warned = false;
+uint32_t g_guest_vram_base = 0;
+size_t g_guest_vram_size = 0;
+uint32_t* g_host_vram_ptr = nullptr;
+SDL_Renderer* g_renderer_ptr = nullptr;
+SDL_Texture* g_texture_ptr = nullptr;
+uint64_t g_vram_write_counter = 0;
+uint64_t g_vram_present_stride = 20000;
+uint32_t g_last_vram_present_ms = 0;
+bool g_vram_present_logged = false;
 
 // ============================================
 
@@ -259,6 +269,32 @@ int block_idx = 0;
 
 // Basic Block Hook for Capstone Live-Variable Analysis (LVA)
 void hook_mem_write(uc_engine *uc, uc_mem_type type, uint64_t address, int size, int64_t value, void *user_data) {
+    if (g_vram_present_hook_enabled &&
+        g_backend &&
+        g_guest_vram_base != 0 &&
+        g_guest_vram_size != 0 &&
+        g_host_vram_ptr &&
+        g_renderer_ptr &&
+        g_texture_ptr &&
+        address >= g_guest_vram_base &&
+        address < (g_guest_vram_base + g_guest_vram_size)) {
+        g_vram_write_counter++;
+        uint32_t now = SDL_GetTicks();
+        if ((g_vram_write_counter % g_vram_present_stride) == 0 && (now - g_last_vram_present_ms) >= 16) {
+            if (g_backend->mem_read(g_guest_vram_base, g_host_vram_ptr, g_guest_vram_size) == UC_ERR_OK) {
+                SDL_UpdateTexture(g_texture_ptr, nullptr, g_host_vram_ptr, 800 * 4);
+                SDL_RenderClear(g_renderer_ptr);
+                SDL_RenderCopy(g_renderer_ptr, g_texture_ptr, nullptr, nullptr);
+                SDL_RenderPresent(g_renderer_ptr);
+                if (!g_vram_present_logged) {
+                    std::cout << "[*] VRAM present hook active.\n";
+                    g_vram_present_logged = true;
+                }
+                g_last_vram_present_ms = now;
+            }
+        }
+    }
+
     if (!g_watchpoint_enabled) return;
     if (address >= 0x801fe81c && address < 0x801fe81c + 4) {
         if (!g_backend) return;
@@ -438,8 +474,13 @@ int main(int argc, char **argv) {
     }
 
     uint32_t guest_vram = 0xA0000000;
-    
+    g_guest_vram_base = guest_vram;
+    g_guest_vram_size = 800 * 600 * 4;
+
     uint32_t* host_vram = new uint32_t[800 * 600];
+    g_host_vram_ptr = host_vram;
+    g_renderer_ptr = renderer;
+    g_texture_ptr = texture;
     memset(host_vram, 0, 800 * 600 * 4);
     trace("host_vram allocated");
 
@@ -457,6 +498,13 @@ int main(int argc, char **argv) {
     }
     if (env_truthy("PVZ_WATCHPOINT")) {
         g_watchpoint_enabled = true;
+    }
+    if (env_truthy("PVZ_DISABLE_VRAM_PRESENT_HOOK")) {
+        g_vram_present_hook_enabled = false;
+    }
+    int vram_stride = env_int("PVZ_VRAM_PRESENT_STRIDE", 20000);
+    if (vram_stride > 0) {
+        g_vram_present_stride = static_cast<uint64_t>(vram_stride);
     }
     g_max_jit_llm_requests = env_int("PVZ_MAX_JIT_REQUESTS", 24);
 
