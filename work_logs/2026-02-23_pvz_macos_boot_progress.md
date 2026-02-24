@@ -501,3 +501,33 @@
   - 소멸자에서도 `cleanup_process_state()` 호출(종료 경로 이외 케이스 대비).
 - 결과:
   - 멀티스레드 앱 종료 시 host-side 리소스 누수/잔존 상태 위험을 줄임.
+
+32. GUI 루프 병목 후속: hot-range 샘플링 + 메시지 경로 정합성 + RSS 가드
+- EIP hot-range 샘플링 추가 (`resources.xml` 이후)
+  - 환경 변수:
+    - `PVZ_EIP_HOT_SAMPLE=1`
+    - `PVZ_EIP_HOT_SAMPLE_INTERVAL` (기본 `50000`)
+    - `PVZ_EIP_HOT_PAGE_CAP` (기본 `4096`)
+  - 동작:
+    - `CreateFileA("properties\\resources.xml")` 시점부터 API caller return-address page를 집계.
+    - `API_STATS` 타이밍마다 `[EIP HOT] top_pages` 출력.
+  - 샘플(90초):
+    - top pages: `0x62c000`, `0x621000`, `0x61f000`가 지배적.
+    - 해당 범위가 `resources.xml` 이후 heap/critical-section 루프의 실질 hot range로 고정됨.
+- `RegisterWindowMessageA/W` 및 메시지 소비 경로 정합성 보강
+  - `RegisterWindowMessageA/W` 구현:
+    - 메시지 문자열별 stable ID를 `0xC000+`에서 할당/재사용.
+    - `LastError` 처리 및 메시지 명->ID 매핑 유지.
+  - `GetMessage/PeekMessage` 개선:
+    - `hWnd`, `wMsgFilterMin/Max` 필터를 내부 큐에도 적용.
+    - 기존 front-pop 방식에서 “첫 매칭 메시지” 탐색 방식으로 변경.
+  - `TranslateMessage`, `DispatchMessageA/W` 명시 처리 추가.
+- unicorn-shim 메모리 폭증 완화용 런타임 가드
+  - 환경 변수:
+    - `PVZ_MAX_RSS_MB` (`fexcore` 빌드 기본 `12288`, `0`이면 OFF)
+    - `PVZ_RSS_GUARD_INTERVAL_BLOCKS` (기본 `20000`)
+  - 동작:
+    - 블록 훅에서 주기적으로 RSS를 확인.
+    - 임계 초과 시 `emu_stop` + 명시 로그 후 메인 루프 종료.
+  - probe 검증:
+    - `PVZ_MAX_RSS_MB=1`, `PVZ_RSS_GUARD_INTERVAL_BLOCKS=1`에서 즉시 트리거 확인.

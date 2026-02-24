@@ -195,6 +195,17 @@ static void enqueue_win32_message(const Win32_MSG& msg) {
     g_win32_message_queue.push_back(msg);
 }
 
+static bool win32_message_matches_filter(const Win32_MSG& msg, uint32_t hwnd_filter, uint32_t min_filter, uint32_t max_filter) {
+    if (hwnd_filter != 0 && msg.hwnd != hwnd_filter) return false;
+    if (min_filter == 0 && max_filter == 0) return true;
+    uint32_t lo = min_filter;
+    uint32_t hi = max_filter;
+    if (hi != 0 && hi < lo) std::swap(lo, hi);
+    if (msg.message < lo) return false;
+    if (hi != 0 && msg.message > hi) return false;
+    return true;
+}
+
 static bool env_truthy(const char* name) {
     const char* v = std::getenv(name);
     if (!v) return false;
@@ -431,6 +442,7 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"USER32.dll!SendMessageA", 16},
     {"USER32.dll!SendMessageW", 16},
     {"USER32.dll!RegisterWindowMessageA", 4},
+    {"USER32.dll!RegisterWindowMessageW", 4},
     {"USER32.dll!SystemParametersInfoA", 16},
     {"USER32.dll!GetSystemMetrics", 4},
     {"USER32.dll!LoadCursorA", 8},
@@ -695,6 +707,11 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
     dylib_mocks_enabled = env_truthy("PVZ_ENABLE_DYLIB_MOCKS");
     max_api_llm_requests = env_int("PVZ_MAX_API_REQUESTS", -1);
     api_stats_interval = static_cast<uint64_t>(std::max(0, env_int("PVZ_API_STATS_INTERVAL", 0)));
+    eip_hot_sample_enabled = env_truthy("PVZ_EIP_HOT_SAMPLE");
+    int hot_interval = env_int("PVZ_EIP_HOT_SAMPLE_INTERVAL", 50000);
+    if (hot_interval > 0) eip_hot_sample_interval = static_cast<uint64_t>(hot_interval);
+    int hot_cap = env_int("PVZ_EIP_HOT_PAGE_CAP", 4096);
+    if (hot_cap > 0) eip_hot_page_cap = static_cast<size_t>(hot_cap);
     std::cout << "[*] API LLM mode: " << (llm_pipeline_enabled ? "ON" : "OFF")
               << ", dylib mocks: " << (dylib_mocks_enabled ? "ON" : "OFF");
     if (llm_pipeline_enabled) {
@@ -705,6 +722,10 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
         }
     }
     std::cout << "\n";
+    if (eip_hot_sample_enabled) {
+        std::cout << "[*] EIP hot sampler armed (trigger: resources.xml), interval="
+                  << eip_hot_sample_interval << ", page_cap=" << eip_hot_page_cap << "\n";
+    }
     ctx.backend = &backend;
     ctx.uc = backend.engine();
     std::filesystem::create_directories("api_requests");
@@ -807,6 +828,10 @@ void DummyAPIHandler::cleanup_process_state() {
     g_resource_handle_top = 0xB000;
     g_resource_heap_top = 0x36000000;
     g_resource_heap_mapped = false;
+
+    eip_hot_page_hits.clear();
+    eip_hot_page_dropped = 0;
+    eip_hot_sample_started = false;
 }
 
 DummyAPIHandler::~DummyAPIHandler() {
@@ -826,6 +851,57 @@ void DummyAPIHandler::maybe_print_api_stats() {
     size_t limit = std::min<size_t>(12, items.size());
     for (size_t i = 0; i < limit; ++i) {
         std::cout << " [" << items[i].second << "] " << items[i].first;
+    }
+    std::cout << "\n";
+    maybe_print_eip_hot_pages();
+}
+
+void DummyAPIHandler::maybe_start_eip_hot_sample(const std::string& normalized_guest_path) {
+    if (!eip_hot_sample_enabled || eip_hot_sample_started) return;
+    if (normalized_guest_path != "properties/resources.xml") return;
+    eip_hot_sample_started = true;
+    eip_hot_page_hits.clear();
+    eip_hot_page_dropped = 0;
+    std::cout << "[*] EIP hot sampler started after resources.xml open.\n";
+}
+
+void DummyAPIHandler::maybe_sample_eip_hot_caller() {
+    if (!eip_hot_sample_enabled || !eip_hot_sample_started) return;
+    uint32_t esp = 0;
+    if (backend.reg_read(UC_X86_REG_ESP, &esp) != UC_ERR_OK) return;
+    uint32_t ret_addr = 0;
+    if (backend.mem_read(esp, &ret_addr, 4) != UC_ERR_OK) return;
+    if (ret_addr == 0 || ret_addr >= FAKE_API_BASE) return;
+
+    uint32_t page = ret_addr & ~0xFFFu;
+    auto it = eip_hot_page_hits.find(page);
+    if (it != eip_hot_page_hits.end()) {
+        it->second++;
+        return;
+    }
+    if (eip_hot_page_hits.size() >= eip_hot_page_cap) {
+        eip_hot_page_dropped++;
+        return;
+    }
+    eip_hot_page_hits.emplace(page, 1);
+}
+
+void DummyAPIHandler::maybe_print_eip_hot_pages() {
+    if (!eip_hot_sample_enabled || !eip_hot_sample_started) return;
+    if (eip_hot_sample_interval == 0 || api_call_total == 0 || (api_call_total % eip_hot_sample_interval) != 0) return;
+    std::vector<std::pair<uint32_t, uint64_t>> pages(eip_hot_page_hits.begin(), eip_hot_page_hits.end());
+    if (pages.empty()) {
+        std::cout << "[EIP HOT] no samples yet\n";
+        return;
+    }
+    std::sort(pages.begin(), pages.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+    std::cout << "[EIP HOT] top_pages:";
+    size_t limit = std::min<size_t>(10, pages.size());
+    for (size_t i = 0; i < limit; ++i) {
+        std::cout << " [0x" << std::hex << pages[i].first << std::dec << ":" << pages[i].second << "]";
+    }
+    if (eip_hot_page_dropped > 0) {
+        std::cout << " dropped=" << eip_hot_page_dropped;
     }
     std::cout << "\n";
 }
@@ -1531,6 +1607,8 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             
             uint32_t lpMsg = handler->ctx.get_arg(0);
             uint32_t hWnd = handler->ctx.get_arg(1);
+            uint32_t wMsgFilterMin = handler->ctx.get_arg(2);
+            uint32_t wMsgFilterMax = handler->ctx.get_arg(3);
             uint32_t remove_flag = is_peek ? handler->ctx.get_arg(4) : 1;
             
             SDL_Event event;
@@ -1539,13 +1617,17 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             Win32_MSG msg = {0};
             SDL_PumpEvents();
 
-            if (!g_win32_message_queue.empty()) {
-                msg = g_win32_message_queue.front();
+            for (auto it = g_win32_message_queue.begin(); it != g_win32_message_queue.end(); ++it) {
+                if (!win32_message_matches_filter(*it, hWnd, wMsgFilterMin, wMsgFilterMax)) {
+                    continue;
+                }
+                msg = *it;
                 if (!is_peek || (remove_flag & 0x0001u) != 0) {
-                    g_win32_message_queue.pop_front();
+                    g_win32_message_queue.erase(it);
                 }
                 has_event = true;
                 from_queue = true;
+                break;
             }
             
             if (!has_event && is_peek) {
@@ -1587,6 +1669,9 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                         msg.wParam = event.key.keysym.sym;
                     } else {
                         msg.message = WM_NULL;
+                    }
+                    if (!win32_message_matches_filter(msg, hWnd, wMsgFilterMin, wMsgFilterMax)) {
+                        has_event = false;
                     }
                 }
 
@@ -1632,6 +1717,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             std::cout << "\n[DEBUG] hook_api_call name='" << name << "', known=" << known << "\n";
         }
 
+        handler->maybe_sample_eip_hot_caller();
         handler->dispatch_known_or_unknown_api(name, address, known);
     }
 }

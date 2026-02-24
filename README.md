@@ -119,6 +119,15 @@ PVZ_VERBOSE_API_HOOK=1 ./build/runner pvz/main.exe
 # (실험) Unicorn TB 캐시 주기적 flush (기본 OFF)
 PVZ_TB_FLUSH_INTERVAL_BLOCKS=20000 ./build/runner pvz/main.exe
 
+# resources.xml 이후 API caller EIP hot-page 샘플링
+PVZ_EIP_HOT_SAMPLE=1 PVZ_EIP_HOT_SAMPLE_INTERVAL=50000 ./build/runner pvz/main.exe
+
+# EIP hot-page 샘플 map cap (기본 4096)
+PVZ_EIP_HOT_PAGE_CAP=8192 ./build/runner pvz/main.exe
+
+# 장기 실행 메모리 가드 (fexcore 기본 12288MB, 0이면 비활성화)
+PVZ_MAX_RSS_MB=8192 PVZ_RSS_GUARD_INTERVAL_BLOCKS=20000 ./build/runner pvz/main.exe
+
 # 특정 watchpoint 로그 활성화 (기본 OFF)
 PVZ_WATCHPOINT=1 ./build/runner pvz/main.exe
 

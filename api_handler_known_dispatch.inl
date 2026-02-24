@@ -683,20 +683,21 @@
                 uint32_t lpFileName = handler->ctx.get_arg(0);
                 uint32_t creationDisposition = handler->ctx.get_arg(4);
                 std::string guest_path = read_guest_c_string(handler->ctx, lpFileName, 1024);
+                std::string normalized_guest_path = guest_path;
+                std::replace(normalized_guest_path.begin(), normalized_guest_path.end(), '\\', '/');
+                std::transform(normalized_guest_path.begin(), normalized_guest_path.end(), normalized_guest_path.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                handler->maybe_start_eip_hot_sample(normalized_guest_path);
                 std::string host_path = resolve_guest_path_to_host(guest_path, handler->process_base_dir);
                 if (host_path.empty()) {
-                    std::string normalized = guest_path;
-                    std::replace(normalized.begin(), normalized.end(), '\\', '/');
-                    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
-                                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
                     // Some PvZ builds probe adlist/popc registry files that may not exist yet.
-                    bool allow_virtual = (normalized == "adlist.txt" ||
-                                          normalized == "vhwb.dat" ||
-                                          normalized == "vhw.dat" ||
-                                          normalized == "../popcreg.dat" ||
-                                          normalized == "popcreg.dat" ||
-                                          normalized == "c:/windows/system32/" ||
-                                          normalized == "windows/system32/");
+                    bool allow_virtual = (normalized_guest_path == "adlist.txt" ||
+                                          normalized_guest_path == "vhwb.dat" ||
+                                          normalized_guest_path == "vhw.dat" ||
+                                          normalized_guest_path == "../popcreg.dat" ||
+                                          normalized_guest_path == "popcreg.dat" ||
+                                          normalized_guest_path == "c:/windows/system32/" ||
+                                          normalized_guest_path == "windows/system32/");
                     // CREATE_NEW(1), CREATE_ALWAYS(2), OPEN_ALWAYS(4) can create a backing file.
                     if (creationDisposition == 1 || creationDisposition == 2 || creationDisposition == 4) {
                         allow_virtual = true;
@@ -1643,6 +1644,46 @@
                 }
                 handler->ctx.set_eax(0); // D3D_OK
                 std::cout << "\n[API CALL] [OK] IDirect3D8::GetAdapterDisplayMode spoofed 800x600.\n";
+            } else if (name == "USER32.dll!RegisterWindowMessageA" || name == "USER32.dll!RegisterWindowMessageW") {
+                uint32_t lpString = handler->ctx.get_arg(0);
+                bool wide = (name == "USER32.dll!RegisterWindowMessageW");
+                std::string msg_name = wide
+                    ? read_guest_w_string(handler->ctx, lpString, 256)
+                    : read_guest_c_string(handler->ctx, lpString, 256);
+                msg_name = to_lower_ascii(msg_name);
+                if (msg_name.empty()) {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 87; // ERROR_INVALID_PARAMETER
+                } else {
+                    std::string key = "RegWinMsg:" + msg_name;
+                    uint32_t msg_id = 0;
+                    auto it = handler->ctx.global_state.find(key);
+                    if (it != handler->ctx.global_state.end()) {
+                        msg_id = static_cast<uint32_t>(it->second);
+                    } else {
+                        uint32_t top = 0xC000u;
+                        auto it_top = handler->ctx.global_state.find("RegWinMsgTop");
+                        if (it_top != handler->ctx.global_state.end()) {
+                            top = static_cast<uint32_t>(it_top->second);
+                        }
+                        if (top > 0xFFFFu) {
+                            handler->ctx.set_eax(0);
+                            handler->ctx.global_state["LastError"] = 8; // ERROR_NOT_ENOUGH_MEMORY (id space exhausted)
+                            return;
+                        }
+                        msg_id = top;
+                        handler->ctx.global_state["RegWinMsgTop"] = top + 1;
+                        handler->ctx.global_state[key] = msg_id;
+                        std::cout << "[API CALL] [USER32] RegisterWindowMessage '" << msg_name
+                                  << "' -> 0x" << std::hex << msg_id << std::dec << "\n";
+                    }
+                    handler->ctx.set_eax(msg_id);
+                    handler->ctx.global_state["LastError"] = 0;
+                }
+            } else if (name == "USER32.dll!TranslateMessage") {
+                handler->ctx.set_eax(1);
+            } else if (name == "USER32.dll!DispatchMessageA" || name == "USER32.dll!DispatchMessageW") {
+                handler->ctx.set_eax(0);
             } else if (name == "USER32.dll!MoveWindow") {
                 uint32_t x = handler->ctx.get_arg(1);
                 uint32_t y = handler->ctx.get_arg(2);

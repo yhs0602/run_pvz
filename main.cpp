@@ -16,6 +16,10 @@
 #include <cctype>
 #include <limits>
 #include <SDL.h>
+#include <sys/resource.h>
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#endif
 
 #if defined(__APPLE__) && defined(__aarch64__)
 #include <sys/mman.h>
@@ -220,6 +224,11 @@ bool g_profile_cap_warned = false;
 uint64_t g_tb_flush_interval_blocks = 0;
 uint64_t g_tb_flush_counter = 0;
 bool g_tb_flush_warned = false;
+uint64_t g_rss_guard_max_mb = 0;
+uint64_t g_rss_guard_check_interval_blocks = 20000;
+uint64_t g_rss_guard_counter = 0;
+uint64_t g_rss_guard_last_mb = 0;
+bool g_rss_guard_triggered = false;
 uint32_t g_guest_vram_base = 0;
 size_t g_guest_vram_size = 0;
 uint32_t* g_host_vram_ptr = nullptr;
@@ -229,6 +238,27 @@ uint64_t g_vram_write_counter = 0;
 uint64_t g_vram_present_stride = 20000;
 uint32_t g_last_vram_present_ms = 0;
 bool g_vram_present_logged = false;
+
+static uint64_t current_rss_mb() {
+#if defined(__APPLE__)
+    mach_task_basic_info_data_t info;
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, reinterpret_cast<task_info_t>(&info), &count) == KERN_SUCCESS) {
+        return static_cast<uint64_t>(info.resident_size / (1024ull * 1024ull));
+    }
+#endif
+    struct rusage usage {};
+    if (getrusage(RUSAGE_SELF, &usage) == 0) {
+#if defined(__APPLE__)
+        // macOS reports ru_maxrss in bytes.
+        return static_cast<uint64_t>(usage.ru_maxrss / (1024ull * 1024ull));
+#else
+        // Linux reports ru_maxrss in KiB.
+        return static_cast<uint64_t>(usage.ru_maxrss / 1024ull);
+#endif
+    }
+    return 0;
+}
 
 // ============================================
 
@@ -326,6 +356,20 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
                 g_tb_flush_warned = true;
                 std::cerr << "[!] TB cache flush failed: " << g_backend->strerror(flush_err)
                           << " (Code: " << flush_err << ")\n";
+            }
+        }
+    }
+    if (g_rss_guard_max_mb > 0) {
+        g_rss_guard_counter++;
+        if ((g_rss_guard_counter % g_rss_guard_check_interval_blocks) == 0) {
+            g_rss_guard_last_mb = current_rss_mb();
+            if (g_rss_guard_last_mb >= g_rss_guard_max_mb) {
+                std::cerr << "[!] RSS guard triggered: " << g_rss_guard_last_mb
+                          << "MB >= " << g_rss_guard_max_mb
+                          << "MB (PVZ_MAX_RSS_MB). Stopping emulation.\n";
+                g_rss_guard_triggered = true;
+                g_backend->emu_stop();
+                return;
             }
         }
     }
@@ -556,6 +600,18 @@ int main(int argc, char **argv) {
     if (tb_flush_blocks > 0) {
         g_tb_flush_interval_blocks = static_cast<uint64_t>(tb_flush_blocks);
     }
+    int rss_guard_default = 0;
+#if defined(PVZ_CPU_BACKEND_FEXCORE)
+    rss_guard_default = 12288; // 12GB safety cap for long-running unicorn-shim sessions.
+#endif
+    int rss_guard_mb = env_int("PVZ_MAX_RSS_MB", rss_guard_default);
+    if (rss_guard_mb > 0) {
+        g_rss_guard_max_mb = static_cast<uint64_t>(rss_guard_mb);
+    }
+    int rss_guard_blocks = env_int("PVZ_RSS_GUARD_INTERVAL_BLOCKS", 20000);
+    if (rss_guard_blocks > 0) {
+        g_rss_guard_check_interval_blocks = static_cast<uint64_t>(rss_guard_blocks);
+    }
 
     // Initialize CPU backend
     trace("before backend.open_x86_32");
@@ -610,6 +666,11 @@ int main(int argc, char **argv) {
         if (g_tb_flush_interval_blocks > 0) {
             cout << "[*] TB cache flush interval: " << g_tb_flush_interval_blocks
                  << " blocks (PVZ_TB_FLUSH_INTERVAL_BLOCKS).\n";
+        }
+        if (g_rss_guard_max_mb > 0) {
+            cout << "[*] RSS guard: max=" << g_rss_guard_max_mb
+                 << "MB, check_interval_blocks=" << g_rss_guard_check_interval_blocks
+                 << " (PVZ_MAX_RSS_MB / PVZ_RSS_GUARD_INTERVAL_BLOCKS).\n";
         }
         trace("after jit dispatcher init");
 
@@ -687,6 +748,10 @@ int main(int argc, char **argv) {
                     cout << "  ADDR: 0x" << hex << last_blocks[i % 50].addr 
                          << "   ESP: 0x" << last_blocks[i % 50].esp << dec << "\n";
                 }
+                break;
+            }
+            if (g_rss_guard_triggered) {
+                std::cerr << "[!] Stopped by RSS guard at approx " << g_rss_guard_last_mb << "MB.\n";
                 break;
             }
             backend.reg_read(UC_X86_REG_EIP, &pc);

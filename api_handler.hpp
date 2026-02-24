@@ -22,11 +22,20 @@ private:
     std::unordered_map<std::string, void*> dylib_handles;
     std::unordered_map<std::string, void(*)(APIContext*)> dylib_funcs;
     std::unordered_map<std::string, uint64_t> api_call_counts;
+    std::unordered_map<uint32_t, uint64_t> eip_hot_page_hits;
     uint64_t api_call_total = 0;
     uint64_t api_stats_interval = 0;
+    uint64_t eip_hot_sample_interval = 50000;
+    size_t eip_hot_page_cap = 4096;
+    uint64_t eip_hot_page_dropped = 0;
+    bool eip_hot_sample_enabled = false;
+    bool eip_hot_sample_started = false;
     uint32_t current_addr;
     std::string process_base_dir;
     void cleanup_process_state();
+    void maybe_start_eip_hot_sample(const std::string& normalized_guest_path);
+    void maybe_sample_eip_hot_caller();
+    void maybe_print_eip_hot_pages();
     void dispatch_known_or_unknown_api(const std::string& name, uint64_t address, bool known);
     
 
