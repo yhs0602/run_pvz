@@ -62,6 +62,7 @@ struct EventHandle {
 struct ThreadHandle {
     uint32_t start_address = 0;
     uint32_t parameter = 0;
+    uint32_t thread_id = 0;
     bool started = false;
     bool finished = false;
 };
@@ -454,6 +455,9 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"KERNEL32.dll!HeapCreate", 12},
     {"KERNEL32.dll!GetVersionExA", 4},
     {"KERNEL32.dll!HeapFree", 12},
+    {"KERNEL32.dll!Sleep", 4},
+    {"KERNEL32.dll!SleepEx", 8},
+    {"KERNEL32.dll!SwitchToThread", 0},
     {"KERNEL32.dll!GetModuleFileNameA", 12},
     {"KERNEL32.dll!GetLastError", 0},
     {"KERNEL32.dll!SetLastError", 4},
@@ -765,6 +769,12 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
     if (!hot_focus_env.empty()) {
         hot_focus_centers = std::move(hot_focus_env);
     }
+    coop_threads_enabled_flag = env_truthy("PVZ_COOP_THREADS");
+    coop_trace = env_truthy("PVZ_COOP_TRACE");
+    int coop_timeslice = env_int("PVZ_COOP_TIMESLICE", 30000);
+    if (coop_timeslice > 0) coop_timeslice_instructions = static_cast<uint64_t>(coop_timeslice);
+    int coop_stack = env_int("PVZ_COOP_STACK_SIZE", 0x200000);
+    if (coop_stack > 0) coop_default_stack_size = static_cast<uint32_t>(coop_stack);
     std::cout << "[*] API LLM mode: " << (llm_pipeline_enabled ? "ON" : "OFF")
               << ", dylib mocks: " << (dylib_mocks_enabled ? "ON" : "OFF");
     if (llm_pipeline_enabled) {
@@ -787,6 +797,12 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
         for (size_t i = 0; i < hot_focus_centers.size(); ++i) {
             std::cout << (i == 0 ? "" : ",") << "0x" << std::hex << hot_focus_centers[i] << std::dec;
         }
+        std::cout << "\n";
+    }
+    if (coop_threads_enabled_flag) {
+        std::cout << "[*] Cooperative threads enabled, timeslice_insns=" << coop_timeslice_instructions
+                  << ", default_stack=0x" << std::hex << coop_default_stack_size << std::dec;
+        if (coop_trace) std::cout << ", trace=on";
         std::cout << "\n";
     }
     ctx.backend = &backend;
@@ -904,6 +920,13 @@ void DummyAPIHandler::cleanup_process_state() {
     hot_loop_api_eax_hist.clear();
     hot_loop_api_lasterror_hist.clear();
     hot_loop_api_dropped = 0;
+    coop_threads.clear();
+    coop_order.clear();
+    coop_current_handle = 0;
+    coop_thread_id_top = 1;
+    coop_stack_cursor = 0x2F000000;
+    coop_threads_initialized = false;
+    coop_force_yield = false;
 }
 
 DummyAPIHandler::~DummyAPIHandler() {
@@ -1090,6 +1113,291 @@ void DummyAPIHandler::maybe_print_eip_hot_pages() {
         }
         std::cout << "\n";
     }
+}
+
+bool DummyAPIHandler::coop_read_regs(CoopThreadRegs& regs) {
+    if (backend.reg_read(UC_X86_REG_EAX, &regs.eax) != UC_ERR_OK) return false;
+    if (backend.reg_read(UC_X86_REG_EBX, &regs.ebx) != UC_ERR_OK) return false;
+    if (backend.reg_read(UC_X86_REG_ECX, &regs.ecx) != UC_ERR_OK) return false;
+    if (backend.reg_read(UC_X86_REG_EDX, &regs.edx) != UC_ERR_OK) return false;
+    if (backend.reg_read(UC_X86_REG_ESI, &regs.esi) != UC_ERR_OK) return false;
+    if (backend.reg_read(UC_X86_REG_EDI, &regs.edi) != UC_ERR_OK) return false;
+    if (backend.reg_read(UC_X86_REG_EBP, &regs.ebp) != UC_ERR_OK) return false;
+    if (backend.reg_read(UC_X86_REG_ESP, &regs.esp) != UC_ERR_OK) return false;
+    if (backend.reg_read(UC_X86_REG_EIP, &regs.eip) != UC_ERR_OK) return false;
+    if (backend.reg_read(UC_X86_REG_EFLAGS, &regs.eflags) != UC_ERR_OK) regs.eflags = 0x202;
+    return true;
+}
+
+void DummyAPIHandler::coop_write_regs(const CoopThreadRegs& regs) {
+    backend.reg_write(UC_X86_REG_EAX, &regs.eax);
+    backend.reg_write(UC_X86_REG_EBX, &regs.ebx);
+    backend.reg_write(UC_X86_REG_ECX, &regs.ecx);
+    backend.reg_write(UC_X86_REG_EDX, &regs.edx);
+    backend.reg_write(UC_X86_REG_ESI, &regs.esi);
+    backend.reg_write(UC_X86_REG_EDI, &regs.edi);
+    backend.reg_write(UC_X86_REG_EBP, &regs.ebp);
+    backend.reg_write(UC_X86_REG_ESP, &regs.esp);
+    backend.reg_write(UC_X86_REG_EIP, &regs.eip);
+    backend.reg_write(UC_X86_REG_EFLAGS, &regs.eflags);
+}
+
+bool DummyAPIHandler::coop_save_current_thread_regs() {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized) return false;
+    auto it = coop_threads.find(coop_current_handle);
+    if (it == coop_threads.end()) return false;
+    return coop_read_regs(it->second.regs);
+}
+
+bool DummyAPIHandler::coop_load_thread_regs(uint32_t handle) {
+    auto it = coop_threads.find(handle);
+    if (it == coop_threads.end()) return false;
+    coop_current_handle = handle;
+    coop_write_regs(it->second.regs);
+    ctx.global_state["CurrentThreadHandle"] = handle;
+    ctx.global_state["CurrentThreadId"] = it->second.thread_id;
+    return true;
+}
+
+void DummyAPIHandler::coop_prune_finished_threads() {
+    coop_order.erase(
+        std::remove_if(coop_order.begin(), coop_order.end(), [&](uint32_t handle) {
+            auto it = coop_threads.find(handle);
+            if (it == coop_threads.end()) return true;
+            return it->second.finished;
+        }),
+        coop_order.end());
+}
+
+bool DummyAPIHandler::coop_advance_to_next_runnable() {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized) return false;
+    coop_prune_finished_threads();
+    if (coop_order.empty()) return false;
+
+    size_t start_index = 0;
+    auto it_cur = std::find(coop_order.begin(), coop_order.end(), coop_current_handle);
+    if (it_cur != coop_order.end()) {
+        start_index = static_cast<size_t>(std::distance(coop_order.begin(), it_cur));
+    }
+    if (coop_force_yield || it_cur == coop_order.end()) {
+        start_index = (start_index + 1) % coop_order.size();
+    }
+
+    for (size_t i = 0; i < coop_order.size(); ++i) {
+        size_t idx = (start_index + i) % coop_order.size();
+        uint32_t handle = coop_order[idx];
+        auto it = coop_threads.find(handle);
+        if (it == coop_threads.end()) continue;
+        if (it->second.finished || !it->second.runnable) continue;
+        return coop_load_thread_regs(handle);
+    }
+    return false;
+}
+
+bool DummyAPIHandler::coop_mark_thread_finished(uint32_t handle, const char* reason) {
+    auto it = coop_threads.find(handle);
+    if (it == coop_threads.end()) return false;
+    if (it->second.finished) return true;
+    it->second.finished = true;
+    it->second.runnable = false;
+    if (coop_trace) {
+        std::cout << "[COOP] thread 0x" << std::hex << handle << std::dec
+                  << " finished";
+        if (reason && *reason) std::cout << " (" << reason << ")";
+        std::cout << "\n";
+    }
+    return true;
+}
+
+void DummyAPIHandler::coop_register_main_thread() {
+    if (!coop_threads_enabled_flag || coop_threads_initialized) return;
+
+    CoopThreadState main_state{};
+    main_state.handle = coop_main_handle;
+    main_state.thread_id = coop_thread_id_top++;
+    main_state.is_main = true;
+    main_state.runnable = true;
+    main_state.finished = false;
+    if (!coop_read_regs(main_state.regs)) {
+        std::cerr << "[COOP] failed to snapshot main thread registers. disabling cooperative threads.\n";
+        coop_threads_enabled_flag = false;
+        return;
+    }
+
+    coop_threads.clear();
+    coop_order.clear();
+    coop_threads.emplace(main_state.handle, main_state);
+    coop_order.push_back(main_state.handle);
+    coop_current_handle = main_state.handle;
+    coop_threads_initialized = true;
+    ctx.global_state["CurrentThreadHandle"] = main_state.handle;
+    ctx.global_state["CurrentThreadId"] = main_state.thread_id;
+    if (coop_trace) {
+        std::cout << "[COOP] registered main thread handle=0x" << std::hex
+                  << main_state.handle << std::dec
+                  << " eip=0x" << std::hex << main_state.regs.eip << std::dec << "\n";
+    }
+}
+
+uint32_t DummyAPIHandler::coop_current_pc() const {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized) return 0;
+    auto it = coop_threads.find(coop_current_handle);
+    if (it == coop_threads.end()) return 0;
+    return it->second.regs.eip;
+}
+
+uint32_t DummyAPIHandler::coop_current_thread_id() const {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized) return 1;
+    auto it = coop_threads.find(coop_current_handle);
+    if (it == coop_threads.end()) return 1;
+    return it->second.thread_id;
+}
+
+bool DummyAPIHandler::coop_spawn_thread(uint32_t handle, uint32_t start_address, uint32_t parameter, uint32_t requested_stack_size) {
+    if (!coop_threads_enabled_flag) return false;
+    if (!coop_threads_initialized) {
+        coop_register_main_thread();
+        if (!coop_threads_initialized) return false;
+    }
+    if (start_address == 0 || handle == 0) return false;
+    if (coop_threads.find(handle) != coop_threads.end()) return true;
+
+    uint32_t stack_size = requested_stack_size ? requested_stack_size : coop_default_stack_size;
+    if (stack_size < 0x10000u) stack_size = 0x10000u;
+    if (stack_size > 0x01000000u) stack_size = 0x01000000u;
+    stack_size = (stack_size + 0xFFFu) & ~0xFFFu;
+    uint32_t stack_base = 0;
+    bool mapped = false;
+    uint32_t cursor = coop_stack_cursor;
+    for (int attempt = 0; attempt < 256; ++attempt) {
+        if (cursor <= stack_size + 0x10000u) break;
+        uint32_t candidate = (cursor - stack_size) & ~0xFFFu;
+        uc_err map_err = backend.mem_map(candidate, stack_size, UC_PROT_READ | UC_PROT_WRITE);
+        if (map_err == UC_ERR_OK) {
+            stack_base = candidate;
+            mapped = true;
+            coop_stack_cursor = candidate - 0x10000u;
+            break;
+        }
+        if (candidate <= 0x10000u) break;
+        cursor = candidate - 0x10000u;
+    }
+    if (!mapped) {
+        std::cerr << "[COOP] failed to map thread stack for handle 0x"
+                  << std::hex << handle << std::dec << "\n";
+        return false;
+    }
+
+    uint32_t esp = stack_base + stack_size - 8;
+    uint32_t ret_addr = 0;
+    backend.mem_write(esp, &ret_addr, 4);
+    backend.mem_write(esp + 4, &parameter, 4);
+
+    CoopThreadState thread{};
+    thread.handle = handle;
+    thread.thread_id = coop_thread_id_top++;
+    thread.start_address = start_address;
+    thread.parameter = parameter;
+    thread.stack_base = stack_base;
+    thread.stack_size = stack_size;
+    thread.runnable = true;
+    thread.finished = false;
+    thread.regs.eax = 0;
+    thread.regs.ebx = 0;
+    thread.regs.ecx = 0;
+    thread.regs.edx = 0;
+    thread.regs.esi = 0;
+    thread.regs.edi = 0;
+    thread.regs.ebp = esp;
+    thread.regs.esp = esp;
+    thread.regs.eip = start_address;
+    thread.regs.eflags = 0x202;
+
+    coop_threads.emplace(handle, thread);
+    coop_order.push_back(handle);
+    coop_force_yield = true;
+    if (coop_trace) {
+        std::cout << "[COOP] spawned thread handle=0x" << std::hex << handle
+                  << " tid=" << std::dec << thread.thread_id
+                  << " start=0x" << std::hex << start_address
+                  << " param=0x" << parameter
+                  << " stack=[0x" << stack_base << ",0x" << (stack_base + stack_size)
+                  << ")" << std::dec << "\n";
+    }
+    return true;
+}
+
+bool DummyAPIHandler::coop_is_thread_finished(uint32_t handle) const {
+    auto it = coop_threads.find(handle);
+    if (it == coop_threads.end()) return true;
+    return it->second.finished;
+}
+
+void DummyAPIHandler::coop_on_timeslice_end() {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized) return;
+    auto it = coop_threads.find(coop_current_handle);
+    if (it == coop_threads.end()) return;
+
+    if (!it->second.finished) {
+        coop_save_current_thread_regs();
+        it->second.quanta++;
+        if (it->second.regs.eip == 0 || it->second.regs.eip == 0xFFFFFFFFu) {
+            coop_mark_thread_finished(coop_current_handle, "returned to null");
+        }
+    }
+
+    bool switched = false;
+    if (coop_force_yield || coop_order.size() > 1 || it->second.finished) {
+        switched = coop_advance_to_next_runnable();
+    }
+    coop_force_yield = false;
+
+    if (!switched && !it->second.finished) {
+        coop_load_thread_regs(coop_current_handle);
+    }
+}
+
+bool DummyAPIHandler::coop_try_absorb_emu_error(uc_err err) {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized) return false;
+
+    switch (err) {
+        case UC_ERR_FETCH_UNMAPPED:
+        case UC_ERR_READ_UNMAPPED:
+        case UC_ERR_WRITE_UNMAPPED:
+        case UC_ERR_INSN_INVALID:
+        case UC_ERR_EXCEPTION:
+            break;
+        default:
+            return false;
+    }
+
+    if (coop_current_handle == coop_main_handle) {
+        return false;
+    }
+
+    uint32_t eip = 0;
+    backend.reg_read(UC_X86_REG_EIP, &eip);
+    if (coop_trace) {
+        std::cout << "[COOP] worker fault absorbed handle=0x" << std::hex << coop_current_handle
+                  << " eip=0x" << eip << " err=" << std::dec << err << "\n";
+    }
+    coop_mark_thread_finished(coop_current_handle, "fault");
+    coop_force_yield = true;
+    return coop_advance_to_next_runnable();
+}
+
+bool DummyAPIHandler::coop_should_terminate() const {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized) return false;
+    auto it_main = coop_threads.find(coop_main_handle);
+    if (it_main != coop_threads.end() && it_main->second.finished) {
+        return true;
+    }
+    for (uint32_t handle : coop_order) {
+        auto it = coop_threads.find(handle);
+        if (it == coop_threads.end()) continue;
+        if (!it->second.finished && it->second.runnable) return false;
+    }
+    return true;
 }
 
 uint32_t DummyAPIHandler::register_fake_api(const std::string& full_name) {

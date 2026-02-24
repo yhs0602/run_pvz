@@ -12,6 +12,33 @@ extern std::unordered_map<std::string, int> KNOWN_SIGNATURES;
 
 class DummyAPIHandler {
 private:
+    struct CoopThreadRegs {
+        uint32_t eax = 0;
+        uint32_t ebx = 0;
+        uint32_t ecx = 0;
+        uint32_t edx = 0;
+        uint32_t esi = 0;
+        uint32_t edi = 0;
+        uint32_t ebp = 0;
+        uint32_t esp = 0;
+        uint32_t eip = 0;
+        uint32_t eflags = 0x202;
+    };
+
+    struct CoopThreadState {
+        uint32_t handle = 0;
+        uint32_t thread_id = 0;
+        uint32_t start_address = 0;
+        uint32_t parameter = 0;
+        uint32_t stack_base = 0;
+        uint32_t stack_size = 0;
+        bool is_main = false;
+        bool runnable = true;
+        bool finished = false;
+        uint64_t quanta = 0;
+        CoopThreadRegs regs;
+    };
+
     CpuBackend& backend;
     APIContext ctx;
     bool llm_pipeline_enabled = false;
@@ -43,8 +70,27 @@ private:
     uint64_t eip_hot_addr_dropped = 0;
     bool eip_hot_sample_enabled = false;
     bool eip_hot_sample_started = false;
+    bool coop_threads_enabled_flag = false;
+    bool coop_threads_initialized = false;
+    bool coop_trace = false;
+    bool coop_force_yield = false;
+    uint64_t coop_timeslice_instructions = 30000;
+    uint32_t coop_main_handle = 0x1000;
+    uint32_t coop_current_handle = 0;
+    uint32_t coop_thread_id_top = 1;
+    uint32_t coop_default_stack_size = 0x200000;
+    uint32_t coop_stack_cursor = 0x2F000000;
+    std::vector<uint32_t> coop_order;
+    std::unordered_map<uint32_t, CoopThreadState> coop_threads;
     uint32_t current_addr;
     std::string process_base_dir;
+    bool coop_read_regs(CoopThreadRegs& regs);
+    void coop_write_regs(const CoopThreadRegs& regs);
+    bool coop_save_current_thread_regs();
+    bool coop_load_thread_regs(uint32_t handle);
+    bool coop_advance_to_next_runnable();
+    void coop_prune_finished_threads();
+    bool coop_mark_thread_finished(uint32_t handle, const char* reason);
     void cleanup_process_state();
     uint32_t get_api_caller_ret_addr();
     bool is_hot_focus_ret(uint32_t ret_addr) const;
@@ -72,6 +118,17 @@ public:
     uint32_t register_fake_api(const std::string& full_name);
     uint32_t create_fake_com_object(const std::string& class_name, int num_methods);
     void maybe_print_api_stats();
+    bool coop_threads_enabled() const { return coop_threads_enabled_flag; }
+    size_t coop_timeslice_count() const { return static_cast<size_t>(coop_timeslice_instructions); }
+    void coop_register_main_thread();
+    uint32_t coop_current_pc() const;
+    uint32_t coop_current_thread_id() const;
+    bool coop_spawn_thread(uint32_t handle, uint32_t start_address, uint32_t parameter, uint32_t requested_stack_size);
+    bool coop_is_thread_finished(uint32_t handle) const;
+    void coop_request_yield() { coop_force_yield = true; }
+    void coop_on_timeslice_end();
+    bool coop_try_absorb_emu_error(uc_err err);
+    bool coop_should_terminate() const;
     
     static void hook_api_call(uc_engine* uc, uint64_t address, uint32_t size, void* user_data);
     void handle_unknown_api(const std::string& api_name, uint32_t address);

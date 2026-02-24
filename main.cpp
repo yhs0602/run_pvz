@@ -713,9 +713,38 @@ int main(int argc, char **argv) {
         cout << "[*] Profiler Active. JIT Memory Dispatcher Ready.\n";
         
         uint32_t pc = pe_module.entry_point;
+        if (api_handler.coop_threads_enabled()) {
+            backend.reg_write(UC_X86_REG_EIP, &pc);
+            api_handler.coop_register_main_thread();
+            uint32_t coop_pc = api_handler.coop_current_pc();
+            if (coop_pc != 0) pc = coop_pc;
+            cout << "[*] Cooperative scheduler: ON (timeslice=" << api_handler.coop_timeslice_count()
+                 << " instructions, env=PVZ_COOP_THREADS).\n";
+        }
         while (true) {
-            uc_err err = backend.emu_start(pc, 0, 0, 0);
+            size_t emu_count = 0;
+            if (api_handler.coop_threads_enabled()) {
+                pc = api_handler.coop_current_pc();
+                if (pc == 0 || pc == 0xFFFFFFFFu) {
+                    if (api_handler.coop_should_terminate()) {
+                        cout << "\n[+] Cooperative scheduler finished (no runnable threads).\n";
+                        break;
+                    }
+                }
+                emu_count = api_handler.coop_timeslice_count();
+                if (emu_count == 0) emu_count = 1;
+            }
+
+            uc_err err = backend.emu_start(pc, 0, 0, emu_count);
             if (err) {
+                if (api_handler.coop_threads_enabled() && api_handler.coop_try_absorb_emu_error(err)) {
+                    if (api_handler.coop_should_terminate()) {
+                        cout << "\n[+] Cooperative scheduler finished after worker fault recovery.\n";
+                        break;
+                    }
+                    pc = api_handler.coop_current_pc();
+                    continue;
+                }
                 std::cerr << "\n[!] Emulation stopped due to error: " << backend.strerror(err) << " (Code: " << err << ")\n";
                 uint32_t val;
                 backend.reg_read(UC_X86_REG_EIP, &val); std::cerr << "[!] EIP = 0x" << std::hex << val << std::dec << "\n";
@@ -754,17 +783,25 @@ int main(int argc, char **argv) {
                 std::cerr << "[!] Stopped by RSS guard at approx " << g_rss_guard_last_mb << "MB.\n";
                 break;
             }
-            backend.reg_read(UC_X86_REG_EIP, &pc);
-            
-            if (pc == 0 || pc == 0xffffffff) {
-                cout << "\n[+] Emulation cleanly finished at EIP = 0x" << hex << pc << endl;
-                cout << "--- Last 50 Basic Blocks Executed ---\n";
-                int start_idx = block_idx > 50 ? block_idx - 50 : 0;
-                for (int i = start_idx; i < block_idx; i++) {
-                    cout << "  ADDR: 0x" << hex << last_blocks[i % 50].addr 
-                         << "   ESP: 0x" << last_blocks[i % 50].esp << dec << "\n";
+            if (api_handler.coop_threads_enabled()) {
+                api_handler.coop_on_timeslice_end();
+                pc = api_handler.coop_current_pc();
+                if (api_handler.coop_should_terminate()) {
+                    cout << "\n[+] Cooperative scheduler reported completion.\n";
+                    break;
                 }
-                break; 
+            } else {
+                backend.reg_read(UC_X86_REG_EIP, &pc);
+                if (pc == 0 || pc == 0xffffffff) {
+                    cout << "\n[+] Emulation cleanly finished at EIP = 0x" << hex << pc << endl;
+                    cout << "--- Last 50 Basic Blocks Executed ---\n";
+                    int start_idx = block_idx > 50 ? block_idx - 50 : 0;
+                    for (int i = start_idx; i < block_idx; i++) {
+                        cout << "  ADDR: 0x" << hex << last_blocks[i % 50].addr 
+                             << "   ESP: 0x" << last_blocks[i % 50].esp << dec << "\n";
+                    }
+                    break; 
+                }
             }
         }
 

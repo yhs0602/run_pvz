@@ -913,6 +913,8 @@
                 }
                 uint32_t lpStartAddress = handler->ctx.get_arg(2);
                 uint32_t lpParameter = handler->ctx.get_arg(3);
+                uint32_t dwStackSize = handler->ctx.get_arg(1);
+                uint32_t dwCreationFlags = handler->ctx.get_arg(4);
                 uint32_t lpThreadId = handler->ctx.get_arg(5);
                 uint32_t handle = 0x8000;
                 if (handler->ctx.global_state.find("ThreadHandleTop") == handler->ctx.global_state.end()) {
@@ -921,17 +923,29 @@
                     handle = static_cast<uint32_t>(handler->ctx.global_state["ThreadHandleTop"]);
                 }
                 handler->ctx.global_state["ThreadHandleTop"] = handle + 4;
+                uint32_t tid = handle;
                 if (lpThreadId != 0) {
-                    uint32_t tid = 1;
                     handler->backend.mem_write(lpThreadId, &tid, 4);
                 }
                 auto* th = new ThreadHandle();
                 th->start_address = lpStartAddress;
                 th->parameter = lpParameter;
+                th->thread_id = tid;
                 th->started = false;
                 th->finished = false;
                 handler->ctx.handle_map["thread_" + std::to_string(handle)] = th;
                 g_thread_start_to_handle[lpStartAddress] = handle;
+                if ((dwCreationFlags & 0x4u) == 0 && handler->coop_threads_enabled()) {
+                    if (!handler->coop_spawn_thread(handle, lpStartAddress, lpParameter, dwStackSize)) {
+                        if (thread_mock_trace_enabled()) {
+                            std::cout << "[THREAD MOCK] coop spawn failed for handle=0x"
+                                      << std::hex << handle << std::dec << "\n";
+                        }
+                    } else {
+                        handler->coop_request_yield();
+                        handler->backend.emu_stop();
+                    }
+                }
                 // Cooperative thread emulation:
                 // mark the thread-parameter block as "started" so waits and init gates can progress.
                 if (lpParameter != 0) {
@@ -940,10 +954,12 @@
                     handler->backend.mem_write(lpParameter + 4, &one, 4);
                 }
                 std::cout << "\n[API CALL] [OK] CreateThread(start=0x" << std::hex << lpStartAddress
-                          << ", param=0x" << lpParameter << ", handle=0x" << handle << std::dec << ")\n";
+                          << ", param=0x" << lpParameter << ", handle=0x" << handle
+                          << ", flags=0x" << dwCreationFlags << std::dec << ")\n";
                 if (thread_mock_trace_enabled()) {
                     std::cout << "[THREAD MOCK] registered thread handle=0x" << std::hex << handle
                               << " start=0x" << lpStartAddress << " param=0x" << lpParameter
+                              << " stack=0x" << dwStackSize << " flags=0x" << dwCreationFlags
                               << std::dec << "\n";
                 }
                 handler->ctx.set_eax(handle);
@@ -986,6 +1002,9 @@
                         // Infinite waits are treated as signaled to avoid deadlock,
                         // finite waits return WAIT_TIMEOUT.
                         wait_result = (timeout_ms == 0xFFFFFFFFu) ? 0 : 0x102;
+                        if (handler->coop_threads_enabled()) {
+                            handler->coop_request_yield();
+                        }
                     }
                     handler->ctx.global_state["LastError"] = 0;
                     if (thread_mock_trace_enabled()) {
@@ -999,9 +1018,19 @@
                 } else if (auto it_thread = handler->ctx.handle_map.find("thread_" + std::to_string(h));
                            it_thread != handler->ctx.handle_map.end()) {
                     auto* th = static_cast<ThreadHandle*>(it_thread->second);
-                    // Cooperative mode: spawned thread body is not actually scheduled yet.
-                    // Keep compatibility by reporting signaled while preserving trace visibility.
-                    wait_result = 0;
+                    th->finished = handler->coop_is_thread_finished(h);
+                    if (th->finished) {
+                        wait_result = 0; // WAIT_OBJECT_0
+                    } else if (timeout_ms == 0) {
+                        wait_result = 0x102; // WAIT_TIMEOUT
+                    } else {
+                        // Cooperative mode fallback: report success for compatibility but
+                        // request a scheduler yield so worker progress can happen.
+                        wait_result = 0;
+                        if (handler->coop_threads_enabled()) {
+                            handler->coop_request_yield();
+                        }
+                    }
                     handler->ctx.global_state["LastError"] = 0;
                     if (thread_mock_trace_enabled()) {
                         std::cout << "[THREAD MOCK] WaitForSingleObject(thread=0x" << std::hex << h
@@ -1020,6 +1049,23 @@
                 std::cout << "\n[API CALL] [OK] WaitForSingleObject(handle=0x" << std::hex << h
                           << ", timeout=" << std::dec << timeout_ms << ") -> 0x" << std::hex
                           << wait_result << std::dec << "\n";
+            } else if (name == "KERNEL32.dll!Sleep") {
+                if (handler->coop_threads_enabled()) {
+                    handler->coop_request_yield();
+                    handler->backend.emu_stop();
+                }
+            } else if (name == "KERNEL32.dll!SleepEx") {
+                if (handler->coop_threads_enabled()) {
+                    handler->coop_request_yield();
+                    handler->backend.emu_stop();
+                }
+                handler->ctx.set_eax(0); // timeout elapsed, not alerted
+            } else if (name == "KERNEL32.dll!SwitchToThread") {
+                if (handler->coop_threads_enabled()) {
+                    handler->coop_request_yield();
+                    handler->backend.emu_stop();
+                }
+                handler->ctx.set_eax(1); // switched
             } else if (name == "KERNEL32.dll!CloseHandle") {
                 uint32_t h = handler->ctx.get_arg(0);
                 auto itf = handler->ctx.handle_map.find("file_" + std::to_string(h));
@@ -1797,6 +1843,11 @@
                               << g_win32_message_queue.size() << ")\n";
                 }
                 handler->ctx.set_eax(1);
+            } else if (name == "KERNEL32.dll!GetCurrentThreadId") {
+                uint32_t tid = handler->coop_threads_enabled()
+                    ? handler->coop_current_thread_id()
+                    : 1u;
+                handler->ctx.set_eax(tid);
             } else if (name == "KERNEL32.dll!GetCurrentProcess") {
                 handler->ctx.set_eax(-1); // Pseudo handle for current process
                 std::cout << "\n[API CALL] [OK] Intercepted call to " << name << "\n";

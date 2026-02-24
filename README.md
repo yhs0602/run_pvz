@@ -137,6 +137,15 @@ PVZ_HOT_FOCUS_ADDRS=0x62ce9b,0x62cf8e,0x62118b,0x61fcd4 PVZ_HOT_FOCUS_RANGE=0x20
 # thread/event/postmessage 모킹 상세 추적 로그
 PVZ_THREAD_MOCK_TRACE=1 ./build/runner pvz/main.exe
 
+# cooperative guest thread scheduler 활성화 (CreateThread worker를 실제 guest 코드로 timeslice 실행)
+PVZ_COOP_THREADS=1 PVZ_COOP_TIMESLICE=20000 ./build-fex/runner pvz/main.exe
+
+# cooperative scheduler 상세 trace
+PVZ_COOP_THREADS=1 PVZ_COOP_TRACE=1 ./build-fex/runner pvz/main.exe
+
+# cooperative thread 기본 스택 크기(bytes, 기본 0x200000)
+PVZ_COOP_THREADS=1 PVZ_COOP_STACK_SIZE=2097152 ./build-fex/runner pvz/main.exe
+
 # 장기 실행 메모리 가드 (fexcore 기본 12288MB, 0이면 비활성화)
 PVZ_MAX_RSS_MB=8192 PVZ_RSS_GUARD_INTERVAL_BLOCKS=20000 ./build/runner pvz/main.exe
 

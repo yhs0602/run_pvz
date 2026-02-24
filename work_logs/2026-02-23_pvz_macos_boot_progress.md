@@ -571,3 +571,31 @@
 - 중간 결론:
   - 현 시점의 렌더링 미진입 1순위 원인은 API 반환값 불일치보다
     "cooperative CreateThread가 실제 worker thread body를 실행하지 않는 구조"일 가능성이 높음.
+
+35. cooperative guest thread scheduler 1차 도입 및 worker 실행 확인
+- 목표:
+  - `CreateThread` 경로를 "성공 반환만 하는 모킹"에서 실제 guest worker 코드 실행으로 전환.
+- 구현:
+  - `DummyAPIHandler`에 cooperative scheduler 상태/메서드 추가.
+    - thread register context(`EAX..EIP/EFLAGS`) save/load.
+    - run-order 기반 round-robin 전환.
+    - worker stack guest 메모리 매핑(충돌 시 주소 하향 재시도).
+  - `main.cpp` 실행 루프 변경:
+    - `PVZ_COOP_THREADS=1`일 때 `emu_start(..., count=timeslice)`로 slice 실행.
+    - slice 종료마다 `api_handler.coop_on_timeslice_end()` 호출해 thread 전환.
+    - worker fault(`FETCH/READ/WRITE_UNMAPPED`, `INSN_INVALID`, `EXCEPTION`)는 worker 종료로 흡수 후 다음 runnable로 진행.
+  - API 연동:
+    - `CreateThread`에서 cooperative spawn + 즉시 yield 요청.
+    - `WaitForSingleObject(thread)`는 cooperative finished 상태 반영.
+    - `GetCurrentThreadId`는 cooperative current thread id 반환.
+    - `Sleep/SleepEx/SwitchToThread` 추가 및 cooperative yield 연동.
+- 검증:
+  - 로그: `/Users/yanghyeonseo/Developer/pvz/logs_fex_coop_probe_20260224_213317.log`
+    - `CreateThread(start=0x5d5dc0, ...)` 이후
+    - `[THREAD MOCK] observed execution of thread handle=0x8000 start=0x5d5dc0` 확인.
+  - 로그: `/Users/yanghyeonseo/Developer/pvz/logs_fex_coop_stats2_20260224_213538.log`
+    - 기존 hot loop(`0x62ce9b/0x62cf8e/0x62118b/0x61fcd4`) 지배는 유지.
+    - 동시에 `USER32!GetMessageA/TranslateMessage/DispatchMessageA` 호출 비중 증가(메시지 소비 루프 진입 가시화).
+- 현재 상태:
+  - "worker 스레드 본체 미실행" 이슈는 완화.
+  - 아직 `IDirectDrawSurface7::Lock/Unlock` 미진입이므로, 다음 병목은 메시지 루프 이후 렌더 경로 조건 정합성으로 좁혀짐.
