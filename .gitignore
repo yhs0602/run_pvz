@@ -52,3 +52,6 @@ qemu
 boot_trace.txt
 api_requests/*.json.processed
 llm_cache/api_mocks/
+*.log
+*.rss
+logs_*.txt

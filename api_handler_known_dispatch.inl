@@ -410,7 +410,7 @@
                         uint32_t remain_size = free_size - aligned_bytes;
                         uint32_t remain_ptr = ptr + aligned_bytes;
                         if (remain_size > 0) {
-                            g_heap_free_by_size.emplace(remain_size, remain_ptr);
+                            heap_push_free_block(remain_size, remain_ptr);
                         }
                     }
                     g_heap_sizes[ptr] = aligned_bytes;
@@ -444,8 +444,9 @@
                 uint32_t lpMem = handler->ctx.get_arg(2);
                 auto it = g_heap_sizes.find(lpMem);
                 if (it != g_heap_sizes.end()) {
-                    g_heap_free_by_size.emplace(it->second, lpMem);
+                    heap_push_free_block(it->second, lpMem);
                     g_heap_sizes.erase(it);
+                    heap_maybe_reset_if_idle(handler->ctx);
                 }
                 handler->ctx.set_eax(1); // Success
                 handler->ctx.global_state["LastError"] = 0;
@@ -486,7 +487,7 @@
                             uint32_t remain_size = free_size - aligned_new;
                             uint32_t remain_ptr = ptr + aligned_new;
                             if (remain_size > 0) {
-                                g_heap_free_by_size.emplace(remain_size, remain_ptr);
+                                heap_push_free_block(remain_size, remain_ptr);
                             }
                         }
                         g_heap_sizes[ptr] = aligned_new;
@@ -518,7 +519,7 @@
                                 uint32_t remain_ptr = lpMem + aligned_new;
                                 uint32_t remain_size = old_size - aligned_new;
                                 if (remain_size > 0) {
-                                    g_heap_free_by_size.emplace(remain_size, remain_ptr);
+                                    heap_push_free_block(remain_size, remain_ptr);
                                 }
                             }
                             handler->ctx.set_eax(lpMem);
@@ -539,7 +540,7 @@
                                     uint32_t remain_size = free_size - aligned_new;
                                     uint32_t remain_ptr = new_ptr + aligned_new;
                                     if (remain_size > 0) {
-                                        g_heap_free_by_size.emplace(remain_size, remain_ptr);
+                                        heap_push_free_block(remain_size, remain_ptr);
                                     }
                                 }
                                 g_heap_sizes[new_ptr] = aligned_new;
@@ -579,8 +580,9 @@
                                 }
                             }
 
-                            g_heap_free_by_size.emplace(old_size, lpMem);
+                            heap_push_free_block(old_size, lpMem);
                             g_heap_sizes.erase(lpMem);
+                            heap_maybe_reset_if_idle(handler->ctx);
                             handler->ctx.set_eax(new_ptr);
                             handler->ctx.global_state["LastError"] = 0;
                         }
@@ -1741,6 +1743,78 @@
                 }
                 handler->ctx.set_eax(0); // D3D_OK
                 std::cout << "\n[API CALL] [OK] IDirect3D8::GetAdapterDisplayMode spoofed 800x600.\n";
+            } else if (name == "USER32.dll!RegisterClassA" || name == "USER32.dll!RegisterClassW" ||
+                       name == "USER32.dll!RegisterClassExA" || name == "USER32.dll!RegisterClassExW") {
+                uint32_t pClass = handler->ctx.get_arg(0);
+                bool wide = (name == "USER32.dll!RegisterClassW" || name == "USER32.dll!RegisterClassExW");
+                bool ex = (name == "USER32.dll!RegisterClassExA" || name == "USER32.dll!RegisterClassExW");
+                uint32_t wndproc = 0;
+                uint32_t class_name_ptr = 0;
+                if (pClass != 0) {
+                    if (ex) {
+                        handler->backend.mem_read(pClass + 8u, &wndproc, 4);
+                        handler->backend.mem_read(pClass + 40u, &class_name_ptr, 4);
+                    } else {
+                        uint32_t wndproc_a = 0;
+                        uint32_t wndproc_b = 0;
+                        uint32_t class_a = 0;
+                        uint32_t class_b = 0;
+                        handler->backend.mem_read(pClass + 4u, &wndproc_a, 4);
+                        handler->backend.mem_read(pClass + 8u, &wndproc_b, 4);
+                        handler->backend.mem_read(pClass + 36u, &class_a, 4);
+                        handler->backend.mem_read(pClass + 40u, &class_b, 4);
+
+                        auto valid_proc = [](uint32_t p) {
+                            return p >= 0x10000u && p < DummyAPIHandler::FAKE_API_BASE;
+                        };
+                        wndproc = valid_proc(wndproc_a) ? wndproc_a : wndproc_b;
+                        class_name_ptr = (class_a != 0) ? class_a : class_b;
+                    }
+                }
+
+                std::string class_name;
+                if ((class_name_ptr & 0xFFFF0000u) == 0 && class_name_ptr != 0) {
+                    class_name = "#" + std::to_string(class_name_ptr & 0xFFFFu);
+                } else {
+                    class_name = wide
+                        ? read_guest_w_string(handler->ctx, class_name_ptr, 256)
+                        : read_guest_c_string(handler->ctx, class_name_ptr, 256);
+                }
+                class_name = to_lower_ascii(class_name);
+
+                if (wndproc == 0 || class_name.empty()) {
+                    if (env_truthy("PVZ_WNDPROC_TRACE")) {
+                        std::cout << "[WNDPROC] RegisterClass parse-fail p=0x" << std::hex << pClass
+                                  << " wndproc=0x" << wndproc
+                                  << " class_ptr=0x" << class_name_ptr
+                                  << " name='" << class_name << "'" << std::dec << "\n";
+                    }
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 87; // ERROR_INVALID_PARAMETER
+                } else {
+                    uint16_t atom = 0;
+                    auto it_existing = g_win32_class_by_name.find(class_name);
+                    if (it_existing != g_win32_class_by_name.end()) {
+                        atom = it_existing->second.atom;
+                    } else {
+                        atom = g_win32_class_atom_top++;
+                        if (g_win32_class_atom_top == 0) g_win32_class_atom_top = 1;
+                    }
+
+                    Win32ClassReg reg = {};
+                    reg.atom = atom;
+                    reg.wndproc = wndproc;
+                    g_win32_class_by_name[class_name] = reg;
+                    g_win32_class_by_atom[atom] = reg;
+
+                    if (env_truthy("PVZ_WNDPROC_TRACE")) {
+                        std::cout << "[WNDPROC] RegisterClass name='" << class_name
+                                  << "' atom=0x" << std::hex << atom
+                                  << " wndproc=0x" << wndproc << std::dec << "\n";
+                    }
+                    handler->ctx.set_eax(atom);
+                    handler->ctx.global_state["LastError"] = 0;
+                }
             } else if (name == "USER32.dll!RegisterWindowMessageA" || name == "USER32.dll!RegisterWindowMessageW") {
                 uint32_t lpString = handler->ctx.get_arg(0);
                 bool wide = (name == "USER32.dll!RegisterWindowMessageW");
@@ -1780,7 +1854,196 @@
             } else if (name == "USER32.dll!TranslateMessage") {
                 handler->ctx.set_eax(1);
             } else if (name == "USER32.dll!DispatchMessageA" || name == "USER32.dll!DispatchMessageW") {
+                static const bool wndproc_trace = env_truthy("PVZ_WNDPROC_TRACE");
+                uint32_t lpMsg = handler->ctx.get_arg(0);
+                Win32_MSG msg = {};
+                if (lpMsg != 0 && handler->backend.mem_read(lpMsg, &msg, sizeof(msg)) == UC_ERR_OK) {
+                    auto it_wndproc = g_window_long_values.find(win32_window_long_key(msg.hwnd, -4)); // GWL_WNDPROC
+                    if (it_wndproc != g_window_long_values.end() && it_wndproc->second != 0 && msg.message != WM_NULL) {
+                        uint32_t wndproc = static_cast<uint32_t>(it_wndproc->second);
+                        if (wndproc >= DummyAPIHandler::FAKE_API_BASE || wndproc < 0x10000u) {
+                            handler->ctx.set_eax(0);
+                            return;
+                        }
+                        if (wndproc_trace) {
+                            std::cout << "[WNDPROC] Dispatch hwnd=0x" << std::hex << msg.hwnd
+                                      << " msg=0x" << msg.message << " -> 0x" << wndproc
+                                      << std::dec << "\n";
+                        }
+                        uint32_t esp = 0;
+                        handler->backend.reg_read(UC_X86_REG_ESP, &esp);
+                        uint32_t caller_ret = 0;
+                        handler->backend.mem_read(esp, &caller_ret, 4);
+
+                        // Build a stdcall frame for WndProc and jump directly.
+                        // We shift ESP by -12 so WndProc(ret 16) lands on Dispatch caller's expected ESP (+8).
+                        uint32_t call_esp = esp - 12;
+                        uint32_t frame[5] = {caller_ret, msg.hwnd, msg.message, msg.wParam, msg.lParam};
+                        handler->backend.mem_write(call_esp, frame, sizeof(frame));
+                        handler->backend.reg_write(UC_X86_REG_ESP, &call_esp);
+                        handler->backend.reg_write(UC_X86_REG_EIP, &wndproc);
+                        return;
+                    }
+                }
                 handler->ctx.set_eax(0);
+            } else if (name == "USER32.dll!SendMessageA" || name == "USER32.dll!SendMessageW") {
+                static const bool wndproc_trace = env_truthy("PVZ_WNDPROC_TRACE");
+                uint32_t hwnd = handler->ctx.get_arg(0);
+                uint32_t msg = handler->ctx.get_arg(1);
+                auto it_wndproc = g_window_long_values.find(win32_window_long_key(hwnd, -4)); // GWL_WNDPROC
+                if (it_wndproc != g_window_long_values.end() && it_wndproc->second != 0 && msg != WM_NULL) {
+                    uint32_t wndproc = static_cast<uint32_t>(it_wndproc->second);
+                    if (wndproc < DummyAPIHandler::FAKE_API_BASE && wndproc >= 0x10000u) {
+                        if (wndproc_trace) {
+                            std::cout << "[WNDPROC] SendMessage hwnd=0x" << std::hex << hwnd
+                                      << " msg=0x" << msg << " -> 0x" << wndproc
+                                      << std::dec << "\n";
+                        }
+                        handler->backend.reg_write(UC_X86_REG_EIP, &wndproc);
+                        return;
+                    }
+                }
+                handler->ctx.set_eax(0);
+            } else if (name == "USER32.dll!DestroyWindow") {
+                uint32_t hwnd = handler->ctx.get_arg(0);
+                g_valid_hwnds.erase(hwnd);
+                g_hwnd_owner_thread_id.erase(hwnd);
+                g_window_text_values.erase(hwnd);
+                for (auto it_w = g_window_long_values.begin(); it_w != g_window_long_values.end(); ) {
+                    if (static_cast<uint32_t>(it_w->first >> 32) == hwnd) {
+                        it_w = g_window_long_values.erase(it_w);
+                    } else {
+                        ++it_w;
+                    }
+                }
+                handler->ctx.set_eax(1);
+            } else if (name == "USER32.dll!IsWindow" ||
+                       name == "USER32.dll!IsWindowVisible" ||
+                       name == "USER32.dll!IsWindowEnabled") {
+                uint32_t hwnd = handler->ctx.get_arg(0);
+                bool exists = (g_valid_hwnds.find(hwnd) != g_valid_hwnds.end());
+                if (!exists && hwnd == 0x12345678u) exists = true;
+                handler->ctx.set_eax(exists ? 1u : 0u);
+            } else if (name == "USER32.dll!GetActiveWindow" ||
+                       name == "USER32.dll!GetForegroundWindow") {
+                if (!g_valid_hwnds.empty()) {
+                    handler->ctx.set_eax(*g_valid_hwnds.begin());
+                } else {
+                    handler->ctx.set_eax(0x12345678u);
+                }
+            } else if (name == "USER32.dll!SetWindowLongA" || name == "USER32.dll!SetWindowLongW") {
+                uint32_t hwnd = handler->ctx.get_arg(0);
+                int32_t index = static_cast<int32_t>(handler->ctx.get_arg(1));
+                int32_t value = static_cast<int32_t>(handler->ctx.get_arg(2));
+                uint64_t key = win32_window_long_key(hwnd, index);
+                int32_t prev = 0;
+                auto it_prev = g_window_long_values.find(key);
+                if (it_prev != g_window_long_values.end()) {
+                    prev = it_prev->second;
+                }
+                g_window_long_values[key] = value;
+                if (g_valid_hwnds.find(hwnd) == g_valid_hwnds.end()) {
+                    g_valid_hwnds.insert(hwnd);
+                }
+                if (g_hwnd_owner_thread_id.find(hwnd) == g_hwnd_owner_thread_id.end()) {
+                    g_hwnd_owner_thread_id[hwnd] = handler->coop_threads_enabled()
+                        ? handler->coop_current_thread_id()
+                        : 1u;
+                }
+                handler->ctx.set_eax(static_cast<uint32_t>(prev));
+            } else if (name == "USER32.dll!GetWindowLongA" || name == "USER32.dll!GetWindowLongW") {
+                uint32_t hwnd = handler->ctx.get_arg(0);
+                int32_t index = static_cast<int32_t>(handler->ctx.get_arg(1));
+                uint64_t key = win32_window_long_key(hwnd, index);
+                int32_t value = 0;
+                auto it_val = g_window_long_values.find(key);
+                if (it_val != g_window_long_values.end()) {
+                    value = it_val->second;
+                }
+                handler->ctx.set_eax(static_cast<uint32_t>(value));
+            } else if (name == "USER32.dll!GetWindowThreadProcessId") {
+                uint32_t hwnd = handler->ctx.get_arg(0);
+                uint32_t ppid = handler->ctx.get_arg(1);
+                uint32_t tid = 1;
+                auto it_tid = g_hwnd_owner_thread_id.find(hwnd);
+                if (it_tid != g_hwnd_owner_thread_id.end()) {
+                    tid = it_tid->second;
+                }
+                uint32_t pid = 1;
+                auto it_pid = handler->ctx.global_state.find("ProcessId");
+                if (it_pid != handler->ctx.global_state.end()) {
+                    pid = static_cast<uint32_t>(it_pid->second);
+                }
+                if (ppid != 0) {
+                    handler->backend.mem_write(ppid, &pid, 4);
+                }
+                handler->ctx.set_eax(tid);
+            } else if (name == "USER32.dll!SetWindowTextA" || name == "USER32.dll!SetWindowTextW") {
+                uint32_t hwnd = handler->ctx.get_arg(0);
+                uint32_t p = handler->ctx.get_arg(1);
+                std::string title = (name == "USER32.dll!SetWindowTextW")
+                    ? read_guest_w_string(handler->ctx, p, 256)
+                    : read_guest_c_string(handler->ctx, p, 256);
+                g_window_text_values[hwnd] = title;
+                if (handler->ctx.sdl_window && !title.empty()) {
+                    SDL_SetWindowTitle(static_cast<SDL_Window*>(handler->ctx.sdl_window), title.c_str());
+                }
+                handler->ctx.set_eax(1);
+            } else if (name == "USER32.dll!GetWindowTextA" || name == "USER32.dll!GetWindowTextW") {
+                uint32_t hwnd = handler->ctx.get_arg(0);
+                uint32_t p = handler->ctx.get_arg(1);
+                uint32_t cch = handler->ctx.get_arg(2);
+                auto it_title = g_window_text_values.find(hwnd);
+                std::string title = (it_title != g_window_text_values.end()) ? it_title->second : "";
+                if (cch == 0 || p == 0) {
+                    handler->ctx.set_eax(0);
+                } else if (name == "USER32.dll!GetWindowTextW") {
+                    uint32_t max_chars = (cch > 0) ? (cch - 1) : 0;
+                    uint32_t n = std::min<uint32_t>(max_chars, static_cast<uint32_t>(title.size()));
+                    std::vector<uint16_t> wbuf(n + 1, 0);
+                    for (uint32_t i = 0; i < n; ++i) {
+                        wbuf[i] = static_cast<uint16_t>(static_cast<unsigned char>(title[i]));
+                    }
+                    handler->backend.mem_write(p, wbuf.data(), (n + 1) * sizeof(uint16_t));
+                    handler->ctx.set_eax(n);
+                } else {
+                    uint32_t max_chars = (cch > 0) ? (cch - 1) : 0;
+                    uint32_t n = std::min<uint32_t>(max_chars, static_cast<uint32_t>(title.size()));
+                    if (n > 0) {
+                        handler->backend.mem_write(p, title.data(), n);
+                    }
+                    uint8_t nul = 0;
+                    handler->backend.mem_write(p + n, &nul, 1);
+                    handler->ctx.set_eax(n);
+                }
+            } else if (name == "USER32.dll!WaitMessage") {
+                SDL_Event evt;
+                if (!SDL_PollEvent(&evt)) {
+                    SDL_WaitEventTimeout(&evt, 16);
+                }
+                pump_due_win32_timers(SDL_GetTicks());
+                handler->ctx.set_eax(1);
+            } else if (name == "USER32.dll!MsgWaitForMultipleObjects" ||
+                       name == "USER32.dll!MsgWaitForMultipleObjectsEx") {
+                uint32_t dwMilliseconds = 0;
+                if (name == "USER32.dll!MsgWaitForMultipleObjects") {
+                    dwMilliseconds = handler->ctx.get_arg(3);
+                } else {
+                    dwMilliseconds = handler->ctx.get_arg(2);
+                }
+                uint32_t now = SDL_GetTicks();
+                pump_due_win32_timers(now);
+                uint32_t wait_ms = (dwMilliseconds == 0xFFFFFFFFu) ? 16u : std::min<uint32_t>(dwMilliseconds, 16u);
+                SDL_Event evt;
+                if (wait_ms > 0) {
+                    SDL_WaitEventTimeout(&evt, static_cast<int>(wait_ms));
+                    pump_due_win32_timers(SDL_GetTicks());
+                }
+                if (!g_win32_message_queue.empty()) {
+                    handler->ctx.set_eax(0); // WAIT_OBJECT_0 + nCount(0)
+                } else {
+                    handler->ctx.set_eax(0x102); // WAIT_TIMEOUT
+                }
             } else if (name == "USER32.dll!MoveWindow") {
                 uint32_t x = handler->ctx.get_arg(1);
                 uint32_t y = handler->ctx.get_arg(2);
@@ -1804,19 +2067,44 @@
                     timer_id = top;
                     handler->ctx.global_state["TimerIdTop"] = top + 1;
                 }
+                uint32_t elapse_ms = handler->ctx.get_arg(2);
+                uint32_t callback = handler->ctx.get_arg(3);
+                if (elapse_ms == 0) elapse_ms = 1;
+                uint32_t now = SDL_GetTicks();
+                Win32Timer timer = {};
+                timer.hwnd = hwnd;
+                timer.timer_id = timer_id;
+                timer.interval_ms = elapse_ms;
+                timer.callback = callback;
+                timer.next_fire_ms = now + elapse_ms;
+                g_win32_timers[win32_timer_key(hwnd, timer_id)] = timer;
+                handler->ctx.set_eax(timer_id);
+            } else if (name == "USER32.dll!KillTimer") {
+                uint32_t hwnd = handler->ctx.get_arg(0);
+                uint32_t timer_id = handler->ctx.get_arg(1);
+                size_t erased = g_win32_timers.erase(win32_timer_key(hwnd, timer_id));
+                handler->ctx.set_eax(erased > 0 ? 1u : 0u);
+            } else if (name == "USER32.dll!PostThreadMessageA" || name == "USER32.dll!PostThreadMessageW") {
+                uint32_t id_thread = handler->ctx.get_arg(0);
                 Win32_MSG msg = {};
-                msg.hwnd = hwnd;
-                msg.message = WM_TIMER;
-                msg.wParam = timer_id;
+                msg.hwnd = 0;
+                msg.message = handler->ctx.get_arg(1);
+                msg.wParam = handler->ctx.get_arg(2);
+                msg.lParam = handler->ctx.get_arg(3);
                 msg.time = SDL_GetTicks();
-                int mx, my;
+                int mx = 0;
+                int my = 0;
                 SDL_GetMouseState(&mx, &my);
                 msg.pt_x = mx;
                 msg.pt_y = my;
                 enqueue_win32_message(msg);
-                handler->ctx.set_eax(timer_id);
-            } else if (name == "USER32.dll!KillTimer") {
+                if (thread_mock_trace_enabled()) {
+                    std::cout << "[THREAD MOCK] PostThreadMessage(tid=" << id_thread
+                              << ", msg=0x" << std::hex << msg.message << ", queue="
+                              << std::dec << g_win32_message_queue.size() << ")\n";
+                }
                 handler->ctx.set_eax(1);
+                handler->ctx.global_state["LastError"] = 0;
             } else if (name == "USER32.dll!PostMessageA" || name == "USER32.dll!PostMessageW") {
                 Win32_MSG msg = {};
                 msg.hwnd = handler->ctx.get_arg(0);
@@ -1843,11 +2131,21 @@
                               << g_win32_message_queue.size() << ")\n";
                 }
                 handler->ctx.set_eax(1);
+                handler->ctx.global_state["LastError"] = 0;
             } else if (name == "KERNEL32.dll!GetCurrentThreadId") {
                 uint32_t tid = handler->coop_threads_enabled()
                     ? handler->coop_current_thread_id()
                     : 1u;
                 handler->ctx.set_eax(tid);
+            } else if (name == "KERNEL32.dll!GetCurrentProcessId") {
+                uint32_t pid = 1;
+                auto it_pid = handler->ctx.global_state.find("ProcessId");
+                if (it_pid != handler->ctx.global_state.end()) {
+                    pid = static_cast<uint32_t>(it_pid->second);
+                } else {
+                    handler->ctx.global_state["ProcessId"] = pid;
+                }
+                handler->ctx.set_eax(pid);
             } else if (name == "KERNEL32.dll!GetCurrentProcess") {
                 handler->ctx.set_eax(-1); // Pseudo handle for current process
                 std::cout << "\n[API CALL] [OK] Intercepted call to " << name << "\n";

@@ -5,15 +5,18 @@
 #include "backend/fexcore_backend.hpp"
 #include <capstone/capstone.h>
 #include <iostream>
+#include <algorithm>
 #include <set>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <string>
 #include <fstream>
 #include <iomanip>
 #include <filesystem>
 #include <cstdlib>
 #include <cctype>
+#include <sstream>
 #include <limits>
 #include <SDL.h>
 #include <sys/resource.h>
@@ -46,6 +49,34 @@ static int env_int(const char* name, int default_value) {
     if (parsed > std::numeric_limits<int>::max()) return std::numeric_limits<int>::max();
     if (parsed < std::numeric_limits<int>::min()) return std::numeric_limits<int>::min();
     return static_cast<int>(parsed);
+}
+
+static bool parse_u32_auto(const std::string& token, uint32_t& out) {
+    if (token.empty()) return false;
+    char* end = nullptr;
+    unsigned long parsed = std::strtoul(token.c_str(), &end, 0);
+    if (!end || *end != '\0') return false;
+    if (parsed > 0xFFFFFFFFul) return false;
+    out = static_cast<uint32_t>(parsed);
+    return true;
+}
+
+static std::vector<uint32_t> parse_u32_list_csv(const char* raw) {
+    std::vector<uint32_t> out;
+    if (!raw) return out;
+    std::stringstream ss(raw);
+    std::string tok;
+    while (std::getline(ss, tok, ',')) {
+        auto first = tok.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) continue;
+        auto last = tok.find_last_not_of(" \t\r\n");
+        std::string trimmed = tok.substr(first, last - first + 1);
+        uint32_t v = 0;
+        if (parse_u32_auto(trimmed, v)) {
+            out.push_back(v);
+        }
+    }
+    return out;
 }
 
 // Capstone handle for LVA
@@ -229,6 +260,17 @@ uint64_t g_rss_guard_check_interval_blocks = 20000;
 uint64_t g_rss_guard_counter = 0;
 uint64_t g_rss_guard_last_mb = 0;
 bool g_rss_guard_triggered = false;
+bool g_block_hot_sample_enabled = false;
+uint64_t g_block_hot_interval = 0;
+uint64_t g_block_hot_counter = 0;
+size_t g_block_hot_cap = 8192;
+uint64_t g_block_hot_dropped = 0;
+unordered_map<uint32_t, uint64_t> g_block_hot_hits;
+bool g_block_focus_trace_enabled = false;
+uint64_t g_block_focus_interval = 50000;
+size_t g_block_focus_dump_bytes = 24;
+unordered_set<uint32_t> g_block_focus_addrs;
+unordered_map<uint32_t, uint64_t> g_block_focus_hits;
 uint32_t g_guest_vram_base = 0;
 size_t g_guest_vram_size = 0;
 uint32_t* g_host_vram_ptr = nullptr;
@@ -258,6 +300,79 @@ static uint64_t current_rss_mb() {
 #endif
     }
     return 0;
+}
+
+static void maybe_print_block_hot_stats() {
+    if (!g_block_hot_sample_enabled || g_block_hot_interval == 0) return;
+    if (g_block_hot_counter == 0 || (g_block_hot_counter % g_block_hot_interval) != 0) return;
+    vector<pair<uint32_t, uint64_t>> items(g_block_hot_hits.begin(), g_block_hot_hits.end());
+    if (items.empty()) return;
+    sort(items.begin(), items.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+    cout << "[BLOCK HOT] top_addrs:";
+    size_t limit = min<size_t>(12, items.size());
+    for (size_t i = 0; i < limit; ++i) {
+        cout << " [0x" << hex << items[i].first << dec << ":" << items[i].second << "]";
+    }
+    if (g_block_hot_dropped > 0) {
+        cout << " dropped=" << g_block_hot_dropped;
+    }
+    cout << "\n";
+}
+
+static void print_focus_mem_sample(const char* label, uint32_t addr, size_t bytes) {
+    if (!g_backend || addr < 0x1000 || bytes == 0) return;
+    vector<uint8_t> buf(bytes, 0);
+    if (g_backend->mem_read(addr, buf.data(), bytes) != UC_ERR_OK) return;
+    cout << " " << label << "=[";
+    for (size_t i = 0; i < bytes; ++i) {
+        if (i) cout << ' ';
+        cout << hex << setw(2) << setfill('0') << static_cast<unsigned>(buf[i]);
+    }
+    cout << dec << setfill(' ') << "]";
+}
+
+static void maybe_print_block_focus(uint32_t addr32) {
+    if (!g_block_focus_trace_enabled || g_block_focus_addrs.find(addr32) == g_block_focus_addrs.end()) return;
+    uint64_t& hits = g_block_focus_hits[addr32];
+    hits++;
+    if (g_block_focus_interval == 0 || (hits % g_block_focus_interval) != 0) return;
+
+    uint32_t eax = 0, ebx = 0, ecx = 0, edx = 0, esi = 0, edi = 0, esp = 0;
+    g_backend->reg_read(UC_X86_REG_EAX, &eax);
+    g_backend->reg_read(UC_X86_REG_EBX, &ebx);
+    g_backend->reg_read(UC_X86_REG_ECX, &ecx);
+    g_backend->reg_read(UC_X86_REG_EDX, &edx);
+    g_backend->reg_read(UC_X86_REG_ESI, &esi);
+    g_backend->reg_read(UC_X86_REG_EDI, &edi);
+    g_backend->reg_read(UC_X86_REG_ESP, &esp);
+
+    cout << "[BLOCK FOCUS] addr=0x" << hex << addr32 << dec
+         << " hit=" << hits
+         << " eax=0x" << hex << eax
+         << " ebx=0x" << ebx
+         << " ecx=0x" << ecx
+         << " edx=0x" << edx
+         << " esi=0x" << esi
+         << " edi=0x" << edi
+         << " esp=0x" << esp << dec;
+
+    size_t bytes = max<size_t>(1, g_block_focus_dump_bytes);
+    if (addr32 == 0x404470u) {
+        print_focus_mem_sample("eax", eax, bytes);
+    } else if (addr32 == 0x441a73u || addr32 == 0x441a79u) {
+        print_focus_mem_sample("ecx", ecx, bytes);
+        print_focus_mem_sample("edx", edx, bytes);
+    } else if (addr32 == 0x5d8890u) {
+        print_focus_mem_sample("ecx", ecx, bytes);
+        print_focus_mem_sample("edx", edx, bytes);
+    } else if (addr32 == 0x62456au) {
+        print_focus_mem_sample("esi", esi, bytes);
+        print_focus_mem_sample("edi", edi, bytes);
+    } else {
+        print_focus_mem_sample("ecx", ecx, bytes);
+        print_focus_mem_sample("edx", edx, bytes);
+    }
+    cout << "\n";
 }
 
 // ============================================
@@ -347,6 +462,21 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
     g_backend->reg_read(UC_X86_REG_ESP, &current_esp);
     last_blocks[block_idx % 50] = {address, current_esp};
     block_idx++;
+
+    if (g_block_hot_sample_enabled) {
+        g_block_hot_counter++;
+        uint32_t addr32 = static_cast<uint32_t>(address);
+        auto it_hot = g_block_hot_hits.find(addr32);
+        if (it_hot != g_block_hot_hits.end()) {
+            it_hot->second++;
+        } else if (g_block_hot_hits.size() >= g_block_hot_cap) {
+            g_block_hot_dropped++;
+        } else {
+            g_block_hot_hits.emplace(addr32, 1);
+        }
+        maybe_print_block_hot_stats();
+    }
+    maybe_print_block_focus(static_cast<uint32_t>(address));
 
     if (g_tb_flush_interval_blocks > 0) {
         g_tb_flush_counter++;
@@ -612,6 +742,40 @@ int main(int argc, char **argv) {
     if (rss_guard_blocks > 0) {
         g_rss_guard_check_interval_blocks = static_cast<uint64_t>(rss_guard_blocks);
     }
+    if (env_truthy("PVZ_BLOCK_HOT_SAMPLE")) {
+        g_block_hot_sample_enabled = true;
+    }
+    int block_hot_interval = env_int("PVZ_BLOCK_HOT_SAMPLE_INTERVAL", 200000);
+    if (block_hot_interval > 0) {
+        g_block_hot_interval = static_cast<uint64_t>(block_hot_interval);
+    }
+    int block_hot_cap = env_int("PVZ_BLOCK_HOT_CAP", 8192);
+    if (block_hot_cap > 0) {
+        g_block_hot_cap = static_cast<size_t>(block_hot_cap);
+    }
+    if (env_truthy("PVZ_BLOCK_FOCUS_TRACE")) {
+        g_block_focus_trace_enabled = true;
+    }
+    int block_focus_interval = env_int("PVZ_BLOCK_FOCUS_INTERVAL", 50000);
+    if (block_focus_interval > 0) {
+        g_block_focus_interval = static_cast<uint64_t>(block_focus_interval);
+    }
+    int block_focus_dump = env_int("PVZ_BLOCK_FOCUS_DUMP_BYTES", 24);
+    if (block_focus_dump > 0) {
+        g_block_focus_dump_bytes = static_cast<size_t>(block_focus_dump);
+    }
+    if (g_block_focus_trace_enabled) {
+        vector<uint32_t> addrs = parse_u32_list_csv(std::getenv("PVZ_BLOCK_FOCUS_ADDRS"));
+        if (addrs.empty()) {
+            addrs = {
+                0x441a73u, 0x441a79u, 0x441d20u, 0x441d37u, 0x441d3fu, 0x441d4fu,
+                0x441d66u, 0x441d77u, 0x441dd0u, 0x441dd9u, 0x5d8890u, 0x62456au, 0x404470u
+            };
+        }
+        for (uint32_t a : addrs) {
+            g_block_focus_addrs.insert(a);
+        }
+    }
 
     // Initialize CPU backend
     trace("before backend.open_x86_32");
@@ -671,6 +835,21 @@ int main(int argc, char **argv) {
             cout << "[*] RSS guard: max=" << g_rss_guard_max_mb
                  << "MB, check_interval_blocks=" << g_rss_guard_check_interval_blocks
                  << " (PVZ_MAX_RSS_MB / PVZ_RSS_GUARD_INTERVAL_BLOCKS).\n";
+        }
+        if (g_block_hot_sample_enabled) {
+            cout << "[*] Block hot sampler enabled: interval=" << g_block_hot_interval
+                 << ", cap=" << g_block_hot_cap
+                 << " (PVZ_BLOCK_HOT_SAMPLE / PVZ_BLOCK_HOT_SAMPLE_INTERVAL / PVZ_BLOCK_HOT_CAP).\n";
+        }
+        if (g_block_focus_trace_enabled) {
+            cout << "[*] Block focus trace enabled: interval=" << g_block_focus_interval
+                 << ", dump_bytes=" << g_block_focus_dump_bytes << ", addrs=";
+            size_t n = 0;
+            for (uint32_t a : g_block_focus_addrs) {
+                cout << (n == 0 ? "" : ",") << "0x" << hex << a << dec;
+                n++;
+            }
+            cout << " (PVZ_BLOCK_FOCUS_TRACE / PVZ_BLOCK_FOCUS_ADDRS / PVZ_BLOCK_FOCUS_INTERVAL / PVZ_BLOCK_FOCUS_DUMP_BYTES).\n";
         }
         trace("after jit dispatcher init");
 

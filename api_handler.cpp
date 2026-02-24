@@ -10,6 +10,7 @@
 #include <iterator>
 #include <deque>
 #include <map>
+#include <unordered_set>
 #include <sstream>
 #include <cctype>
 #include <cstring>
@@ -75,12 +76,27 @@ struct RegistryKeyHandle {
     std::string path;
 };
 
+struct Win32Timer {
+    uint32_t hwnd = 0;
+    uint32_t timer_id = 0;
+    uint32_t interval_ms = 0;
+    uint32_t callback = 0;
+    uint32_t next_fire_ms = 0;
+};
+
+struct Win32ClassReg {
+    uint16_t atom = 0;
+    uint32_t wndproc = 0;
+};
+
 static std::unordered_map<std::string, std::vector<uint8_t>> g_registry_values;
 static std::unordered_map<std::string, uint32_t> g_registry_types;
 static std::unordered_map<uint32_t, uint32_t> g_heap_sizes;
 static std::multimap<uint32_t, uint32_t> g_heap_free_by_size; // size -> ptr
 static constexpr uint32_t kHeapBase = 0x20000000;
 static constexpr uint32_t kHeapSize = 0x10000000; // 256MB
+static size_t g_heap_free_entry_cap = 131072;
+static bool g_heap_free_cap_warned = false;
 static std::unordered_map<uint32_t, uint32_t> g_mapview_live_sizes; // base -> aligned size
 static std::multimap<uint32_t, uint32_t> g_mapview_free_by_size;    // size -> base
 static std::unordered_map<uint32_t, uint32_t> g_resource_ptr_by_handle;
@@ -89,6 +105,16 @@ static uint32_t g_resource_handle_top = 0xB000;
 static uint32_t g_resource_heap_top = 0x36000000;
 static bool g_resource_heap_mapped = false;
 static std::deque<Win32_MSG> g_win32_message_queue;
+static std::unordered_map<uint64_t, Win32Timer> g_win32_timers;
+static std::unordered_set<uint32_t> g_valid_hwnds;
+static std::unordered_map<uint32_t, uint32_t> g_hwnd_owner_thread_id;
+static std::unordered_map<uint64_t, int32_t> g_window_long_values;
+static std::unordered_map<uint32_t, std::string> g_window_text_values;
+static uint32_t g_synth_idle_timer_next_ms = 0;
+static uint32_t g_hwnd_top = 0x12345678u;
+static std::unordered_map<std::string, Win32ClassReg> g_win32_class_by_name;
+static std::unordered_map<uint16_t, Win32ClassReg> g_win32_class_by_atom;
+static uint16_t g_win32_class_atom_top = 1;
 static std::unordered_map<uint32_t, uint32_t> g_thread_start_to_handle;
 
 static std::string read_guest_c_string(APIContext& ctx, uint32_t guest_ptr, size_t max_len = 512) {
@@ -203,6 +229,101 @@ static void enqueue_win32_message(const Win32_MSG& msg) {
         g_win32_message_queue.pop_front();
     }
     g_win32_message_queue.push_back(msg);
+}
+
+static uint64_t win32_timer_key(uint32_t hwnd, uint32_t timer_id) {
+    return (static_cast<uint64_t>(hwnd) << 32) | static_cast<uint64_t>(timer_id);
+}
+
+static uint64_t win32_window_long_key(uint32_t hwnd, int32_t index) {
+    return (static_cast<uint64_t>(hwnd) << 32) | static_cast<uint32_t>(index);
+}
+
+static std::string win32_class_key_from_arg(APIContext& ctx, uint32_t class_arg, bool wide) {
+    if (class_arg == 0) return "";
+    // MAKEINTATOMA/W: low word atom, high word zero
+    if ((class_arg & 0xFFFF0000u) == 0) {
+        uint16_t atom = static_cast<uint16_t>(class_arg & 0xFFFFu);
+        auto it_atom = g_win32_class_by_atom.find(atom);
+        if (it_atom == g_win32_class_by_atom.end()) return "";
+        for (const auto& kv : g_win32_class_by_name) {
+            if (kv.second.atom == atom) return kv.first;
+        }
+        return "";
+    }
+    std::string name = wide
+        ? read_guest_w_string(ctx, class_arg, 256)
+        : read_guest_c_string(ctx, class_arg, 256);
+    return to_lower_ascii(name);
+}
+
+static uint32_t win32_class_wndproc_from_arg(APIContext& ctx, uint32_t class_arg, bool wide) {
+    if (class_arg == 0) return 0;
+    if ((class_arg & 0xFFFF0000u) == 0) {
+        uint16_t atom = static_cast<uint16_t>(class_arg & 0xFFFFu);
+        auto it_atom = g_win32_class_by_atom.find(atom);
+        if (it_atom != g_win32_class_by_atom.end()) return it_atom->second.wndproc;
+        return 0;
+    }
+    std::string key = win32_class_key_from_arg(ctx, class_arg, wide);
+    if (key.empty()) return 0;
+    auto it_name = g_win32_class_by_name.find(key);
+    if (it_name == g_win32_class_by_name.end()) return 0;
+    return it_name->second.wndproc;
+}
+
+static void maybe_trim_heap_free_list() {
+    if (g_heap_free_entry_cap == 0) return;
+    if (g_heap_free_by_size.size() <= g_heap_free_entry_cap) return;
+    g_heap_free_by_size.clear();
+    if (!g_heap_free_cap_warned) {
+        std::cout << "[HEAP MOCK] free-list cap reached, clearing recycle map (cap="
+                  << g_heap_free_entry_cap << ")\n";
+        g_heap_free_cap_warned = true;
+    }
+}
+
+static void heap_push_free_block(uint32_t size, uint32_t ptr) {
+    if (size == 0) return;
+    g_heap_free_by_size.emplace(size, ptr);
+    maybe_trim_heap_free_list();
+}
+
+static void heap_maybe_reset_if_idle(APIContext& ctx) {
+    if (!g_heap_sizes.empty()) return;
+    auto it_top = ctx.global_state.find("HeapTop");
+    if (it_top != ctx.global_state.end()) {
+        it_top->second = kHeapBase;
+    }
+    g_heap_free_by_size.clear();
+}
+
+static void enqueue_timer_message(uint32_t hwnd, uint32_t timer_id, uint32_t now_ms) {
+    Win32_MSG msg = {};
+    msg.hwnd = hwnd;
+    msg.message = WM_TIMER;
+    msg.wParam = timer_id;
+    msg.lParam = 0;
+    msg.time = now_ms;
+    int mx = 0;
+    int my = 0;
+    SDL_GetMouseState(&mx, &my);
+    msg.pt_x = mx;
+    msg.pt_y = my;
+    enqueue_win32_message(msg);
+}
+
+static void pump_due_win32_timers(uint32_t now_ms) {
+    for (auto& kv : g_win32_timers) {
+        Win32Timer& timer = kv.second;
+        uint32_t interval = std::max<uint32_t>(1u, timer.interval_ms);
+        int burst = 0;
+        while (static_cast<int32_t>(now_ms - timer.next_fire_ms) >= 0 && burst < 4) {
+            enqueue_timer_message(timer.hwnd, timer.timer_id, now_ms);
+            timer.next_fire_ms += interval;
+            burst++;
+        }
+    }
 }
 
 static bool win32_message_matches_filter(const Win32_MSG& msg, uint32_t hwnd_filter, uint32_t min_filter, uint32_t max_filter) {
@@ -477,11 +598,14 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"USER32.dll!GetCursorPos", 4},
     {"USER32.dll!SetCursorPos", 8},
     {"USER32.dll!ShowCursor", 4},
+    {"USER32.dll!ReleaseCapture", 0},
     {"USER32.dll!TranslateMessage", 4},
     {"USER32.dll!DispatchMessageA", 4},
     {"USER32.dll!DispatchMessageW", 4},
     {"USER32.dll!PostMessageA", 16},
     {"USER32.dll!PostMessageW", 16},
+    {"USER32.dll!PostThreadMessageA", 16},
+    {"USER32.dll!PostThreadMessageW", 16},
     {"USER32.dll!SendMessageA", 16},
     {"USER32.dll!SendMessageW", 16},
     {"USER32.dll!RegisterWindowMessageA", 4},
@@ -493,14 +617,29 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"USER32.dll!SetCursor", 4},
     {"USER32.dll!LoadIconA", 8},
     {"USER32.dll!RegisterClassA", 4},
+    {"USER32.dll!RegisterClassW", 4},
     {"USER32.dll!RegisterClassExA", 4},
+    {"USER32.dll!RegisterClassExW", 4},
+    {"USER32.dll!IsWindow", 4},
+    {"USER32.dll!IsWindowVisible", 4},
+    {"USER32.dll!IsWindowEnabled", 4},
+    {"USER32.dll!GetActiveWindow", 0},
+    {"USER32.dll!GetForegroundWindow", 0},
+    {"USER32.dll!WaitMessage", 0},
+    {"USER32.dll!MsgWaitForMultipleObjects", 20},
+    {"USER32.dll!MsgWaitForMultipleObjectsEx", 20},
     {"USER32.dll!GetAsyncKeyState", 4},
     {"USER32.dll!MessageBoxA", 16},
     {"USER32.dll!MessageBoxW", 16},
     {"USER32.dll!SetWindowLongA", 12},
+    {"USER32.dll!SetWindowLongW", 12},
     {"USER32.dll!GetWindowLongA", 8},
+    {"USER32.dll!GetWindowLongW", 8},
+    {"USER32.dll!GetWindowThreadProcessId", 8},
     {"USER32.dll!SetWindowTextA", 8},
+    {"USER32.dll!SetWindowTextW", 8},
     {"USER32.dll!GetWindowTextA", 12},
+    {"USER32.dll!GetWindowTextW", 12},
     {"USER32.dll!MoveWindow", 24},
     {"USER32.dll!GetDesktopWindow", 0},
     {"USER32.dll!GetActiveWindow", 0},
@@ -775,6 +914,12 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
     if (coop_timeslice > 0) coop_timeslice_instructions = static_cast<uint64_t>(coop_timeslice);
     int coop_stack = env_int("PVZ_COOP_STACK_SIZE", 0x200000);
     if (coop_stack > 0) coop_default_stack_size = static_cast<uint32_t>(coop_stack);
+    int heap_free_cap = env_int("PVZ_HEAP_FREE_CAP_ENTRIES", 131072);
+    if (heap_free_cap < 0) {
+        g_heap_free_entry_cap = 0;
+    } else {
+        g_heap_free_entry_cap = static_cast<size_t>(heap_free_cap);
+    }
     std::cout << "[*] API LLM mode: " << (llm_pipeline_enabled ? "ON" : "OFF")
               << ", dylib mocks: " << (dylib_mocks_enabled ? "ON" : "OFF");
     if (llm_pipeline_enabled) {
@@ -804,6 +949,12 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
                   << ", default_stack=0x" << std::hex << coop_default_stack_size << std::dec;
         if (coop_trace) std::cout << ", trace=on";
         std::cout << "\n";
+    }
+    if (g_heap_free_entry_cap == 0) {
+        std::cout << "[*] Heap free-list cap: unlimited (PVZ_HEAP_FREE_CAP_ENTRIES)\n";
+    } else {
+        std::cout << "[*] Heap free-list cap: " << g_heap_free_entry_cap
+                  << " entries (PVZ_HEAP_FREE_CAP_ENTRIES)\n";
     }
     ctx.backend = &backend;
     ctx.uc = backend.engine();
@@ -898,8 +1049,19 @@ void DummyAPIHandler::cleanup_process_state() {
     ctx.global_state.clear();
 
     g_win32_message_queue.clear();
+    g_win32_timers.clear();
+    g_valid_hwnds.clear();
+    g_hwnd_owner_thread_id.clear();
+    g_window_long_values.clear();
+    g_window_text_values.clear();
+    g_synth_idle_timer_next_ms = 0;
+    g_hwnd_top = 0x12345678u;
+    g_win32_class_by_name.clear();
+    g_win32_class_by_atom.clear();
+    g_win32_class_atom_top = 1;
     g_heap_sizes.clear();
     g_heap_free_by_size.clear();
+    g_heap_free_cap_warned = false;
     g_mapview_live_sizes.clear();
     g_mapview_free_by_size.clear();
     g_registry_values.clear();
@@ -1624,12 +1786,46 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
         
         // --- HARDCODED HLE INTERCEPTS ---
         if (name == "USER32.dll!CreateWindowExA" || name == "USER32.dll!CreateWindowExW") {
+            const bool wide = (name == "USER32.dll!CreateWindowExW");
             int width = handler->ctx.get_arg(6);
             int height = handler->ctx.get_arg(7);
             if (width > 0 && height > 0 && handler->ctx.sdl_window) {
                 SDL_SetWindowSize((SDL_Window*)handler->ctx.sdl_window, width, height);
             }
-            handler->ctx.set_eax(0x12345678); // Dummy HWND
+
+            uint32_t hwnd = g_hwnd_top;
+            g_hwnd_top += 4;
+            if (g_hwnd_top < 0x10000u) {
+                g_hwnd_top = 0x12345678u;
+            }
+            g_valid_hwnds.insert(hwnd);
+            g_hwnd_owner_thread_id[hwnd] = handler->coop_threads_enabled()
+                ? handler->coop_current_thread_id()
+                : 1u;
+
+            uint32_t class_arg = handler->ctx.get_arg(1);
+            uint32_t wndproc = win32_class_wndproc_from_arg(handler->ctx, class_arg, wide);
+            if (wndproc != 0) {
+                g_window_long_values[win32_window_long_key(hwnd, -4)] = static_cast<int32_t>(wndproc); // GWL_WNDPROC
+            }
+            if (env_truthy("PVZ_WNDPROC_TRACE")) {
+                std::cout << "[WNDPROC] CreateWindowEx hwnd=0x" << std::hex << hwnd
+                          << " class=0x" << class_arg << " wndproc=0x" << wndproc
+                          << std::dec << "\n";
+            }
+
+            uint32_t title_ptr = handler->ctx.get_arg(2);
+            std::string title = wide
+                ? read_guest_w_string(handler->ctx, title_ptr, 256)
+                : read_guest_c_string(handler->ctx, title_ptr, 256);
+            if (!title.empty()) {
+                g_window_text_values[hwnd] = title;
+                if (handler->ctx.sdl_window) {
+                    SDL_SetWindowTitle(static_cast<SDL_Window*>(handler->ctx.sdl_window), title.c_str());
+                }
+            }
+
+            handler->ctx.set_eax(hwnd);
             
             uint32_t esp;
             handler->backend.reg_read(UC_X86_REG_ESP, &esp);
@@ -2113,7 +2309,27 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             name == "USER32.dll!GetMessageW" || name == "USER32.dll!PeekMessageW") {
             
             bool is_peek = (name.find("PeekMessage") != std::string::npos);
-            std::cout << "\n[API CALL] [HLE] Intercepted " << name << std::endl;
+            static const bool verbose_msg_pump = env_truthy("PVZ_VERBOSE_MSG_PUMP");
+            static const uint64_t msg_stats_interval = static_cast<uint64_t>(std::max(0, env_int("PVZ_MSG_STATS_INTERVAL", 0)));
+            static std::unordered_map<uint32_t, uint64_t> msg_counts;
+            static uint64_t msg_total = 0;
+            auto record_msg = [&](uint32_t message_id) {
+                if (msg_stats_interval == 0) return;
+                msg_total++;
+                msg_counts[message_id]++;
+                if ((msg_total % msg_stats_interval) != 0) return;
+                std::vector<std::pair<uint32_t, uint64_t>> items(msg_counts.begin(), msg_counts.end());
+                std::sort(items.begin(), items.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+                std::cout << "[MSG STATS] total=" << msg_total << " top:";
+                size_t limit = std::min<size_t>(8, items.size());
+                for (size_t i = 0; i < limit; ++i) {
+                    std::cout << " [0x" << std::hex << items[i].first << std::dec << ":" << items[i].second << "]";
+                }
+                std::cout << "\n";
+            };
+            if (verbose_msg_pump) {
+                std::cout << "\n[API CALL] [HLE] Intercepted " << name << std::endl;
+            }
             
             uint32_t lpMsg = handler->ctx.get_arg(0);
             uint32_t hWnd = handler->ctx.get_arg(1);
@@ -2126,6 +2342,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             bool from_queue = false;
             Win32_MSG msg = {0};
             SDL_PumpEvents();
+            pump_due_win32_timers(SDL_GetTicks());
 
             for (auto it = g_win32_message_queue.begin(); it != g_win32_message_queue.end(); ++it) {
                 if (!win32_message_matches_filter(*it, hWnd, wMsgFilterMin, wMsgFilterMax)) {
@@ -2146,6 +2363,38 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 // GetMessage blocks until an event is available
                 // Use WaitEventTimeout to not freeze the whole JIT loop indefinitely
                 has_event = SDL_WaitEventTimeout(&event, 50); 
+                if (!has_event) {
+                    pump_due_win32_timers(SDL_GetTicks());
+                    for (auto it = g_win32_message_queue.begin(); it != g_win32_message_queue.end(); ++it) {
+                        if (!win32_message_matches_filter(*it, hWnd, wMsgFilterMin, wMsgFilterMax)) {
+                            continue;
+                        }
+                        msg = *it;
+                        g_win32_message_queue.erase(it);
+                        has_event = true;
+                        from_queue = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!has_event && !is_peek && g_win32_timers.empty() && !g_valid_hwnds.empty()) {
+                uint32_t now_ms = SDL_GetTicks();
+                if (g_synth_idle_timer_next_ms == 0 || static_cast<int32_t>(now_ms - g_synth_idle_timer_next_ms) >= 0) {
+                    uint32_t hwnd = *g_valid_hwnds.begin();
+                    enqueue_timer_message(hwnd, 1, now_ms);
+                    g_synth_idle_timer_next_ms = now_ms + 16;
+                    for (auto it = g_win32_message_queue.begin(); it != g_win32_message_queue.end(); ++it) {
+                        if (!win32_message_matches_filter(*it, hWnd, wMsgFilterMin, wMsgFilterMax)) {
+                            continue;
+                        }
+                        msg = *it;
+                        g_win32_message_queue.erase(it);
+                        has_event = true;
+                        from_queue = true;
+                        break;
+                    }
+                }
             }
 
             if (has_event) {
@@ -2186,6 +2435,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
 
                 handler->backend.mem_write(lpMsg, &msg, sizeof(msg));
+                record_msg(msg.message);
                 if (is_peek) {
                     handler->ctx.set_eax(1);
                 } else {
@@ -2196,6 +2446,9 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     handler->ctx.set_eax(0);
                 } else {
                     // Win32 GetMessage should block; avoid returning 0 (WM_QUIT) on idle.
+                    if (handler->coop_threads_enabled()) {
+                        handler->coop_request_yield();
+                    }
                     Win32_MSG msg = {0};
                     msg.hwnd = hWnd;
                     msg.message = WM_NULL;
@@ -2205,6 +2458,7 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     msg.pt_x = mx;
                     msg.pt_y = my;
                     handler->backend.mem_write(lpMsg, &msg, sizeof(msg));
+                    record_msg(msg.message);
                     handler->ctx.set_eax(1);
                 }
             }
