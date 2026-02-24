@@ -1219,6 +1219,8 @@
                 else if (module_norm == "imm32.dll") module_name = "IMM32.dll";
                 else if (module_norm == "shlwapi.dll") module_name = "SHLWAPI.dll";
                 std::string full_name = module_name + "!" + procName;
+                bool noisy_getproc = starts_with_ascii_ci(full_name, "bass.dll!") ||
+                                     starts_with_ascii_ci(full_name, "dsound.dll!");
                 
                 uint32_t found_addr = 0;
                 for (const auto& pair : handler->fake_api_map) {
@@ -1230,7 +1232,10 @@
                 
                 if (found_addr == 0) {
                     found_addr = handler->register_fake_api(full_name);
-                    std::cout << "\n[API CALL] [GetProcAddress] Dynamically assigned " << full_name << " to 0x" << std::hex << found_addr << std::dec << "\n";
+                    if (!noisy_getproc || loader_trace_enabled()) {
+                        std::cout << "\n[API CALL] [GetProcAddress] Dynamically assigned " << full_name
+                                  << " to 0x" << std::hex << found_addr << std::dec << "\n";
+                    }
                 }
                 
                 handler->ctx.set_eax(found_addr);
