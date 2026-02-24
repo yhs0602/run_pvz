@@ -141,6 +141,9 @@ PVZ_BLOCK_FOCUS_TRACE=1 PVZ_BLOCK_FOCUS_ADDRS=0x441a73,0x441a79,0x441dd0,0x5d889
 # WndProc 브릿지 상세 추적(RegisterClass/CreateWindowEx/Dispatch/SendMessage)
 PVZ_WNDPROC_TRACE=1 ./build-fex/runner pvz/main.exe
 
+# Loader 경로 상세 추적(LoadLibrary/GetModuleHandle/GetProcAddress 핸들 매핑 확인)
+PVZ_LOADER_TRACE=1 ./build-fex/runner pvz/main.exe
+
 # thread/event/postmessage 모킹 상세 추적 로그
 PVZ_THREAD_MOCK_TRACE=1 ./build/runner pvz/main.exe
 

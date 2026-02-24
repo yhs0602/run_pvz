@@ -116,6 +116,9 @@ static std::unordered_map<std::string, Win32ClassReg> g_win32_class_by_name;
 static std::unordered_map<uint16_t, Win32ClassReg> g_win32_class_by_atom;
 static uint16_t g_win32_class_atom_top = 1;
 static std::unordered_map<uint32_t, uint32_t> g_thread_start_to_handle;
+static std::unordered_map<std::string, uint32_t> g_module_handle_by_name;
+static std::unordered_map<uint32_t, std::string> g_module_name_by_handle;
+static uint32_t g_module_handle_top = 0x79000000u;
 
 static std::string read_guest_c_string(APIContext& ctx, uint32_t guest_ptr, size_t max_len = 512) {
     if (guest_ptr == 0) return "";
@@ -203,6 +206,11 @@ static bool is_noisy_fastpath_api(const std::string& n) {
            n == "KERNEL32.dll!LeaveCriticalSection" ||
            n == "KERNEL32.dll!InitializeCriticalSection" ||
            n == "KERNEL32.dll!InitializeCriticalSectionAndSpinCount" ||
+           n == "KERNEL32.dll!GetModuleHandleA" ||
+           n == "KERNEL32.dll!GetModuleHandleW" ||
+           n == "KERNEL32.dll!LoadLibraryA" ||
+           n == "KERNEL32.dll!LoadLibraryW" ||
+           n == "KERNEL32.dll!FreeLibrary" ||
            n == "KERNEL32.dll!HeapAlloc" ||
            n == "KERNEL32.dll!HeapFree" ||
            n == "KERNEL32.dll!HeapSize" ||
@@ -270,6 +278,119 @@ static uint32_t win32_class_wndproc_from_arg(APIContext& ctx, uint32_t class_arg
     auto it_name = g_win32_class_by_name.find(key);
     if (it_name == g_win32_class_by_name.end()) return 0;
     return it_name->second.wndproc;
+}
+
+static std::string normalize_module_name_ascii(std::string module_raw) {
+    if (module_raw.empty()) return module_raw;
+    std::replace(module_raw.begin(), module_raw.end(), '/', '\\');
+    module_raw = to_lower_ascii(module_raw);
+
+    size_t slash = module_raw.find_last_of('\\');
+    if (slash != std::string::npos) {
+        module_raw = module_raw.substr(slash + 1);
+    }
+
+    if (module_raw.size() >= 4 && module_raw.rfind(".dll") == module_raw.size() - 4) {
+        return module_raw;
+    }
+    if (module_raw.find('.') == std::string::npos) {
+        module_raw += ".dll";
+    }
+    return module_raw;
+}
+
+static uint32_t builtin_module_handle_from_name(const std::string& module_name_norm) {
+    if (module_name_norm == "kernel32.dll") return 0x76000000u;
+    if (module_name_norm == "ntdll.dll") return 0x77000000u;
+    if (module_name_norm == "user32.dll") return 0x75000000u;
+    if (module_name_norm == "ole32.dll") return 0x74000000u;
+    if (module_name_norm == "oleaut32.dll") return 0x74100000u;
+    if (module_name_norm == "ddraw.dll") return 0x73000000u;
+    if (module_name_norm == "gdi32.dll") return 0x73100000u;
+    if (module_name_norm == "winmm.dll") return 0x73200000u;
+    if (module_name_norm == "dsound.dll") return 0x73300000u;
+    if (module_name_norm == "bass.dll") return 0x73400000u;
+    if (module_name_norm == "d3d8.dll") return 0x73500000u;
+    if (module_name_norm == "advapi32.dll") return 0x73600000u;
+    if (module_name_norm == "shell32.dll") return 0x73700000u;
+    if (module_name_norm == "comdlg32.dll") return 0x73800000u;
+    if (module_name_norm == "imm32.dll") return 0x73900000u;
+    if (module_name_norm == "version.dll") return 0x73A00000u;
+    if (module_name_norm == "shlwapi.dll") return 0x73B00000u;
+    if (module_name_norm == "ws2_32.dll") return 0x73C00000u;
+    if (module_name_norm == "wininet.dll") return 0x73D00000u;
+    if (module_name_norm == "mscoree.dll") return 0x78000000u;
+    return 0u;
+}
+
+static void remember_module_handle(const std::string& module_name_norm, uint32_t handle) {
+    if (module_name_norm.empty() || handle == 0u) return;
+    g_module_handle_by_name[module_name_norm] = handle;
+    g_module_name_by_handle[handle] = module_name_norm;
+    if (module_name_norm.size() > 4 && module_name_norm.rfind(".dll") == module_name_norm.size() - 4) {
+        g_module_handle_by_name[module_name_norm.substr(0, module_name_norm.size() - 4)] = handle;
+    }
+}
+
+static uint32_t lookup_module_handle_by_name(const std::string& module_raw, bool allow_dynamic_create) {
+    if (module_raw.empty()) {
+        return 0x00400000u;
+    }
+
+    std::string normalized = normalize_module_name_ascii(module_raw);
+    auto it_existing = g_module_handle_by_name.find(normalized);
+    if (it_existing != g_module_handle_by_name.end()) {
+        return it_existing->second;
+    }
+
+    uint32_t builtin = builtin_module_handle_from_name(normalized);
+    if (builtin != 0u) {
+        remember_module_handle(normalized, builtin);
+        return builtin;
+    }
+
+    if (!allow_dynamic_create) {
+        return 0u;
+    }
+
+    uint32_t handle = g_module_handle_top;
+    g_module_handle_top += 0x00100000u;
+    if (g_module_handle_top < 0x79000000u || g_module_handle_top >= 0x7F000000u) {
+        g_module_handle_top = 0x79000000u;
+    }
+    remember_module_handle(normalized, handle);
+    return handle;
+}
+
+static std::string module_name_from_handle(uint32_t handle) {
+    if (handle == 0x00400000u) return "pvz.exe";
+    auto it_dyn = g_module_name_by_handle.find(handle);
+    if (it_dyn != g_module_name_by_handle.end()) return it_dyn->second;
+
+    switch (handle) {
+        case 0x76000000u: return "kernel32.dll";
+        case 0x77000000u: return "ntdll.dll";
+        case 0x75000000u: return "user32.dll";
+        case 0x74000000u: return "ole32.dll";
+        case 0x74100000u: return "oleaut32.dll";
+        case 0x73000000u: return "ddraw.dll";
+        case 0x73100000u: return "gdi32.dll";
+        case 0x73200000u: return "winmm.dll";
+        case 0x73300000u: return "dsound.dll";
+        case 0x73400000u: return "bass.dll";
+        case 0x73500000u: return "d3d8.dll";
+        case 0x73600000u: return "advapi32.dll";
+        case 0x73700000u: return "shell32.dll";
+        case 0x73800000u: return "comdlg32.dll";
+        case 0x73900000u: return "imm32.dll";
+        case 0x73A00000u: return "version.dll";
+        case 0x73B00000u: return "shlwapi.dll";
+        case 0x73C00000u: return "ws2_32.dll";
+        case 0x73D00000u: return "wininet.dll";
+        case 0x78000000u: return "mscoree.dll";
+        default: break;
+    }
+    return "";
 }
 
 static void maybe_trim_heap_free_list() {
@@ -346,6 +467,11 @@ static bool env_truthy(const char* name) {
 
 static bool thread_mock_trace_enabled() {
     static const bool enabled = env_truthy("PVZ_THREAD_MOCK_TRACE");
+    return enabled;
+}
+
+static bool loader_trace_enabled() {
+    static const bool enabled = env_truthy("PVZ_LOADER_TRACE");
     return enabled;
 }
 
@@ -596,6 +722,7 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"USER32.dll!SetTimer", 16},
     {"USER32.dll!KillTimer", 8},
     {"USER32.dll!GetCursorPos", 4},
+    {"USER32.dll!GetLastInputInfo", 4},
     {"USER32.dll!SetCursorPos", 8},
     {"USER32.dll!ShowCursor", 4},
     {"USER32.dll!ReleaseCapture", 0},
@@ -669,6 +796,7 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"KERNEL32.dll!DirectDrawCreate", 12},
     {"KERNEL32.dll!DirectDrawCreateEx", 16},
     {"KERNEL32.dll!Direct3DCreate8", 4},
+    {"D3D8.dll!Direct3DCreate8", 4},
     {"KERNEL32.dll!DirectSoundCreate", 12},
     {"DSOUND.dll!DirectSoundCreate", 12},
     {"KERNEL32.dll!BASS_Init", 20},
@@ -691,9 +819,15 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"DDRAW.dll!IDirectDraw7_Method_27", 12}, // GetDeviceIdentifier(this, outDeviceId, flags)
     {"DDRAW.dll!IDirectDraw7_Method_12", 8},  // GetDisplayMode(this, outSurfaceDesc)
     {"DDRAW.dll!IDirectDraw7_Method_17", 8},  // GetVerticalBlankStatus(this, outBool)
+    {"DDRAW.dll!IDirectDraw_Method_0", 12},   // QueryInterface(this, riid, ppv)
     {"DDRAW.dll!IDirectDraw_Method_4", 16}, // CreateClipper(this, flags, outClipper, unkOuter)
     {"DDRAW.dll!IDirectDraw_Method_5", 20}, // CreatePalette(this, flags, colorTable, outPalette, unkOuter)
+    {"DDRAW.dll!IDirectDraw_Method_6", 16}, // CreateSurface(this, desc, outSurface, unkOuter)
     {"DDRAW.dll!IDirectDraw_Method_15", 8}, // GetMonitorFrequency(this, outHz)
+    {"DDRAW.dll!IDirectDraw_Method_20", 12}, // SetCooperativeLevel(this, hwnd, flags)
+    {"DDRAW.dll!IDirectDraw_Method_21", 16}, // SetDisplayMode(this, w, h, bpp)
+    {"DDRAW.dll!IDirectDraw_Method_22", 12}, // WaitForVerticalBlank(this, flags, hEvent)
+    {"DDRAW.dll!IDirectDraw_Method_23", 16}, // GetAvailableVidMem(this, caps, total, free)
     {"DDRAW.dll!IDirectDraw2_Method_20", 12}, // SetCooperativeLevel
     {"DDRAW.dll!IDirectDraw2_Method_21", 24}, // SetDisplayMode
     {"DDRAW.dll!IDirectDrawSurface2_Method_22", 8}, // GetSurfaceDesc
@@ -826,6 +960,9 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"KERNEL32.dll!GetFileVersionInfoSizeA", 8},
     {"KERNEL32.dll!GetFileVersionInfoA", 16},
     {"KERNEL32.dll!VerQueryValueA", 16},
+    {"VERSION.dll!GetFileVersionInfoSizeA", 8},
+    {"VERSION.dll!GetFileVersionInfoA", 16},
+    {"VERSION.dll!VerQueryValueA", 16},
     // Files & Directories
     {"KERNEL32.dll!GetCurrentDirectoryW", 8},
     {"KERNEL32.dll!GetCurrentDirectoryA", 8},
@@ -1072,6 +1209,9 @@ void DummyAPIHandler::cleanup_process_state() {
     g_resource_heap_top = 0x36000000;
     g_resource_heap_mapped = false;
     g_thread_start_to_handle.clear();
+    g_module_handle_by_name.clear();
+    g_module_name_by_handle.clear();
+    g_module_handle_top = 0x79000000u;
 
     eip_hot_page_hits.clear();
     eip_hot_addr_hits.clear();
@@ -1927,7 +2067,8 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
         }
 
         if (name == "USER32.dll!GetActiveWindow") {
-            handler->ctx.set_eax(0x12345678); // Dummy HWND
+            uint32_t hwnd = g_valid_hwnds.empty() ? 0x12345678u : *g_valid_hwnds.begin();
+            handler->ctx.set_eax(hwnd);
             handler->ctx.pop_args(0);
             return;
         }
@@ -1948,11 +2089,50 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
         if (name.find("DDRAW.dll!IDirectDraw_Method_") != std::string::npos) {
             int method_idx = std::stoi(name.substr(name.find_last_of('_') + 1));
             
-            if (method_idx == 6 || method_idx == 22) { // CreateSurface
+            if (method_idx == 0) { // QueryInterface(this, riid, ppvObj)
+                uint32_t riid = handler->ctx.get_arg(1);
+                uint32_t ppvObj = handler->ctx.get_arg(2);
+                uint8_t guid[16] = {0};
+                if (riid != 0) handler->backend.mem_read(riid, guid, sizeof(guid));
+                if (ppvObj != 0) {
+                    uint32_t dummy_obj = 0;
+                    if (guid[0] == 0x80) { // IID_IDirectDraw
+                        dummy_obj = handler->create_fake_com_object("IDirectDraw", 50);
+                    } else if (guid[0] == 0x77) { // IID_IDirect3D7
+                        dummy_obj = handler->create_fake_com_object("IDirect3D7", 50);
+                    } else {
+                        dummy_obj = handler->create_fake_com_object("GenericCOM", 50);
+                    }
+                    handler->backend.mem_write(ppvObj, &dummy_obj, 4);
+                }
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(3);
+                return;
+            } else if (method_idx == 6) { // CreateSurface
                 uint32_t lplpSurface = handler->ctx.get_arg(2);
                 uint32_t pSurface = handler->create_fake_com_object("IDDSurface", 45);
                 handler->backend.mem_write(lplpSurface, &pSurface, 4);
                 std::cout << "[HLE DDRAW] CreateSurface Intercepted\n";
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(4);
+                return;
+            } else if (method_idx == 22) { // WaitForVerticalBlank
+                uint32_t hEvent = handler->ctx.get_arg(2);
+                if (hEvent != 0) {
+                    auto it_ev = handler->ctx.handle_map.find("event_" + std::to_string(hEvent));
+                    if (it_ev != handler->ctx.handle_map.end()) {
+                        static_cast<EventHandle*>(it_ev->second)->signaled = true;
+                    }
+                }
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(3);
+                return;
+            } else if (method_idx == 23) { // GetAvailableVidMem
+                uint32_t total_mem_ptr = handler->ctx.get_arg(2);
+                uint32_t free_mem_ptr = handler->ctx.get_arg(3);
+                uint32_t bytes = 64u * 1024u * 1024u;
+                if (total_mem_ptr != 0) handler->backend.mem_write(total_mem_ptr, &bytes, 4);
+                if (free_mem_ptr != 0) handler->backend.mem_write(free_mem_ptr, &bytes, 4);
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(4);
                 return;
@@ -2017,7 +2197,24 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             name.find("DDRAW.dll!IDirectDrawSurface2_Method_") != std::string::npos) {
             int method_idx = std::stoi(name.substr(name.find_last_of('_') + 1));
             
-            if (method_idx == 25 || method_idx == 20) { // Lock
+            if (method_idx == 0) { // QueryInterface(this, riid, ppvObj)
+                uint32_t riid = handler->ctx.get_arg(1);
+                uint32_t ppvObj = handler->ctx.get_arg(2);
+                uint8_t guid[16] = {0};
+                if (riid != 0) handler->backend.mem_read(riid, guid, sizeof(guid));
+                if (ppvObj != 0) {
+                    uint32_t dummy_obj = 0;
+                    if (guid[0] == 0x81) { // IID_IDirectDrawSurface2
+                        dummy_obj = handler->create_fake_com_object("IDirectDrawSurface2", 50);
+                    } else {
+                        dummy_obj = handler->create_fake_com_object("IDDSurface", 45);
+                    }
+                    handler->backend.mem_write(ppvObj, &dummy_obj, 4);
+                }
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(3);
+                return;
+            } else if (method_idx == 25 || method_idx == 20) { // Lock
                 uint32_t lpDDSurfaceDesc = handler->ctx.get_arg(2);
                 if (lpDDSurfaceDesc != 0) {
                     uint32_t ddsd_size = 124;

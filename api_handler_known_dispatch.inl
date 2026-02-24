@@ -1115,6 +1115,69 @@
                         }
                     }
                 }
+            } else if (name == "KERNEL32.dll!LoadLibraryA" || name == "KERNEL32.dll!LoadLibraryW") {
+                const bool wide = (name == "KERNEL32.dll!LoadLibraryW");
+                uint32_t lpLibFileName = handler->ctx.get_arg(0);
+                std::string module_name_raw = wide
+                    ? read_guest_w_string(handler->ctx, lpLibFileName, 260)
+                    : read_guest_c_string(handler->ctx, lpLibFileName, 260);
+
+                uint32_t h_module = 0;
+                if (!module_name_raw.empty()) {
+                    h_module = lookup_module_handle_by_name(module_name_raw, false);
+                    if (h_module == 0) {
+                        std::string host_path = resolve_guest_path_to_host(module_name_raw, handler->process_base_dir);
+                        if (!host_path.empty()) {
+                            h_module = lookup_module_handle_by_name(module_name_raw, true);
+                        }
+                    }
+                }
+
+                handler->ctx.set_eax(h_module);
+                handler->ctx.global_state["LastError"] = (h_module != 0) ? 0u : 126u; // ERROR_MOD_NOT_FOUND
+                if (loader_trace_enabled()) {
+                    std::cout << "[LOADER] " << name << "('" << module_name_raw
+                              << "') -> 0x" << std::hex << h_module << std::dec << "\n";
+                }
+            } else if (name == "KERNEL32.dll!GetModuleHandleA" || name == "KERNEL32.dll!GetModuleHandleW") {
+                const bool wide = (name == "KERNEL32.dll!GetModuleHandleW");
+                uint32_t lpModuleName = handler->ctx.get_arg(0);
+                std::string module_name_raw = wide
+                    ? read_guest_w_string(handler->ctx, lpModuleName, 260)
+                    : read_guest_c_string(handler->ctx, lpModuleName, 260);
+
+                uint32_t h_module = lookup_module_handle_by_name(module_name_raw, false);
+                handler->ctx.set_eax(h_module);
+                handler->ctx.global_state["LastError"] = (h_module != 0) ? 0u : 126u; // ERROR_MOD_NOT_FOUND
+                if (loader_trace_enabled()) {
+                    std::cout << "[LOADER] " << name << "("
+                              << (lpModuleName == 0 ? "NULL" : ("'" + module_name_raw + "'"))
+                              << ") -> 0x" << std::hex << h_module << std::dec << "\n";
+                }
+            } else if (name == "KERNEL32.dll!FreeLibrary") {
+                uint32_t h_module = handler->ctx.get_arg(0);
+                bool success = false;
+                std::string module_name = module_name_from_handle(h_module);
+                if (!module_name.empty()) {
+                    auto it_builtin = g_module_name_by_handle.find(h_module);
+                    if (it_builtin == g_module_name_by_handle.end()) {
+                        // Built-in pseudo modules are always "loaded" and FreeLibrary is a no-op success.
+                        success = true;
+                    } else {
+                        g_module_name_by_handle.erase(it_builtin);
+                        for (auto it = g_module_handle_by_name.begin(); it != g_module_handle_by_name.end();) {
+                            if (it->second == h_module) it = g_module_handle_by_name.erase(it);
+                            else ++it;
+                        }
+                        success = true;
+                    }
+                }
+                handler->ctx.set_eax(success ? 1u : 0u);
+                handler->ctx.global_state["LastError"] = success ? 0u : 6u; // ERROR_INVALID_HANDLE
+                if (loader_trace_enabled()) {
+                    std::cout << "[LOADER] FreeLibrary(0x" << std::hex << h_module
+                              << ") -> " << std::dec << (success ? 1 : 0) << "\n";
+                }
             } else if (name == "KERNEL32.dll!GetProcAddress") {
                 uint32_t hModule = handler->ctx.get_arg(0);
                 uint32_t lpProcName = handler->ctx.get_arg(1);
@@ -1128,21 +1191,33 @@
                     procName = "Ordinal_" + std::to_string(lpProcName);
                 }
                 
-                std::string module_name = "KERNEL32.dll";
-                switch (hModule) {
-                    case 0x76000000: module_name = "KERNEL32.dll"; break;
-                    case 0x77000000: module_name = "ntdll.dll"; break;
-                    case 0x75000000: module_name = "USER32.dll"; break;
-                    case 0x74000000: module_name = "ole32.dll"; break;
-                    case 0x74100000: module_name = "OLEAUT32.dll"; break;
-                    case 0x73000000: module_name = "DDRAW.dll"; break;
-                    case 0x73100000: module_name = "GDI32.dll"; break;
-                    case 0x73200000: module_name = "WINMM.dll"; break;
-                    case 0x73300000: module_name = "DSOUND.dll"; break;
-                    case 0x73400000: module_name = "BASS.dll"; break;
-                    case 0x78000000: module_name = "mscoree.dll"; break;
-                    default: break;
+                std::string module_norm = module_name_from_handle(hModule);
+                if (module_norm.empty()) {
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
+                    if (loader_trace_enabled()) {
+                        std::cout << "[LOADER] GetProcAddress invalid module handle 0x"
+                                  << std::hex << hModule << std::dec << "\n";
+                    }
+                    return;
                 }
+
+                std::string module_name = module_norm;
+                if (module_norm == "kernel32.dll") module_name = "KERNEL32.dll";
+                else if (module_norm == "user32.dll") module_name = "USER32.dll";
+                else if (module_norm == "oleaut32.dll") module_name = "OLEAUT32.dll";
+                else if (module_norm == "ddraw.dll") module_name = "DDRAW.dll";
+                else if (module_norm == "gdi32.dll") module_name = "GDI32.dll";
+                else if (module_norm == "winmm.dll") module_name = "WINMM.dll";
+                else if (module_norm == "dsound.dll") module_name = "DSOUND.dll";
+                else if (module_norm == "bass.dll") module_name = "BASS.dll";
+                else if (module_norm == "d3d8.dll") module_name = "D3D8.dll";
+                else if (module_norm == "version.dll") module_name = "VERSION.dll";
+                else if (module_norm == "shell32.dll") module_name = "SHELL32.dll";
+                else if (module_norm == "advapi32.dll") module_name = "ADVAPI32.dll";
+                else if (module_norm == "comdlg32.dll") module_name = "COMDLG32.dll";
+                else if (module_norm == "imm32.dll") module_name = "IMM32.dll";
+                else if (module_norm == "shlwapi.dll") module_name = "SHLWAPI.dll";
                 std::string full_name = module_name + "!" + procName;
                 
                 uint32_t found_addr = 0;
@@ -1263,7 +1338,8 @@
                     handler->ctx.global_state["LastError"] = 0;
                 }
             } else if (name == "KERNEL32.dll!GetLastError" ||
-                       name == "KERNEL32.dll!GetFileVersionInfoSizeA" || name == "KERNEL32.dll!GetFileVersionInfoA" || name == "KERNEL32.dll!VerQueryValueA") {
+                       name == "KERNEL32.dll!GetFileVersionInfoSizeA" || name == "KERNEL32.dll!GetFileVersionInfoA" || name == "KERNEL32.dll!VerQueryValueA" ||
+                       name == "VERSION.dll!GetFileVersionInfoSizeA" || name == "VERSION.dll!GetFileVersionInfoA" || name == "VERSION.dll!VerQueryValueA") {
                 handler->ctx.set_eax(0);
                 std::cout << "\n[API CALL] [OK] Intercepted call to " << name << " returning 0.\n";
             } else if (name == "KERNEL32.dll!GetEnvironmentStringsW" || name == "KERNEL32.dll!GetCommandLineA" || name == "KERNEL32.dll!GetCommandLineW") {
@@ -1730,7 +1806,7 @@
             } else if (name == "KERNEL32.dll!BASS_Start" || name == "BASS.dll!BASS_Start" ||
                        name == "KERNEL32.dll!BASS_Free" || name == "BASS.dll!BASS_Free") {
                 handler->ctx.set_eax(1);
-            } else if (name == "KERNEL32.dll!Direct3DCreate8") {
+            } else if (name == "KERNEL32.dll!Direct3DCreate8" || name == "D3D8.dll!Direct3DCreate8") {
                 uint32_t dummy_d3d_obj = handler->create_fake_com_object("IDirect3D8", 50);
                 handler->ctx.set_eax(dummy_d3d_obj); // Returns the interface pointer directly in EAX
                 std::cout << "\n[API CALL] [OK] Intercepted Direct3DCreate8 -> Returned Dummy IDirect3D8 Interface.\n";
@@ -1815,6 +1891,20 @@
                     handler->ctx.set_eax(atom);
                     handler->ctx.global_state["LastError"] = 0;
                 }
+            } else if (name == "USER32.dll!GetLastInputInfo") {
+                uint32_t pLastInputInfo = handler->ctx.get_arg(0);
+                bool ok = false;
+                if (pLastInputInfo != 0) {
+                    uint32_t cb_size = 0;
+                    handler->backend.mem_read(pLastInputInfo, &cb_size, 4);
+                    if (cb_size >= 8) {
+                        uint32_t now = SDL_GetTicks();
+                        handler->backend.mem_write(pLastInputInfo + 4, &now, 4); // dwTime
+                        ok = true;
+                    }
+                }
+                handler->ctx.set_eax(ok ? 1u : 0u);
+                handler->ctx.global_state["LastError"] = ok ? 0u : 87u; // ERROR_INVALID_PARAMETER
             } else if (name == "USER32.dll!RegisterWindowMessageA" || name == "USER32.dll!RegisterWindowMessageW") {
                 uint32_t lpString = handler->ctx.get_arg(0);
                 bool wide = (name == "USER32.dll!RegisterWindowMessageW");
