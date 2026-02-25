@@ -161,3 +161,92 @@
   - 이번 샘플에서도 `CreateThread(cap hit) -> WaitForSingleObject(0x7000/0x7004) -> CreateFileA('properties\\resources.xml')` 경로까지 확인.
   - 샘플 구간 내 `PostMessage/GetMessage` 진입은 아직 미관측(큐 통계 로그도 미발생).
   - 따라서 queue dedup/backpressure는 코드 레벨로 적용 완료, 실제 포화 재현 로그는 다음 장기 샘플에서 추가 확인 필요.
+
+### 2026-02-25 렌더링 진입 가속 추가
+- 임시 우회 백로그 분리:
+  - `work_logs/2026-02-25_temp_workarounds_backlog.md` 추가.
+  - hot-loop/CRT allocator/message queue/mock audit 등 임시 처리 항목을 P0~P2로 정리.
+- hot 주소 기반 가속 확장(`main.cpp`):
+  - `0x621182` CRT `HeapAlloc` callsite fast-path 추가(`PVZ_CRT_ALLOC_ACCEL`).
+  - `0x61fcc5/0x61fcc6` CRT `HeapFree` callsite fast-success 분기 추가.
+  - `0x62ce88/0x62cf60` lock wrapper steady-state short-circuit 추가(enter wrapper는 slot 미초기화 시 원경로 유지).
+  - 요약 카운터(`CRT free fast-path`, `Lock-wrapper fast-path`) 출력 추가.
+- 설정 기본값 조정:
+  - `PVZ_CRT_ALLOC_ACCEL` 미지정 시 `PVZ_HOT_LOOP_ACCEL=1`이면 자동 ON.
+  - README에 `PVZ_CRT_ALLOC_ACCEL` / `PVZ_CRT_ALLOC_ARENA_MB` 사용법 추가.
+
+### 2026-02-25 정체 구간(0x562742 이후) 추가 추적/가속
+- `PVZ_BLOCK_HOT_SAMPLE=1` 샘플 결과:
+  - 정체 이후 hot top이 `0x5d8f50/0x5d8f6d/0x5d8f7b/0x5d8f9b/0x5d8fb4/0x5d8fc3` 트리 탐색 루프로 수렴.
+  - `0x62118b/0x61fcd4`보다 `0x5d8fxx` 비중이 크게 증가.
+- 조치:
+  - `main.cpp`에 `0x5d8f50/0x5d8f58` 트리 lookup loop fast-path 추가.
+  - guest 트리 노드 순회 + 문자열 비교(min(len) memcmp + 길이 tie-break) 로직을 host 루프로 수행 후 `0x5d8fcc`로 복귀.
+  - `main.cpp`에 `0x61be1b` memmove_s wrapper fast-path 추가(정상 인자 경로만 단축, 오류 경로는 원본 유지).
+  - `main.cpp`에 `0x624510` memmove fast-path 추가(겹침 영역 포함).
+  - 목적: resources 단계 container lookup 병목 단축으로 렌더링 루프 진입 시간 단축.
+- 버그 수정:
+  - 초기 구현에서 `0x621182` fast-path의 stdcall stack 정리(`ESP += 4`)가 누락되어 `EIP=0x1` 조기 크래시 발생.
+  - 즉시 수정 후 동일 조기 크래시 재현되지 않음(DDRAW 초기화 구간 재진입 확인).
+
+### 2026-02-25 추가 진행 (WndProc/메시지 루프 정합성)
+- `RegisterClass*` 조기 dummy intercept 제거:
+  - `hook_api_call`의 hardcoded `RegisterClass` 우회 반환을 제거하여 known-dispatch 경로로 일원화.
+  - 목적: 클래스 등록 파싱/저장(`g_win32_class_by_name/by_atom`)이 실제로 반영되도록 정합성 회복.
+- `CreateWindowEx` strict fail 기본 해제:
+  - 미등록 클래스는 기본적으로 `fallback` 진행(엄격 실패는 `PVZ_STRICT_CREATEWINDOW_CLASS=1`에서만).
+  - 이유: strict 모드에서 `SetWindowLong(hwnd=0, -21, ...)` 패턴이 반복되어 GUI 루프 진입이 막힘.
+- `GetMessage` idle synthetic timer 기본 OFF:
+  - `PVZ_FORCE_IDLE_TIMER=1`일 때만 idle `WM_TIMER` 합성하도록 변경.
+  - 이유: 실제 timer 등록 없이 synthetic `WM_TIMER`가 과도하게 생성되어 `DispatchMessage` 루프를 장시간 점유.
+
+### 2026-02-25 11:49 KST 렌더링 진입 가속 추가(문자열 병목)
+- `main.cpp`에 `0x5bd830` wide-string append/fill fast-path 추가(`PVZ_WSTRING_APPEND_ACCEL`).
+  - 적용 조건: `new_len <= cap`인 grow 불필요 정상 경로만 host-side bulk write 수행.
+  - 폴백 정책: capacity 부족/오버플로/비정상 포인터는 즉시 guest 원본 경로로 반환.
+  - side effect 반영: `[this+0x14]` length, terminator(`wchar_t NUL`), `EAX=this`, `ret 8` 정합 유지.
+- 블록 집중 추적 대상 확대:
+  - `PVZ_BLOCK_FOCUS_ADDRS` 기본 세트에 `0x5bd830/0x5bd88a/0x5bf470/0x5bf47b` 추가.
+  - 해당 주소에서 stack args/this 객체 메모리 샘플 출력 보강.
+- 임시 우회 백로그 반영:
+  - `work_logs/2026-02-25_temp_workarounds_backlog.md`에 위 fast-path를 P0로 등록.
+
+### 2026-02-25 12:00 KST 추가 가속(Iterator Advance)
+- `resources.xml` 이후 hot set에서 `0x5bf4e0/0x5bf4ef/0x5bf4f8/0x5bf518/0x5bf52f` 군집이 급상승하는 것 확인.
+- `main.cpp`에 `0x5bf4e0` iterator advance fast-path 추가(`PVZ_ITER_ADVANCE_ACCEL`, 기본: hot-loop와 동행 ON).
+  - owner sentinel(`-2`) 경로: 검사 없이 `cur += delta` 수행.
+  - 일반 owner 경로: `[owner+0x14/0x18]` 기반 범위 검증(`base <= new_cur <= base+len`) 통과 시만 단축, 실패 시 guest 폴백.
+  - 반환 규약: `EAX=this`, `ret 4` 유지.
+- block focus 기본 주소에 `0x5bf4e0/0x5bf4ef/0x5bf4f8/0x5bf518/0x5bf52f` 추가.
+
+### 2026-02-25 12:10 KST 추가 가속(memmove_s + string insert)
+- `0x5bf4e0` 가속 후 상위 hot set이 `0x61be96/0x61beeb`, `0x55d410/0x55d4xx`, `0x5bba20/0x5bba..`로 이동한 것 확인.
+- `main.cpp`에 `0x61be96` memmove_s fast-path 추가(`PVZ_MEMMOVE_S_ACCEL`, 기본 ON).
+  - 정상 인자에서 host-side overlap-safe copy 후 성공 리턴.
+  - 오류 조건(`NULL`, `destsz<count`)은 guest 폴백으로 유지.
+- `main.cpp`에 `0x55d410` string insert/fill fast-path 추가(`PVZ_STRING_INSERT_ACCEL`, 기본 ON).
+  - `pos <= len`, `new_len <= cap` 경로에서 tail shift + fill + terminator + length 갱신.
+  - grow/예외 경로는 guest 폴백.
+- block focus 기본 주소에 `0x61be96/0x61beeb/0x55d410` 추가.
+
+### 2026-02-25 12:20 KST 추가 가속(insert iterator)
+- `0x5bba20/0x5bba..` 군집이 상위 hot에 고정되는 것을 확인해 함수 단위 fast-path 추가.
+- `main.cpp`에 `0x5bba20` insert+iterator fast-path 추가(`PVZ_INSERT_ITER_ACCEL`, 기본 ON).
+  - 입력 iterator(owner/pointer)에서 index를 산출해 1-byte insert를 직접 수행.
+  - 결과 iterator(`out_iter`)를 `{string_obj, data_ptr+index}`로 갱신.
+  - owner mismatch/범위 초과/capacity 부족은 guest 폴백 유지.
+- block focus 기본 주소에 `0x5bba20/0x5bbad0/0x5bbb12` 추가.
+
+### 2026-02-25 12:25 KST 실행 검증 요약(연속 2분 샘플)
+- 실행 로그:
+  - `logs_render_push_iteradv_20260225_115536.log`
+  - `logs_render_push_insert_20260225_120031.log`
+  - `logs_render_push_insiter_20260225_120454.log`
+- 공통 관찰:
+  - `CreateThread cap hit -> WaitForSingleObject(0x7000/0x7004) -> CreateFileA('properties\\resources.xml')` 경로는 안정 재현.
+  - 샘플 구간 내 `IDirectDrawSurface7::Lock/Unlock` 미진입.
+- 병목 이동:
+  - `0x61be96/0x55d410/0x5bba20` 직접 병목은 fast-path hit 증가로 완화.
+  - 새 상위 hot set은 `0x5afc0d/0x5afc26/0x5afc06`, `0x5bbad0/0x5bbb12/0x5bbafa`, `0x61be1b`, `0x441a60` 군집으로 이동.
+- 결론:
+  - 문자열 helper 체인은 단계적으로 단축되고 있으나, parser/iterator 상위 루프가 여전히 렌더링 루프 진입을 막고 있음.
