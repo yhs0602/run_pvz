@@ -86,8 +86,14 @@
 
 - `main.cpp` insert+iterator fast-path (`0x5bba20`, `PVZ_INSERT_ITER_ACCEL`)
   - 내용: iterator 기반 1-byte insert 경로를 host에서 직접 계산(인덱스 산출 + 삽입 + out iterator 갱신)해 내부 helper 체인을 단축.
+  - 운영 상태: **기본 OFF(opt-in)**. 회귀 가능성 확인 전까지 실험 플래그로만 사용.
   - 리스크: iterator owner/sentinel 경계 분기와 혼합 실행 시 세부 semantics 차이 가능.
   - 종료 조건: `0x5bba20/0x5bba..` 계열 병목이 해소되거나 정식 parser/string 경로 번역으로 대체.
+
+- `main.cpp` wide->narrow small-string fast-path (`0x5afbb0`, `PVZ_WSTR_TO_STR_ACCEL`)
+  - 내용: `len <= 15`인 wide-string을 host에서 바로 byte 변환해 small-string 목적지에 한 번에 기록.
+  - 리스크: 장문 문자열(`len > 15`)은 guest 폴백이므로 혼합 실행에서 경계 semantics 차이 가능.
+  - 종료 조건: `0x5afc06/0x5afc0d/0x5afc26` 루프 병목이 해소되거나 정식 파서/문자열 경로 번역으로 대체.
 
 ## P1 (안정화/운영성)
 
@@ -132,3 +138,28 @@
   - 내용: 과거 호환 해킹(`lpParameter +0/+4 = 1`)을 기본 OFF로 전환하고 opt-in env로만 유지.
   - 리스크: 과거에 이 priming에 의존하던 경로가 있으면 진행 속도 저하 가능.
   - 종료 조건: thread bootstrap 정합성이 확보되면 옵션 자체 제거.
+
+- `main.cpp` memmove_s wrapper extended fast-path (`0x61be1b`)
+  - 내용: 기존 정상 copy 경로 외에 invalid-arg 반환(`0x16/0x22`) + `dst` zero-fill 경로까지 host에서 직접 처리.
+  - 리스크: CRT invalid-parameter 핸들러/errno 부수효과를 완전 재현하지 않음.
+  - 종료 조건: wrapper 전체를 guest 정식 경로/JIT로 대체하거나, invalid-parameter side effect를 정식 구현.
+
+- `main.cpp` memmove_s extended fast-path (`0x61be96`)
+  - 내용: 정상 copy + invalid-arg 반환(`0x16/0x22`)을 host에서 처리.
+  - 리스크: invalid-parameter report/errno 부수효과 생략 가능.
+  - 종료 조건: CRT memmove_s 경로 정식 번역으로 대체.
+
+- `main.cpp` stream pop fast-path (`0x5bb880`, `PVZ_STREAM_POP_ACCEL`)
+  - 내용: 비어있지 않은 stream 버퍼에서 `wchar` pop 경로를 직접 수행.
+  - 리스크: underflow callback(버퍼 비어있을 때)의 세부 semantics는 guest 경로 의존.
+  - 종료 조건: streambuf/reader 경로 정식 번역으로 대체.
+
+- `main.cpp` streambuf branch-block accel (`0x5bb880/0x5bb894/0x5bb89f`, `PVZ_STREAMBUF_BRANCH_ACCEL`)
+  - 내용: push/mov/cmp/jcc 블록을 의미보존 형태로 한 번에 에뮬레이션.
+  - 리스크: 플래그/stack side effect의 미세 불일치 가능.
+  - 종료 조건: 해당 블록이 병목에서 이탈하거나 native/JIT 경로가 안정화.
+
+- `main.cpp` xml parser branch-block accel (`0x5a1f72/0x5a1f7b/0x5a1f8b/0x5a2052/0x5a210a`, `PVZ_XML_BRANCH_ACCEL`)
+  - 내용: parser 상태머신의 고빈도 분기 블록을 의미보존 형태로 단축.
+  - 리스크: 분기 블록에서의 레지스터/조건 플래그 미세 차이가 누적될 가능성.
+  - 종료 조건: parser 루프가 병목에서 벗어나거나 parser 경로를 정식 번역으로 대체.

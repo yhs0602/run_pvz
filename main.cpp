@@ -299,10 +299,19 @@ bool g_iter_advance_accel_enabled = false;
 uint64_t g_iter_advance_fast_count = 0;
 bool g_memmove_s_accel_enabled = false;
 uint64_t g_memmove_s_fast_count = 0;
+uint64_t g_memmove_wrap_fast_count = 0;
 bool g_string_insert_accel_enabled = false;
 uint64_t g_string_insert_fast_count = 0;
 bool g_insert_iter_accel_enabled = false;
 uint64_t g_insert_iter_fast_count = 0;
+bool g_wstr_to_str_accel_enabled = false;
+uint64_t g_wstr_to_str_fast_count = 0;
+bool g_stream_pop_accel_enabled = false;
+uint64_t g_stream_pop_fast_count = 0;
+bool g_streambuf_branch_accel_enabled = false;
+uint64_t g_streambuf_branch_fast_count = 0;
+bool g_xml_branch_accel_enabled = false;
+uint64_t g_xml_branch_fast_count = 0;
 bool g_security_cookie_accel_enabled = false;
 bool g_lock_gate_probe_accel_enabled = false;
 uint64_t g_security_cookie_fast_count = 0;
@@ -484,6 +493,11 @@ static void maybe_print_block_focus(uint32_t addr32) {
         print_focus_mem_sample("arg3", esp + 12u, 4);
         print_focus_mem_sample("arg4", esp + 16u, 4);
         print_focus_mem_sample("esi_obj", esi, 0x1cu);
+    } else if (addr32 == 0x5afbb0u || addr32 == 0x5afc06u || addr32 == 0x5afc0du || addr32 == 0x5afc26u) {
+        print_focus_mem_sample("ret", esp, 4);
+        print_focus_mem_sample("edi_obj", edi, 0x1cu);
+        print_focus_mem_sample("ebx_src", ebx, 0x1cu);
+        print_focus_mem_sample("esi_idx", esi, 4);
     } else if (addr32 == 0x5a1640u || addr32 == 0x5a16bdu) {
         print_focus_mem_sample("cookie", 0x699fe8u, 4);
         print_focus_mem_sample("gate70", 0x6a9f70u, 4);
@@ -978,6 +992,19 @@ static bool host_memmove_copy(uint32_t dst, uint32_t src, uint32_t len) {
     return true;
 }
 
+static bool host_memset_fill(uint32_t dst, uint8_t value, uint32_t len) {
+    if (len == 0u) return true;
+    constexpr size_t kChunk = 4096;
+    vector<uint8_t> fill(kChunk, value);
+    uint32_t off = 0;
+    while (off < len) {
+        size_t n = std::min<size_t>(kChunk, static_cast<size_t>(len - off));
+        if (g_backend->mem_write(dst + off, fill.data(), n) != UC_ERR_OK) return false;
+        off += static_cast<uint32_t>(n);
+    }
+    return true;
+}
+
 static bool accelerate_memmove_624510(uc_engine* uc, uint32_t addr32) {
     if (addr32 != 0x624510u) return false;
 
@@ -1021,32 +1048,30 @@ static bool accelerate_memmove_wrapper_61be1b(uc_engine* uc, uint32_t addr32) {
     if (g_backend->mem_read(esp + 8u, &dst_size, 4) != UC_ERR_OK) return false;
     if (g_backend->mem_read(esp + 12u, &src, 4) != UC_ERR_OK) return false;
     if (g_backend->mem_read(esp + 16u, &count, 4) != UC_ERR_OK) return false;
-    if (count > (1u << 27)) return false;
+    if (count > (1u << 27) || dst_size > (1u << 27)) return false;
 
+    uint32_t eax = 0u;
     if (count == 0u) {
-        uint32_t eax = 0u;
-        uint32_t new_esp = esp + 4u;
-        uc_reg_write(uc, UC_X86_REG_EAX, &eax);
-        uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
-        uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
-        uc_emu_stop(uc);
-        g_hot_loop_accel_hits++;
-        return true;
+        eax = 0u;
+    } else if (dst == 0u) {
+        eax = 0x16u;
+    } else if (src == 0u || dst_size < count) {
+        if (!host_memset_fill(dst, 0u, dst_size)) return false;
+        eax = (src == 0u) ? 0x16u : 0x22u;
+    } else {
+        if (!host_memmove_copy(dst, src, count)) return false;
+        eax = 0u;
     }
 
-    // Keep original function for error handling semantics.
-    if (dst == 0u || src == 0u || dst_size < count) return false;
-    if (!host_memmove_copy(dst, src, count)) return false;
-
-    uint32_t eax = 0u; // success
     uint32_t new_esp = esp + 4u;
-    uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+    uc_reg_write(uc, UC_X86_REG_EAX, &eax); // cdecl return
     uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
     uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
     uc_emu_stop(uc);
 
+    g_memmove_wrap_fast_count++;
     g_hot_loop_accel_hits++;
-    g_hot_loop_accel_bytes += count;
+    g_hot_loop_accel_bytes += (count == 0u ? 1u : static_cast<uint64_t>(count));
     return true;
 }
 
@@ -1730,18 +1755,21 @@ static bool accelerate_memmove_s_61be96(uc_engine* uc, uint32_t addr32) {
     if (g_backend->mem_read(esp + 8u, &dstsz, 4) != UC_ERR_OK) return false;
     if (g_backend->mem_read(esp + 12u, &src, 4) != UC_ERR_OK) return false;
     if (g_backend->mem_read(esp + 16u, &count, 4) != UC_ERR_OK) return false;
-    if (count > (1u << 25)) return false;
 
-    if (count != 0u) {
-        if (dst < 0x1000u || src < 0x1000u) return false;
-        if (dstsz < count) return false;
+    if (count > (1u << 27)) return false;
 
-        vector<uint8_t> buf(static_cast<size_t>(count), 0);
-        if (g_backend->mem_read(src, buf.data(), buf.size()) != UC_ERR_OK) return false;
-        if (g_backend->mem_write(dst, buf.data(), buf.size()) != UC_ERR_OK) return false;
+    uint32_t eax = 0u;
+    if (count == 0u) {
+        eax = 0u;
+    } else if (dst == 0u || src == 0u) {
+        eax = 0x16u;
+    } else if (dstsz < count) {
+        eax = 0x22u;
+    } else {
+        if (!host_memmove_copy(dst, src, count)) return false;
+        eax = 0u;
     }
 
-    uint32_t eax = 0u; // success
     uint32_t new_esp = esp + 4u; // cdecl: pop return only
     uc_reg_write(uc, UC_X86_REG_EAX, &eax);
     uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
@@ -1752,6 +1780,243 @@ static bool accelerate_memmove_s_61be96(uc_engine* uc, uint32_t addr32) {
     g_hot_loop_accel_hits++;
     g_hot_loop_accel_bytes += (count == 0u ? 1u : static_cast<uint64_t>(count));
     return true;
+}
+
+static bool accelerate_stream_pop_5bb880(uc_engine* uc, uint32_t addr32) {
+    if (!g_stream_pop_accel_enabled) return false;
+    if (addr32 != 0x5bb880u) return false;
+
+    uint32_t this_ptr = 0;
+    uint32_t esp = 0;
+    uc_reg_read(uc, UC_X86_REG_ECX, &this_ptr);
+    uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+    if (this_ptr < 0x1000u) return false;
+
+    uint32_t ret_addr = 0;
+    uint32_t out_ptr = 0;
+    if (g_backend->mem_read(esp, &ret_addr, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_read(esp + 4u, &out_ptr, 4) != UC_ERR_OK) return false;
+
+    if (out_ptr == 0u) {
+        uint32_t eax = 3u;
+        uint32_t new_esp = esp + 8u; // ret 4
+        uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+        uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
+        uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+        uc_emu_stop(uc);
+        g_stream_pop_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    uint32_t begin_ptr = 0;
+    uint32_t end_ptr = 0;
+    if (g_backend->mem_read(this_ptr + 0x0cu, &begin_ptr, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_read(this_ptr + 0x10u, &end_ptr, 4) != UC_ERR_OK) return false;
+    if (begin_ptr == 0u) return false;
+    if (end_ptr < begin_ptr) return false;
+    uint32_t avail_bytes = end_ptr - begin_ptr;
+    if ((avail_bytes >> 1) == 0u) return false;
+    if (end_ptr < 2u) return false;
+    uint32_t src_ptr = end_ptr - 2u;
+    if (src_ptr < begin_ptr || src_ptr >= end_ptr) return false;
+
+    uint16_t ch = 0;
+    if (g_backend->mem_read(src_ptr, &ch, 2) != UC_ERR_OK) return false;
+    if (g_backend->mem_write(out_ptr, &ch, 2) != UC_ERR_OK) return false;
+
+    uint32_t mark_ptr = 0;
+    if (g_backend->mem_read(this_ptr + 0x0cu, &mark_ptr, 4) != UC_ERR_OK) return false;
+    if (mark_ptr != 0u && end_ptr >= mark_ptr) {
+        uint32_t remain = end_ptr - mark_ptr;
+        if ((remain >> 1) != 0u) {
+            uint32_t new_end = end_ptr - 2u;
+            if (g_backend->mem_write(this_ptr + 0x10u, &new_end, 4) != UC_ERR_OK) return false;
+        }
+    }
+
+    uint32_t eax = 0u;
+    uint32_t new_esp = esp + 8u; // ret 4
+    uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+    uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
+    uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+    uc_emu_stop(uc);
+
+    g_stream_pop_fast_count++;
+    g_hot_loop_accel_hits++;
+    g_hot_loop_accel_bytes += 2u;
+    return true;
+}
+
+static bool accelerate_streambuf_branch_blocks(uc_engine* uc, uint32_t addr32) {
+    if (!g_streambuf_branch_accel_enabled) return false;
+
+    if (addr32 == 0x5bb880u) {
+        uint32_t esp = 0;
+        uint32_t ecx = 0;
+        uint32_t ebx = 0;
+        uint32_t edi = 0;
+        uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+        uc_reg_read(uc, UC_X86_REG_ECX, &ecx);
+        uc_reg_read(uc, UC_X86_REG_EBX, &ebx);
+        uc_reg_read(uc, UC_X86_REG_EDI, &edi);
+
+        uint32_t arg_out = 0;
+        if (g_backend->mem_read(esp + 4u, &arg_out, 4) != UC_ERR_OK) return false;
+
+        uint32_t esp1 = esp - 4u;
+        if (g_backend->mem_write(esp1, &ebx, 4) != UC_ERR_OK) return false; // push ebx
+        uint32_t esp2 = esp1 - 4u;
+        if (g_backend->mem_write(esp2, &edi, 4) != UC_ERR_OK) return false; // push edi
+
+        ebx = arg_out;
+        edi = ecx;
+        uint32_t next = (ebx != 0u) ? 0x5bb894u : 0x5bb88cu;
+        uc_reg_write(uc, UC_X86_REG_EBX, &ebx);
+        uc_reg_write(uc, UC_X86_REG_EDI, &edi);
+        uc_reg_write(uc, UC_X86_REG_ESP, &esp2);
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+
+        g_streambuf_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    if (addr32 == 0x5bb894u) {
+        uint32_t esp = 0;
+        uint32_t edi = 0;
+        uint32_t esi = 0;
+        uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+        uc_reg_read(uc, UC_X86_REG_EDI, &edi);
+        uc_reg_read(uc, UC_X86_REG_ESI, &esi);
+
+        uint32_t eax = 0;
+        if (g_backend->mem_read(edi + 0x0cu, &eax, 4) != UC_ERR_OK) return false;
+        uint32_t esp2 = esp - 4u;
+        if (g_backend->mem_write(esp2, &esi, 4) != UC_ERR_OK) return false; // push esi
+        esi = edi + 8u;
+
+        uint32_t next = (eax == 0u) ? 0x5bb8d5u : 0x5bb89fu;
+        uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+        uc_reg_write(uc, UC_X86_REG_ESI, &esi);
+        uc_reg_write(uc, UC_X86_REG_ESP, &esp2);
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+
+        g_streambuf_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    if (addr32 == 0x5bb89fu) {
+        uint32_t esi = 0;
+        uint32_t eax = 0;
+        uc_reg_read(uc, UC_X86_REG_ESI, &esi);
+        uc_reg_read(uc, UC_X86_REG_EAX, &eax);
+
+        uint32_t ecx = 0;
+        if (g_backend->mem_read(esi + 8u, &ecx, 4) != UC_ERR_OK) return false;
+        int32_t diff = static_cast<int32_t>(ecx - eax);
+        diff >>= 1;
+        ecx = static_cast<uint32_t>(diff);
+        uint32_t next = (ecx == 0u) ? 0x5bb8d5u : 0x5bb8a8u;
+        uc_reg_write(uc, UC_X86_REG_ECX, &ecx);
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+
+        g_streambuf_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    return false;
+}
+
+static bool accelerate_xml_branch_blocks(uc_engine* uc, uint32_t addr32) {
+    if (!g_xml_branch_accel_enabled) return false;
+
+    if (addr32 == 0x5a1f72u) {
+        uint32_t eax = 0;
+        uc_reg_read(uc, UC_X86_REG_EAX, &eax);
+        uint32_t next = (eax != 0u) ? 0x5a2f78u : 0x5a1f7bu;
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_xml_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    if (addr32 == 0x5a1f7bu) {
+        uint32_t esp = 0;
+        uint32_t ebx = 0;
+        uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+        uc_reg_read(uc, UC_X86_REG_EBX, &ebx);
+
+        uint32_t edx = 0;
+        if (g_backend->mem_read(esp + 0x24u, &edx, 4) != UC_ERR_OK) return false;
+        ebx &= 0xFFFFFF00u; // xor bl, bl
+        uint16_t dx = static_cast<uint16_t>(edx & 0xFFFFu);
+        uint32_t next = (dx != 0x000Au) ? 0x5a1f8bu : 0x5a1f87u;
+        uc_reg_write(uc, UC_X86_REG_EBX, &ebx);
+        uc_reg_write(uc, UC_X86_REG_EDX, &edx);
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_xml_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    if (addr32 == 0x5a1f8bu) {
+        uint32_t esp = 0;
+        uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+        uint32_t ecx = 0;
+        if (g_backend->mem_read(esp + 0x18u, &ecx, 4) != UC_ERR_OK) return false;
+        uint32_t eax = 0;
+        if (g_backend->mem_read(ecx, &eax, 4) != UC_ERR_OK) return false;
+        uint32_t next = (eax != 5u) ? 0x5a2052u : 0x5a1f9au;
+        uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+        uc_reg_write(uc, UC_X86_REG_ECX, &ecx);
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_xml_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    if (addr32 == 0x5a2052u) {
+        uint32_t eax = 0;
+        uc_reg_read(uc, UC_X86_REG_EAX, &eax);
+        uint32_t next = (eax != 4u) ? 0x5a210au : 0x5a205bu;
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_xml_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    if (addr32 == 0x5a210au) {
+        uint32_t edx = 0;
+        uc_reg_read(uc, UC_X86_REG_EDX, &edx);
+        uint16_t dx = static_cast<uint16_t>(edx & 0xFFFFu);
+        uint32_t next = (dx != 0x0022u) ? 0x5a217du : 0x5a2110u;
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_xml_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    return false;
 }
 
 static bool accelerate_string_insert_fill_55d410(uc_engine* uc, uint32_t addr32) {
@@ -1907,6 +2172,62 @@ static bool accelerate_insert_iter_5bba20(uc_engine* uc, uint32_t addr32) {
     g_insert_iter_fast_count++;
     g_hot_loop_accel_hits++;
     g_hot_loop_accel_bytes += 1u;
+    return true;
+}
+
+static bool accelerate_wstr_to_str_small_5afbb0(uc_engine* uc, uint32_t addr32) {
+    if (!g_wstr_to_str_accel_enabled) return false;
+    if (addr32 != 0x5afbb0u) return false;
+
+    uint32_t dst_obj = 0;
+    uint32_t src_obj = 0;
+    uint32_t esp = 0;
+    uc_reg_read(uc, UC_X86_REG_EDI, &dst_obj);
+    uc_reg_read(uc, UC_X86_REG_EBX, &src_obj);
+    uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+    if (dst_obj < 0x1000u || src_obj < 0x1000u) return false;
+
+    uint32_t src_len = 0;
+    uint32_t src_cap = 0;
+    if (g_backend->mem_read(src_obj + 0x14u, &src_len, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_read(src_obj + 0x18u, &src_cap, 4) != UC_ERR_OK) return false;
+    if (src_len > 15u) return false; // keep to SSO-only fast-path
+
+    uint32_t src_ptr = 0;
+    if (src_cap < 8u) {
+        src_ptr = src_obj + 4u;
+    } else if (g_backend->mem_read(src_obj + 4u, &src_ptr, 4) != UC_ERR_OK) {
+        return false;
+    }
+    if (src_ptr < 0x1000u) return false;
+
+    vector<uint8_t> wbuf(static_cast<size_t>(src_len) * 2u, 0);
+    if (!wbuf.empty()) {
+        if (g_backend->mem_read(src_ptr, wbuf.data(), wbuf.size()) != UC_ERR_OK) return false;
+    }
+
+    uint32_t dst_cap = 15u;
+    if (g_backend->mem_write(dst_obj + 0x18u, &dst_cap, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_write(dst_obj + 0x14u, &src_len, 4) != UC_ERR_OK) return false;
+
+    vector<uint8_t> nbuf(static_cast<size_t>(src_len) + 1u, 0);
+    for (uint32_t i = 0; i < src_len; ++i) {
+        nbuf[i] = wbuf[static_cast<size_t>(i) * 2u];
+    }
+    nbuf[src_len] = 0;
+    if (g_backend->mem_write(dst_obj + 4u, nbuf.data(), nbuf.size()) != UC_ERR_OK) return false;
+
+    uint32_t ret_addr = 0;
+    if (g_backend->mem_read(esp, &ret_addr, 4) != UC_ERR_OK) return false;
+    uint32_t new_esp = esp + 4u; // ret
+    uc_reg_write(uc, UC_X86_REG_EAX, &dst_obj);
+    uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
+    uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+    uc_emu_stop(uc);
+
+    g_wstr_to_str_fast_count++;
+    g_hot_loop_accel_hits++;
+    g_hot_loop_accel_bytes += (src_len == 0u ? 1u : static_cast<uint64_t>(src_len));
     return true;
 }
 
@@ -2195,6 +2516,10 @@ static bool accelerate_strlen_loop_5d8310(uc_engine* uc, uint32_t addr32) {
 
 static bool maybe_accelerate_hot_loop_block(uc_engine* uc, uint32_t addr32) {
     if (!g_hot_loop_accel_enabled) return false;
+    if (accelerate_stream_pop_5bb880(uc, addr32)) return true;
+    if (accelerate_streambuf_branch_blocks(uc, addr32)) return true;
+    if (accelerate_xml_branch_blocks(uc, addr32)) return true;
+    if (accelerate_wstr_to_str_small_5afbb0(uc, addr32)) return true;
     if (accelerate_insert_iter_5bba20(uc, addr32)) return true;
     if (accelerate_string_insert_fill_55d410(uc, addr32)) return true;
     if (accelerate_memmove_s_61be96(uc, addr32)) return true;
@@ -2363,11 +2688,26 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
             if (g_memmove_s_fast_count > 0) {
                 cout << " memmove_s=" << g_memmove_s_fast_count;
             }
+            if (g_memmove_wrap_fast_count > 0) {
+                cout << " memwrap=" << g_memmove_wrap_fast_count;
+            }
             if (g_string_insert_fast_count > 0) {
                 cout << " strins=" << g_string_insert_fast_count;
             }
             if (g_insert_iter_fast_count > 0) {
                 cout << " insiter=" << g_insert_iter_fast_count;
+            }
+            if (g_wstr_to_str_fast_count > 0) {
+                cout << " wstr2str=" << g_wstr_to_str_fast_count;
+            }
+            if (g_stream_pop_fast_count > 0) {
+                cout << " streampop=" << g_stream_pop_fast_count;
+            }
+            if (g_streambuf_branch_fast_count > 0) {
+                cout << " sbbranch=" << g_streambuf_branch_fast_count;
+            }
+            if (g_xml_branch_fast_count > 0) {
+                cout << " xmlbranch=" << g_xml_branch_fast_count;
             }
             cout << "\n";
         }
@@ -2696,7 +3036,32 @@ int main(int argc, char **argv) {
     if (insert_iter_accel_env && *insert_iter_accel_env) {
         g_insert_iter_accel_enabled = env_truthy("PVZ_INSERT_ITER_ACCEL");
     } else {
-        g_insert_iter_accel_enabled = g_hot_loop_accel_enabled;
+        // Experimental: keep opt-in only until semantics are validated.
+        g_insert_iter_accel_enabled = false;
+    }
+    const char* wstr_to_str_accel_env = std::getenv("PVZ_WSTR_TO_STR_ACCEL");
+    if (wstr_to_str_accel_env && *wstr_to_str_accel_env) {
+        g_wstr_to_str_accel_enabled = env_truthy("PVZ_WSTR_TO_STR_ACCEL");
+    } else {
+        g_wstr_to_str_accel_enabled = g_hot_loop_accel_enabled;
+    }
+    const char* stream_pop_accel_env = std::getenv("PVZ_STREAM_POP_ACCEL");
+    if (stream_pop_accel_env && *stream_pop_accel_env) {
+        g_stream_pop_accel_enabled = env_truthy("PVZ_STREAM_POP_ACCEL");
+    } else {
+        g_stream_pop_accel_enabled = g_hot_loop_accel_enabled;
+    }
+    const char* streambuf_branch_accel_env = std::getenv("PVZ_STREAMBUF_BRANCH_ACCEL");
+    if (streambuf_branch_accel_env && *streambuf_branch_accel_env) {
+        g_streambuf_branch_accel_enabled = env_truthy("PVZ_STREAMBUF_BRANCH_ACCEL");
+    } else {
+        g_streambuf_branch_accel_enabled = g_hot_loop_accel_enabled;
+    }
+    const char* xml_branch_accel_env = std::getenv("PVZ_XML_BRANCH_ACCEL");
+    if (xml_branch_accel_env && *xml_branch_accel_env) {
+        g_xml_branch_accel_enabled = env_truthy("PVZ_XML_BRANCH_ACCEL");
+    } else {
+        g_xml_branch_accel_enabled = g_hot_loop_accel_enabled;
     }
     const char* cookie_accel_env = std::getenv("PVZ_SECURITY_COOKIE_ACCEL");
     if (cookie_accel_env && *cookie_accel_env) {
@@ -2747,7 +3112,9 @@ int main(int argc, char **argv) {
                 0x441d66u, 0x441d77u, 0x441dd0u, 0x441dd9u, 0x5d8890u, 0x62456au, 0x404470u,
                 0x456610u, 0x456650u, 0x5a1640u, 0x5a16bdu, 0x5bd830u, 0x5bd88au, 0x5bf470u, 0x5bf47bu,
                 0x5bf4e0u, 0x5bf4efu, 0x5bf4f8u, 0x5bf518u, 0x5bf52fu, 0x61be96u, 0x61beebu, 0x55d410u,
-                0x5bba20u, 0x5bbad0u, 0x5bbb12u
+                0x5bba20u, 0x5bb880u, 0x5bb894u, 0x5bb89fu, 0x5bbad0u, 0x5bbb12u, 0x61be1bu,
+                0x5a1f72u, 0x5a1f7bu, 0x5a1f8bu, 0x5a2052u, 0x5a210au,
+                0x5afbb0u, 0x5afc06u, 0x5afc0du, 0x5afc26u
             };
         }
         for (uint32_t a : addrs) {
@@ -2848,6 +3215,9 @@ int main(int argc, char **argv) {
                 << "0x61be96(memmove_s), "
                 << "0x55d410(string insert fill), "
                 << "0x5bba20(insert iterator), "
+                << "0x5afbb0(wstr->str small), "
+                << "0x5bb880(stream pop), 0x5bb880/0x5bb894/0x5bb89f(streambuf branches), "
+                << "0x5a1f72/0x5a1f7b/0x5a1f8b/0x5a2052/0x5a210a(xml branches), "
                 << "0x5d8850(stream xor decode), "
                 << "0x61be1b(memmove_s wrapper), 0x624510(memmove), "
                 << "0x5d8f50(tree lookup loop), "
@@ -2891,6 +3261,18 @@ int main(int argc, char **argv) {
             cout << "[*] Insert-iterator accel option: "
                  << (g_insert_iter_accel_enabled ? "on" : "off")
                  << " (PVZ_INSERT_ITER_ACCEL).\n";
+            cout << "[*] Wstr->str accel option: "
+                 << (g_wstr_to_str_accel_enabled ? "on" : "off")
+                 << " (PVZ_WSTR_TO_STR_ACCEL).\n";
+            cout << "[*] Stream-pop accel option: "
+                 << (g_stream_pop_accel_enabled ? "on" : "off")
+                 << " (PVZ_STREAM_POP_ACCEL).\n";
+            cout << "[*] Streambuf-branch accel option: "
+                 << (g_streambuf_branch_accel_enabled ? "on" : "off")
+                 << " (PVZ_STREAMBUF_BRANCH_ACCEL).\n";
+            cout << "[*] XML-branch accel option: "
+                 << (g_xml_branch_accel_enabled ? "on" : "off")
+                 << " (PVZ_XML_BRANCH_ACCEL).\n";
         }
         trace("after jit dispatcher init");
 
@@ -3069,11 +3451,26 @@ int main(int argc, char **argv) {
         if (g_memmove_s_fast_count > 0) {
             cout << "[*] memmove_s fast-path summary: hits=" << g_memmove_s_fast_count << "\n";
         }
+        if (g_memmove_wrap_fast_count > 0) {
+            cout << "[*] memmove wrapper fast-path summary: hits=" << g_memmove_wrap_fast_count << "\n";
+        }
         if (g_string_insert_fast_count > 0) {
             cout << "[*] String-insert fast-path summary: hits=" << g_string_insert_fast_count << "\n";
         }
         if (g_insert_iter_fast_count > 0) {
             cout << "[*] Insert-iterator fast-path summary: hits=" << g_insert_iter_fast_count << "\n";
+        }
+        if (g_wstr_to_str_fast_count > 0) {
+            cout << "[*] Wstr->str fast-path summary: hits=" << g_wstr_to_str_fast_count << "\n";
+        }
+        if (g_stream_pop_fast_count > 0) {
+            cout << "[*] Stream-pop fast-path summary: hits=" << g_stream_pop_fast_count << "\n";
+        }
+        if (g_streambuf_branch_fast_count > 0) {
+            cout << "[*] Streambuf-branch fast-path summary: hits=" << g_streambuf_branch_fast_count << "\n";
+        }
+        if (g_xml_branch_fast_count > 0) {
+            cout << "[*] XML-branch fast-path summary: hits=" << g_xml_branch_fast_count << "\n";
         }
         if (g_security_cookie_fast_count > 0) {
             cout << "[*] Security-cookie fast-path summary: hits=" << g_security_cookie_fast_count << "\n";

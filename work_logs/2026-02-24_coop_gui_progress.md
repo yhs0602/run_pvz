@@ -250,3 +250,50 @@
   - 새 상위 hot set은 `0x5afc0d/0x5afc26/0x5afc06`, `0x5bbad0/0x5bbb12/0x5bbafa`, `0x61be1b`, `0x441a60` 군집으로 이동.
 - 결론:
   - 문자열 helper 체인은 단계적으로 단축되고 있으나, parser/iterator 상위 루프가 여전히 렌더링 루프 진입을 막고 있음.
+
+### 2026-02-25 12:35 KST 회귀 대응
+- `0x5bba20` insert+iterator fast-path ON 샘플(`logs_render_push_insiter_20260225_120454.log`)에서
+  - 동일 시간 기준 hot-accel hit 처리량이 이전 대비 저하(대략 1.05M -> 0.85M 수준).
+  - parser 루프(`0x5afc0d/0x5afc26/0x5bbad0/0x5bbb12`) 집중이 강화됨.
+- 조치:
+  - `PVZ_INSERT_ITER_ACCEL` 기본값을 OFF로 롤백(명시 opt-in일 때만 활성화).
+  - 해당 fast-path는 실험 옵션으로 유지하고, 기본 경로는 안정적 가속 세트로 계속 진행.
+
+### 2026-02-25 12:45 KST 추가 가속(wide->narrow small)
+- `PVZ_INSERT_ITER_ACCEL=off` 검증 로그(`logs_render_push_insiter_off_20260225_120847.log`)에서
+  - 처리량이 이전 안정 패턴(2분 기준 약 1.05M hit)으로 복귀 확인.
+- 새 상위 병목인 `0x5afc06/0x5afc0d/0x5afc26`(wide 문자열 순회 + `0x5bbad0` append 체인) 대응:
+  - `main.cpp`에 `0x5afbb0` 함수 단위 fast-path 추가(`PVZ_WSTR_TO_STR_ACCEL`, 기본 ON).
+  - 우선 안전 범위 `len <= 15`(SSO 목적지)에서 wide->narrow 변환을 host에서 일괄 처리.
+  - 장문 문자열(`len > 15`)은 guest 폴백 유지.
+
+### 2026-02-25 13:20 KST 추가 가속(브랜치 블록 + memmove wrapper 정합)
+- `main.cpp` `0x61be1b` memmove_s wrapper fast-path를 오류 경로까지 확장.
+  - `dst==NULL -> 0x16`, `src==NULL -> dst zero-fill + 0x16`, `destsz<count -> dst zero-fill + 0x22`를 host 경로에서 직접 반영.
+  - 기존 정상 경로 copy만 단축하던 상태에서 invalid-arg 루프 fallback을 줄임.
+- `main.cpp` `0x61be96` memmove_s fast-path도 오류 리턴(`0x16/0x22`)까지 포함하도록 확장.
+- `main.cpp` `0x5bb880` stream pop 함수 fast-path 추가(`PVZ_STREAM_POP_ACCEL`).
+  - 비어있지 않은 버퍼에서 `wchar` pop + 포인터 갱신 경로를 직접 처리.
+- `main.cpp` 블록 단위 정합 가속 추가:
+  - streambuf 브랜치 블록: `0x5bb880/0x5bb894/0x5bb89f` (`PVZ_STREAMBUF_BRANCH_ACCEL`)
+  - xml parser 브랜치 블록: `0x5a1f72/0x5a1f7b/0x5a1f8b/0x5a2052/0x5a210a` (`PVZ_XML_BRANCH_ACCEL`)
+  - 의도: 함수 semantics를 유지한 채 branch-only 핫 블록의 에뮬레이션 오버헤드를 줄여 `resources.xml` 파서 진행률 개선.
+- 새 카운터/옵션/요약 로그 추가:
+  - `memwrap`, `streampop`, `sbbranch`, `xmlbranch`
+  - `PVZ_STREAM_POP_ACCEL`, `PVZ_STREAMBUF_BRANCH_ACCEL`, `PVZ_XML_BRANCH_ACCEL`
+
+### 2026-02-25 13:35 KST 실행 검증 요약(장시간 샘플)
+- 검증 로그:
+  - `logs_render_push_streampop_20260225_122021.log` (90s)
+  - `logs_render_push_xmlbranch_20260225_122638.log` (75s)
+  - `logs_render_push_long_20260225_122815.log` (150s)
+  - `logs_render_push_5min_20260225_123143.log` (장시간 샘플)
+- 관찰:
+  - `resources.xml` 진입 경로 안정 재현: `CreateThread -> WaitForSingleObject(0x7000/0x7004) -> CreateFileA('properties\\resources.xml')`.
+  - `IDirectDrawSurface7::Lock/Unlock`는 샘플 구간에서 여전히 미관측.
+  - 다만 처리율은 유의미하게 증가:
+    - `xmlbranch/sbbranch` 카운터가 빠르게 누적(`xmlbranch` 수십만, `sbbranch` 수십만)되며 parser 브랜치 단위 가속이 실제로 동작.
+    - `memwrap` 카운터도 지속 증가해 `0x61be1b` 오류/정상 혼합 경로 fallback 비율이 감소.
+- 결론:
+  - 렌더링 루프 전 단계(`resources.xml` 이후 parser 체인) throughput은 확실히 개선.
+  - 다음 병목은 여전히 parser 루프 상위 체인(`0x456610`, `0x5a1640`, `0x5bd830`, `0x61be1b`, `0x5bb88x`, `0x5a1fxx`)이며, `Lock/Unlock` 진입까지는 추가 압축이 필요.
