@@ -427,3 +427,20 @@
 - 현재 결론
   - parser/text-normalize 루프 오버헤드는 추가로 감소했지만, 아직 렌더 루프 진입 조건(또는 후속 게이트) 미충족.
   - 다음 추적 포커스: `0x5a217d/0x5a2184/0x5a21a6` 이후 XML state 전이와 메시지/타이밍 상태값 정합성.
+
+### 2026-02-26 02:55 KST XML 상태분기(0x5a217d/0x5a21a6) 추가 축약
+- 코드 변경 (`main.cpp`)
+  - `0x5a217d`:
+    - `in-quote`/`'<'`/state(`eax`) 조건 연쇄를 한 번에 평가해 `0x5a2138/0x5a254d/0x5a314c/0x5a1f60/0x5a21a6`로 직접 점프.
+    - `state==0 && ch=='<'` 경로에서 `*ecx = 1` side effect를 host에서 반영.
+  - `0x5a21a6`:
+    - `'>'` 빠른 분기(`->0x5a2560`)와 `esi=[esp+0x20]` 로드 + `'/'` 분기(`->0x5a21ba` or `0x5a21ea`)를 단축.
+- 검증 로그
+  - `/tmp/pvz_blockhot_after_xml217d_20260226_023126.log`
+    - 20~30초 구간에서 `hits`/`xmlbranch` 누적이 증가(예: `hits=1500000`, `xmlbranch=380634`).
+    - 여전히 상위 hot-chain은 `0x456610/0x5a1640/0x5bd830/0x61be1b/0x5a1f60/0x5a217d` 군집.
+  - `/tmp/pvz_render_probe30_20260226_023158.log`
+    - `resources.xml` 이후 parser 체인 지속 확인.
+    - 샘플 구간 내 `IDirectDrawSurface7::Lock/Unlock`는 아직 미관측.
+- 현재 결론
+  - XML 상태머신 분기 오버헤드는 추가로 낮췄지만, 렌더 루프 진입까지는 아직 상태값/메시지 소비 경로 정합성 추적이 더 필요.
