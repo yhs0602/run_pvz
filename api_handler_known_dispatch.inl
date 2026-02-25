@@ -998,12 +998,15 @@
                         }
                     } else {
                         handler->coop_request_yield();
-                        handler->backend.emu_stop();
+                        // Do not emu_stop() here: stopping before the API stub returns
+                        // re-enters the same CreateThread call on next slice.
+                        // Yield is handled at timeslice boundary by the coop scheduler.
                     }
                 }
-                // Cooperative thread emulation:
-                // mark the thread-parameter block as "started" so waits and init gates can progress.
-                if (lpParameter != 0) {
+                // Legacy compatibility knob: some earlier experiments primed the
+                // thread parameter block with sentinel ones. Keep it opt-in because
+                // many real thread entry structs use offset 0/4 as meaningful fields.
+                if (lpParameter != 0 && env_truthy("PVZ_CREATE_THREAD_PRIME_PARAM")) {
                     uint32_t one = 1;
                     handler->backend.mem_write(lpParameter, &one, 4);
                     handler->backend.mem_write(lpParameter + 4, &one, 4);
@@ -1032,9 +1035,17 @@
                     static_cast<EventHandle*>(it->second)->signaled = true;
                     handler->ctx.set_eax(1);
                     handler->ctx.global_state["LastError"] = 0;
+                    if (thread_mock_trace_enabled()) {
+                        std::cout << "[THREAD MOCK] SetEvent(handle=0x" << std::hex << h
+                                  << ") -> signaled\n" << std::dec;
+                    }
                 } else {
                     handler->ctx.set_eax(0);
                     handler->ctx.global_state["LastError"] = 6;
+                    if (thread_mock_trace_enabled()) {
+                        std::cout << "[THREAD MOCK] SetEvent(handle=0x" << std::hex << h
+                                  << ") -> invalid\n" << std::dec;
+                    }
                 }
             } else if (name == "KERNEL32.dll!ResetEvent") {
                 uint32_t h = handler->ctx.get_arg(0);
@@ -1043,9 +1054,17 @@
                     static_cast<EventHandle*>(it->second)->signaled = false;
                     handler->ctx.set_eax(1);
                     handler->ctx.global_state["LastError"] = 0;
+                    if (thread_mock_trace_enabled()) {
+                        std::cout << "[THREAD MOCK] ResetEvent(handle=0x" << std::hex << h
+                                  << ") -> nonsignaled\n" << std::dec;
+                    }
                 } else {
                     handler->ctx.set_eax(0);
                     handler->ctx.global_state["LastError"] = 6;
+                    if (thread_mock_trace_enabled()) {
+                        std::cout << "[THREAD MOCK] ResetEvent(handle=0x" << std::hex << h
+                                  << ") -> invalid\n" << std::dec;
+                    }
                 }
             } else if (name == "KERNEL32.dll!WaitForSingleObject") {
                 uint32_t h = handler->ctx.get_arg(0);
@@ -2089,6 +2108,10 @@
                 bool exists = (g_valid_hwnds.find(hwnd) != g_valid_hwnds.end());
                 if (!exists && hwnd == 0x12345678u) exists = true;
                 handler->ctx.set_eax(exists ? 1u : 0u);
+                if (thread_mock_trace_enabled() || env_truthy("PVZ_WNDPROC_TRACE")) {
+                    std::cout << "[WNDPROC] " << name << "(hwnd=0x" << std::hex << hwnd
+                              << ") -> " << (exists ? "1" : "0") << std::dec << "\n";
+                }
             } else if (name == "USER32.dll!GetActiveWindow" ||
                        name == "USER32.dll!GetForegroundWindow") {
                 if (!g_valid_hwnds.empty()) {
@@ -2203,6 +2226,13 @@
                     g_hwnd_owner_thread_id[hwnd] = handler->coop_threads_enabled()
                         ? handler->coop_current_thread_id()
                         : 1u;
+                }
+                if (env_truthy("PVZ_WNDPROC_TRACE")) {
+                    std::cout << "[WNDPROC] SetWindowLong hwnd=0x" << std::hex << hwnd
+                              << " index=" << std::dec << index
+                              << " prev=0x" << std::hex << static_cast<uint32_t>(prev)
+                              << " new=0x" << static_cast<uint32_t>(value)
+                              << std::dec << "\n";
                 }
                 handler->ctx.set_eax(static_cast<uint32_t>(prev));
             } else if (name == "USER32.dll!GetWindowLongA" || name == "USER32.dll!GetWindowLongW") {

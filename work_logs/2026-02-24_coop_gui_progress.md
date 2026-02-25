@@ -315,3 +315,20 @@
   - 추적 로그(`logs_coop_thread_diag_20260225_213512.log`)에서 worker thread spawn/실행 관측(`start=0x5d5dc0`, `SetEvent(0x7000)` 확인).
   - 그러나 장시간 coop 샘플(`logs_render_push_textnorm_escalated_long_20260225_212128.log`, `logs_coop_default7500_probe_20260225_213839.log`)은 `CreateThread` 구간 체류가 길어 `Wait/resources.xml` 재진입까지 충분히 진행하지 못함.
   - 다음 액션: coop scheduler 공정성/worker bootstrap 완료 조건을 별도 계측으로 추가 분해.
+
+### 2026-02-25 22:05 KST coop CreateThread 재진입 버그 수정
+- 원인 분해:
+  - cooperative `CreateThread` 성공 분기에서 `coop_request_yield()` 직후 `backend.emu_stop()`를 호출하고 있었음.
+  - 이 조합은 API stub가 정상 return하기 전에 에뮬레이션을 멈춰 다음 slice에서 같은 `CreateThread`를 재진입시키는 패턴을 유발.
+- 수정:
+  - `api_handler_known_dispatch.inl`의 cooperative `CreateThread` 성공 경로에서 `backend.emu_stop()` 제거.
+  - yield는 scheduler timeslice 경계에서만 처리하도록 유지.
+- 검증 로그:
+  - `logs_coop_createthread_fix_20260225_215646.log`
+- 검증 결과:
+  - 반복 `CreateThread` 체류가 줄고, `WaitForSingleObject(0x7000/0x7004)` 및 `CreateFileA('properties\\resources.xml')` 재진입이 재확인됨.
+  - `txtnorm` 카운터도 장시간 증가(`~233k @ hot hits ~1.7M`)하여 text-normalize 루프 가속이 cooperative 경로에서도 유효함을 확인.
+  - 샘플 구간 내 `IDirectDrawSurface7::Lock/Unlock`는 여전히 미관측.
+- 다음 액션:
+  - cooperative 장시간(180~300s)에서 `GetMessage/DispatchMessage` 및 `Lock/Unlock` 진입 여부를 집중 샘플링.
+  - resources 이후 상위 체인(`0x456610/0x5a1640/0x5bd830/0x61be1b/0x5bb880/0x5a1f72`) return-value/state 정합성 추가 점검.
