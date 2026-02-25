@@ -163,3 +163,8 @@
   - 내용: parser 상태머신의 고빈도 분기 블록을 의미보존 형태로 단축.
   - 리스크: 분기 블록에서의 레지스터/조건 플래그 미세 차이가 누적될 가능성.
   - 종료 조건: parser 루프가 병목에서 벗어나거나 parser 경로를 정식 번역으로 대체.
+
+- `main.cpp` text normalize branch-block accel (`0x62b0d8/0x62b0e5/0x62b0e9/0x62b0f5/0x62b0fd/0x62b105/0x62b184/0x62b185`, `PVZ_TEXT_NORM_BRANCH_ACCEL`)
+  - 내용: CR/LF/EOF 정규화 문자 루프의 분기 블록을 의미보존 형태로 단축.
+  - 리스크: 블록 경계의 플래그/미세 side effect 불일치가 누적될 가능성.
+  - 종료 조건: `0x62b0xx` 군집이 top-hot에서 이탈하거나 parser 경로가 정식 번역/JIT로 대체.

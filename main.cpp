@@ -312,6 +312,8 @@ bool g_streambuf_branch_accel_enabled = false;
 uint64_t g_streambuf_branch_fast_count = 0;
 bool g_xml_branch_accel_enabled = false;
 uint64_t g_xml_branch_fast_count = 0;
+bool g_text_norm_branch_accel_enabled = false;
+uint64_t g_text_norm_branch_fast_count = 0;
 bool g_security_cookie_accel_enabled = false;
 bool g_lock_gate_probe_accel_enabled = false;
 uint64_t g_security_cookie_fast_count = 0;
@@ -414,13 +416,14 @@ static void maybe_print_block_focus(uint32_t addr32) {
     hits++;
     if (g_block_focus_interval == 0 || (hits % g_block_focus_interval) != 0) return;
 
-    uint32_t eax = 0, ebx = 0, ecx = 0, edx = 0, esi = 0, edi = 0, esp = 0;
+    uint32_t eax = 0, ebx = 0, ecx = 0, edx = 0, esi = 0, edi = 0, ebp = 0, esp = 0;
     g_backend->reg_read(UC_X86_REG_EAX, &eax);
     g_backend->reg_read(UC_X86_REG_EBX, &ebx);
     g_backend->reg_read(UC_X86_REG_ECX, &ecx);
     g_backend->reg_read(UC_X86_REG_EDX, &edx);
     g_backend->reg_read(UC_X86_REG_ESI, &esi);
     g_backend->reg_read(UC_X86_REG_EDI, &edi);
+    g_backend->reg_read(UC_X86_REG_EBP, &ebp);
     g_backend->reg_read(UC_X86_REG_ESP, &esp);
 
     cout << "[BLOCK FOCUS] addr=0x" << hex << addr32 << dec
@@ -502,6 +505,20 @@ static void maybe_print_block_focus(uint32_t addr32) {
         print_focus_mem_sample("cookie", 0x699fe8u, 4);
         print_focus_mem_sample("gate70", 0x6a9f70u, 4);
         print_focus_mem_sample("gate74", 0x6a9f74u, 4);
+    } else if (addr32 == 0x62b0d8u || addr32 == 0x62b0e5u || addr32 == 0x62b0e9u ||
+               addr32 == 0x62b0f5u || addr32 == 0x62b0fdu || addr32 == 0x62b105u ||
+               addr32 == 0x62b184u || addr32 == 0x62b185u) {
+        if (ebp >= 0x1000u) {
+            print_focus_mem_sample("src_cur_ptr", ebp + 0x10u, 4);
+            print_focus_mem_sample("src_end_ptr", ebp - 0x10u, 4);
+            uint32_t src_cur = 0;
+            if (g_backend->mem_read(ebp + 0x10u, &src_cur, 4) == UC_ERR_OK && src_cur >= 0x1000u) {
+                print_focus_mem_sample("src_cur", src_cur, bytes);
+            }
+        }
+        if (ebx >= 0x1000u) {
+            print_focus_mem_sample("dst_cur", ebx, bytes);
+        }
     } else {
         print_focus_mem_sample("ecx", ecx, bytes);
         print_focus_mem_sample("edx", edx, bytes);
@@ -2019,6 +2036,161 @@ static bool accelerate_xml_branch_blocks(uc_engine* uc, uint32_t addr32) {
     return false;
 }
 
+static bool accelerate_text_norm_branch_blocks(uc_engine* uc, uint32_t addr32) {
+    if (!g_text_norm_branch_accel_enabled) return false;
+
+    if (addr32 == 0x62b0d8u) {
+        uint32_t ebp = 0;
+        uint32_t eax = 0;
+        uc_reg_read(uc, UC_X86_REG_EBP, &ebp);
+        uc_reg_read(uc, UC_X86_REG_EAX, &eax);
+
+        uint32_t ecx = 0;
+        if (g_backend->mem_read(ebp + 0x10u, &ecx, 4) != UC_ERR_OK) return false;
+        uint8_t al = 0;
+        if (g_backend->mem_read(ecx, &al, 1) != UC_ERR_OK) return false;
+
+        eax = (eax & 0xFFFFFF00u) | static_cast<uint32_t>(al);
+        uint32_t next = (al == 0x1Au) ? 0x62b193u : 0x62b0e5u;
+        uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+        uc_reg_write(uc, UC_X86_REG_ECX, &ecx);
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_text_norm_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    if (addr32 == 0x62b0e5u) {
+        uint32_t eax = 0;
+        uc_reg_read(uc, UC_X86_REG_EAX, &eax);
+        uint8_t al = static_cast<uint8_t>(eax & 0xFFu);
+        uint32_t next = (al == 0x0Du) ? 0x62b0f5u : 0x62b0e9u;
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_text_norm_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    if (addr32 == 0x62b0e9u) {
+        uint32_t eax = 0;
+        uint32_t ebx = 0;
+        uint32_t ecx = 0;
+        uint32_t ebp = 0;
+        uc_reg_read(uc, UC_X86_REG_EAX, &eax);
+        uc_reg_read(uc, UC_X86_REG_EBX, &ebx);
+        uc_reg_read(uc, UC_X86_REG_ECX, &ecx);
+        uc_reg_read(uc, UC_X86_REG_EBP, &ebp);
+
+        uint8_t al = static_cast<uint8_t>(eax & 0xFFu);
+        if (g_backend->mem_write(ebx, &al, 1) != UC_ERR_OK) return false;
+        ebx += 1u;
+        ecx += 1u;
+        if (g_backend->mem_write(ebp + 0x10u, &ecx, 4) != UC_ERR_OK) return false;
+
+        uint32_t next = 0x62b185u;
+        uc_reg_write(uc, UC_X86_REG_EBX, &ebx);
+        uc_reg_write(uc, UC_X86_REG_ECX, &ecx);
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_text_norm_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    if (addr32 == 0x62b0f5u) {
+        uint32_t ebp = 0;
+        uint32_t ecx = 0;
+        uc_reg_read(uc, UC_X86_REG_EBP, &ebp);
+        uc_reg_read(uc, UC_X86_REG_ECX, &ecx);
+
+        uint32_t eax = 0;
+        if (g_backend->mem_read(ebp - 0x10u, &eax, 4) != UC_ERR_OK) return false;
+        eax -= 1u;
+        uint32_t next = (ecx >= eax) ? 0x62b114u : 0x62b0fdu;
+        uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_text_norm_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    if (addr32 == 0x62b0fdu) {
+        uint32_t ecx = 0;
+        uc_reg_read(uc, UC_X86_REG_ECX, &ecx);
+
+        uint32_t eax = ecx + 1u;
+        uint8_t next_ch = 0;
+        if (g_backend->mem_read(eax, &next_ch, 1) != UC_ERR_OK) return false;
+
+        uint32_t next = (next_ch != 0x0Au) ? 0x62b10fu : 0x62b105u;
+        uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_text_norm_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    if (addr32 == 0x62b105u) {
+        uint32_t ebp = 0;
+        uint32_t ebx = 0;
+        uint32_t ecx = 0;
+        uc_reg_read(uc, UC_X86_REG_EBP, &ebp);
+        uc_reg_read(uc, UC_X86_REG_EBX, &ebx);
+        uc_reg_read(uc, UC_X86_REG_ECX, &ecx);
+
+        ecx += 2u;
+        if (g_backend->mem_write(ebp + 0x10u, &ecx, 4) != UC_ERR_OK) return false;
+        uint8_t lf = 0x0A;
+        if (g_backend->mem_write(ebx, &lf, 1) != UC_ERR_OK) return false;
+
+        uint32_t next = 0x62b184u;
+        uc_reg_write(uc, UC_X86_REG_ECX, &ecx);
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_text_norm_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    if (addr32 == 0x62b184u || addr32 == 0x62b185u) {
+        uint32_t ebp = 0;
+        uint32_t ebx = 0;
+        uc_reg_read(uc, UC_X86_REG_EBP, &ebp);
+        uc_reg_read(uc, UC_X86_REG_EBX, &ebx);
+
+        if (addr32 == 0x62b184u) {
+            ebx += 1u;
+            uc_reg_write(uc, UC_X86_REG_EBX, &ebx);
+        }
+
+        uint32_t eax = 0;
+        uint32_t src_cur = 0;
+        if (g_backend->mem_read(ebp - 0x10u, &eax, 4) != UC_ERR_OK) return false;
+        if (g_backend->mem_read(ebp + 0x10u, &src_cur, 4) != UC_ERR_OK) return false;
+        uint32_t next = (src_cur < eax) ? 0x62b0d8u : 0x62b191u;
+
+        uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_text_norm_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    return false;
+}
+
 static bool accelerate_string_insert_fill_55d410(uc_engine* uc, uint32_t addr32) {
     if (!g_string_insert_accel_enabled) return false;
     if (addr32 != 0x55d410u) return false;
@@ -2519,6 +2691,7 @@ static bool maybe_accelerate_hot_loop_block(uc_engine* uc, uint32_t addr32) {
     if (accelerate_stream_pop_5bb880(uc, addr32)) return true;
     if (accelerate_streambuf_branch_blocks(uc, addr32)) return true;
     if (accelerate_xml_branch_blocks(uc, addr32)) return true;
+    if (accelerate_text_norm_branch_blocks(uc, addr32)) return true;
     if (accelerate_wstr_to_str_small_5afbb0(uc, addr32)) return true;
     if (accelerate_insert_iter_5bba20(uc, addr32)) return true;
     if (accelerate_string_insert_fill_55d410(uc, addr32)) return true;
@@ -2708,6 +2881,9 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
             }
             if (g_xml_branch_fast_count > 0) {
                 cout << " xmlbranch=" << g_xml_branch_fast_count;
+            }
+            if (g_text_norm_branch_fast_count > 0) {
+                cout << " txtnorm=" << g_text_norm_branch_fast_count;
             }
             cout << "\n";
         }
@@ -3063,6 +3239,12 @@ int main(int argc, char **argv) {
     } else {
         g_xml_branch_accel_enabled = g_hot_loop_accel_enabled;
     }
+    const char* text_norm_branch_accel_env = std::getenv("PVZ_TEXT_NORM_BRANCH_ACCEL");
+    if (text_norm_branch_accel_env && *text_norm_branch_accel_env) {
+        g_text_norm_branch_accel_enabled = env_truthy("PVZ_TEXT_NORM_BRANCH_ACCEL");
+    } else {
+        g_text_norm_branch_accel_enabled = g_hot_loop_accel_enabled;
+    }
     const char* cookie_accel_env = std::getenv("PVZ_SECURITY_COOKIE_ACCEL");
     if (cookie_accel_env && *cookie_accel_env) {
         g_security_cookie_accel_enabled = env_truthy("PVZ_SECURITY_COOKIE_ACCEL");
@@ -3114,6 +3296,7 @@ int main(int argc, char **argv) {
                 0x5bf4e0u, 0x5bf4efu, 0x5bf4f8u, 0x5bf518u, 0x5bf52fu, 0x61be96u, 0x61beebu, 0x55d410u,
                 0x5bba20u, 0x5bb880u, 0x5bb894u, 0x5bb89fu, 0x5bbad0u, 0x5bbb12u, 0x61be1bu,
                 0x5a1f72u, 0x5a1f7bu, 0x5a1f8bu, 0x5a2052u, 0x5a210au,
+                0x62b0d8u, 0x62b0e5u, 0x62b0e9u, 0x62b0f5u, 0x62b0fdu, 0x62b105u, 0x62b184u, 0x62b185u,
                 0x5afbb0u, 0x5afc06u, 0x5afc0du, 0x5afc26u
             };
         }
@@ -3140,12 +3323,25 @@ int main(int argc, char **argv) {
 
     // Map Guest VRAM
     trace("before guest_vram map");
-    backend.mem_map(guest_vram, 800 * 600 * 4, UC_PROT_ALL);
+    uint32_t guest_vram_map_size = align_up_u32(static_cast<uint32_t>(g_guest_vram_size), 0x1000u);
+    uc_err guest_vram_map_err = backend.mem_map(guest_vram, guest_vram_map_size, UC_PROT_ALL);
+    if (guest_vram_map_err != UC_ERR_OK) {
+        cerr << "[!] Guest VRAM map failed: addr=0x" << hex << guest_vram
+             << " size=0x" << guest_vram_map_size
+             << " err=" << backend.strerror(guest_vram_map_err)
+             << " (" << dec << static_cast<int>(guest_vram_map_err) << ")\n";
+        return 1;
+    }
     trace("after guest_vram map");
 
     if (env_truthy("PVZ_MAP_NULL_PAGE")) {
         // Optional compatibility mode for binaries that transiently dereference low/null pointers.
-        backend.mem_map(0x0, 0x10000, UC_PROT_READ | UC_PROT_WRITE);
+        uc_err null_page_err = backend.mem_map(0x0, 0x10000, UC_PROT_READ | UC_PROT_WRITE);
+        if (null_page_err != UC_ERR_OK) {
+            cerr << "[!] Null-page map failed: err=" << backend.strerror(null_page_err)
+                 << " (" << static_cast<int>(null_page_err) << ")\n";
+            return 1;
+        }
         cout << "[*] Null-page compatibility mapping enabled (PVZ_MAP_NULL_PAGE).\n";
     }
 
@@ -3218,6 +3414,7 @@ int main(int argc, char **argv) {
                 << "0x5afbb0(wstr->str small), "
                 << "0x5bb880(stream pop), 0x5bb880/0x5bb894/0x5bb89f(streambuf branches), "
                 << "0x5a1f72/0x5a1f7b/0x5a1f8b/0x5a2052/0x5a210a(xml branches), "
+                << "0x62b0d8/0x62b0e5/0x62b0e9/0x62b0f5/0x62b0fd/0x62b105/0x62b184/0x62b185(text norm branches), "
                 << "0x5d8850(stream xor decode), "
                 << "0x61be1b(memmove_s wrapper), 0x624510(memmove), "
                 << "0x5d8f50(tree lookup loop), "
@@ -3273,6 +3470,9 @@ int main(int argc, char **argv) {
             cout << "[*] XML-branch accel option: "
                  << (g_xml_branch_accel_enabled ? "on" : "off")
                  << " (PVZ_XML_BRANCH_ACCEL).\n";
+            cout << "[*] Text-norm-branch accel option: "
+                 << (g_text_norm_branch_accel_enabled ? "on" : "off")
+                 << " (PVZ_TEXT_NORM_BRANCH_ACCEL).\n";
         }
         trace("after jit dispatcher init");
 
@@ -3471,6 +3671,9 @@ int main(int argc, char **argv) {
         }
         if (g_xml_branch_fast_count > 0) {
             cout << "[*] XML-branch fast-path summary: hits=" << g_xml_branch_fast_count << "\n";
+        }
+        if (g_text_norm_branch_fast_count > 0) {
+            cout << "[*] Text-norm-branch fast-path summary: hits=" << g_text_norm_branch_fast_count << "\n";
         }
         if (g_security_cookie_fast_count > 0) {
             cout << "[*] Security-cookie fast-path summary: hits=" << g_security_cookie_fast_count << "\n";

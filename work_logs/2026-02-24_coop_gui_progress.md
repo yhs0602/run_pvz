@@ -297,3 +297,21 @@
 - 결론:
   - 렌더링 루프 전 단계(`resources.xml` 이후 parser 체인) throughput은 확실히 개선.
   - 다음 병목은 여전히 parser 루프 상위 체인(`0x456610`, `0x5a1640`, `0x5bd830`, `0x61be1b`, `0x5bb88x`, `0x5a1fxx`)이며, `Lock/Unlock` 진입까지는 추가 압축이 필요.
+
+### 2026-02-25 21:50 KST 추가 진행(text-normalize 루프 + coop 재검증)
+- `main.cpp`에 text normalize branch-block fast-path 추가:
+  - 대상: `0x62b0d8/0x62b0e5/0x62b0e9/0x62b0f5/0x62b0fd/0x62b105/0x62b184/0x62b185`
+  - 옵션: `PVZ_TEXT_NORM_BRANCH_ACCEL` (미지정 시 hot-loop와 동행 ON)
+  - 계측: `txtnorm` 카운터/요약, block-focus 기본 주소셋에 `0x62b0xx` 추가
+- 실행 안정화 보강:
+  - guest VRAM 매핑 크기를 페이지 정렬(`align_up(guest_vram_size, 0x1000)`)로 변경.
+  - guest/null-page 매핑 실패 시 즉시 원인 로그를 출력하도록 보강.
+- non-coop 검증(`logs_render_push_textnorm_noncoop_20260225_213039.log`):
+  - `CreateThread -> WaitForSingleObject(0x7000/0x7004) -> CreateFileA('properties\\resources.xml')` 재확인.
+  - `txtnorm` 누적이 지속 증가(샘플 종료 시 `txtnorm=233584`, `hits=1700000`).
+  - 상위 hot set은 여전히 `0x456610/0x5a1640/0x5bd830/0x61be1b/0x5bb880/0x5a1f72...` 중심.
+  - `IDirectDrawSurface7::Lock/Unlock`는 이번 샘플에서도 미관측.
+- coop 경로 관찰:
+  - 추적 로그(`logs_coop_thread_diag_20260225_213512.log`)에서 worker thread spawn/실행 관측(`start=0x5d5dc0`, `SetEvent(0x7000)` 확인).
+  - 그러나 장시간 coop 샘플(`logs_render_push_textnorm_escalated_long_20260225_212128.log`, `logs_coop_default7500_probe_20260225_213839.log`)은 `CreateThread` 구간 체류가 길어 `Wait/resources.xml` 재진입까지 충분히 진행하지 못함.
+  - 다음 액션: coop scheduler 공정성/worker bootstrap 완료 조건을 별도 계측으로 추가 분해.
