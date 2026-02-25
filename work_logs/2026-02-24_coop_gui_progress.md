@@ -293,6 +293,19 @@
 - 병목은 여전히 resources.xml 이후 문자열/파서 루프 체인.
 - 다만 cooperative 동기화(critical section/wait handle) 의미 보존이 개선되어, 기존 “무조건 성공 반환”으로 인한 상태 오염 가능성은 줄어든 상태.
 
+### 2026-02-26 추가 진행 (XML 진행도 계측)
+- `main.cpp`에 XML parser 진행도 샘플러 추가:
+  - 옵션: `PVZ_XML_PROGRESS_TRACE=1`, `PVZ_XML_PROGRESS_INTERVAL`(기본 50000).
+  - 계측 위치: `0x456610` string-range fast-path.
+  - 출력: `calls`, `begin`, `src`, `data range`, `len`, `unchanged_calls`, `current char`.
+- 샘플 로그:
+  - `/tmp/pvz_xml_progress_20260226_012804.log`
+  - `begin` 포인터는 완전 고정이 아니라 짧은 범위 내에서 지속 변화(`unchanged_calls`가 0~1 수준)하며 루프 중.
+  - 즉, 현재 구간은 “완전 정지”라기보다 “짧은 문자열 버퍼 체인 반복 처리” 성격이 강함.
+- 성능 A/B 확인:
+  - `PVZ_INSERT_ITER_ACCEL=1` 재검증 시 baseline 대비 처리량 저하 재확인(동일 25s 기준 hot-accel hit 감소).
+  - 결론: insert-iterator fast-path는 계속 기본 OFF 유지.
+
 ### 2026-02-25 12:45 KST 추가 가속(wide->narrow small)
 - `PVZ_INSERT_ITER_ACCEL=off` 검증 로그(`logs_render_push_insiter_off_20260225_120847.log`)에서
   - 처리량이 이전 안정 패턴(2분 기준 약 1.05M hit)으로 복귀 확인.

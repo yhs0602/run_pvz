@@ -315,6 +315,11 @@ uint64_t g_xml_branch_fast_count = 0;
 bool g_text_norm_branch_accel_enabled = false;
 uint64_t g_text_norm_branch_fast_count = 0;
 uint64_t g_tiny_ctrl_fast_count = 0;
+bool g_xml_progress_trace_enabled = false;
+uint64_t g_xml_progress_trace_interval = 50000;
+uint64_t g_xml_progress_call_count = 0;
+uint64_t g_xml_progress_last_change = 0;
+uint32_t g_xml_progress_last_begin = 0;
 bool g_security_cookie_accel_enabled = false;
 bool g_lock_gate_probe_accel_enabled = false;
 bool g_lock_wrapper_accel_enabled = false;
@@ -1635,12 +1640,12 @@ static bool accelerate_string_range_view_456610(uc_engine* uc, uint32_t addr32) 
     bool invalid_range = false;
     uint32_t data_ptr = 0;
     uint32_t data_end = 0;
+    uint32_t src_len = 0;
     if (src_obj == 0u || begin_ptr == 0u || src_obj < 0x1000u) {
         invalid_range = true;
     } else {
-        uint32_t len = 0;
         uint32_t cap = 0;
-        if (g_backend->mem_read(src_obj + 0x14u, &len, 4) != UC_ERR_OK) return false;
+        if (g_backend->mem_read(src_obj + 0x14u, &src_len, 4) != UC_ERR_OK) return false;
         if (g_backend->mem_read(src_obj + 0x18u, &cap, 4) != UC_ERR_OK) return false;
         if (cap < 0x10u) {
             data_ptr = src_obj + 4u;
@@ -1648,8 +1653,8 @@ static bool accelerate_string_range_view_456610(uc_engine* uc, uint32_t addr32) 
             return false;
         }
         if (data_ptr < 0x1000u) return false;
-        if (data_ptr + len < data_ptr) return false;
-        data_end = data_ptr + len;
+        if (data_ptr + src_len < data_ptr) return false;
+        data_end = data_ptr + src_len;
         if (begin_ptr < data_ptr || begin_ptr > data_end) {
             invalid_range = true;
         }
@@ -1682,6 +1687,32 @@ static bool accelerate_string_range_view_456610(uc_engine* uc, uint32_t addr32) 
 
     if (g_backend->mem_write(dest, &src_obj, 4) != UC_ERR_OK) return false;
     if (g_backend->mem_write(dest + 4u, &begin_ptr, 4) != UC_ERR_OK) return false;
+
+    if (g_xml_progress_trace_enabled) {
+        g_xml_progress_call_count++;
+        if (begin_ptr != g_xml_progress_last_begin) {
+            g_xml_progress_last_begin = begin_ptr;
+            g_xml_progress_last_change = g_xml_progress_call_count;
+        }
+        if (g_xml_progress_trace_interval > 0 &&
+            (g_xml_progress_call_count % g_xml_progress_trace_interval) == 0u) {
+            uint8_t ch = 0;
+            bool ch_ok = (begin_ptr >= 0x1000u &&
+                          g_backend->mem_read(begin_ptr, &ch, 1) == UC_ERR_OK);
+            cout << "[XML PROGRESS] calls=" << g_xml_progress_call_count
+                 << " begin=0x" << hex << begin_ptr
+                 << " src=0x" << src_obj
+                 << " data=[0x" << data_ptr << ",0x" << data_end << "]"
+                 << dec << " len=" << src_len
+                 << " unchanged_calls=" << (g_xml_progress_call_count - g_xml_progress_last_change);
+            if (ch_ok) {
+                char display = (ch >= 0x20u && ch < 0x7Fu) ? static_cast<char>(ch) : '.';
+                cout << " ch=0x" << hex << static_cast<unsigned>(ch) << dec
+                     << "('" << display << "')";
+            }
+            cout << "\n";
+        }
+    }
 
     uint32_t new_esp = esp + 12u; // ret 8
     uc_reg_write(uc, UC_X86_REG_EAX, &dest);
@@ -3393,6 +3424,11 @@ int main(int argc, char **argv) {
     } else {
         g_text_norm_branch_accel_enabled = g_hot_loop_accel_enabled;
     }
+    g_xml_progress_trace_enabled = env_truthy("PVZ_XML_PROGRESS_TRACE");
+    int xml_progress_interval = env_int("PVZ_XML_PROGRESS_INTERVAL", 50000);
+    if (xml_progress_interval > 0) {
+        g_xml_progress_trace_interval = static_cast<uint64_t>(xml_progress_interval);
+    }
     const char* cookie_accel_env = std::getenv("PVZ_SECURITY_COOKIE_ACCEL");
     if (cookie_accel_env && *cookie_accel_env) {
         g_security_cookie_accel_enabled = env_truthy("PVZ_SECURITY_COOKIE_ACCEL");
@@ -3600,6 +3636,10 @@ int main(int argc, char **argv) {
                 cout << "[*] String-range accel options: clamp=" << (g_string_range_clamp_enabled ? "on" : "off")
                      << ", trace=" << (g_string_range_trace_enabled ? "on" : "off")
                      << " (PVZ_STRING_RANGE_CLAMP / PVZ_STRING_RANGE_TRACE).\n";
+            }
+            if (g_xml_progress_trace_enabled) {
+                cout << "[*] XML progress trace enabled: interval=" << g_xml_progress_trace_interval
+                     << " (PVZ_XML_PROGRESS_TRACE / PVZ_XML_PROGRESS_INTERVAL).\n";
             }
             cout << "[*] Cookie/gate accel options: cookie="
                  << (g_security_cookie_accel_enabled ? "on" : "off")
