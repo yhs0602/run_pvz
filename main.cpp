@@ -317,6 +317,7 @@ uint64_t g_text_norm_branch_fast_count = 0;
 uint64_t g_tiny_ctrl_fast_count = 0;
 bool g_security_cookie_accel_enabled = false;
 bool g_lock_gate_probe_accel_enabled = false;
+bool g_lock_wrapper_accel_enabled = false;
 uint64_t g_security_cookie_fast_count = 0;
 uint64_t g_lock_gate_probe_fast_count = 0;
 uint32_t g_guest_vram_base = 0;
@@ -332,6 +333,16 @@ bool g_vram_snapshot_enabled = false;
 uint64_t g_vram_snapshot_every = 1;
 uint64_t g_vram_snapshot_counter = 0;
 string g_vram_snapshot_prefix = "artifacts/vram_frame";
+bool g_vram_poll_snapshot_enabled = false;
+uint32_t g_vram_poll_interval_ms = 1000;
+uint32_t g_last_vram_poll_ms = 0;
+bool g_vram_poll_only_on_change = true;
+bool g_vram_poll_seen_hash = false;
+uint32_t g_vram_poll_last_hash = 0;
+uint64_t g_vram_poll_dumped = 0;
+uint64_t g_coop_pc_trace_interval = 0;
+uint64_t g_coop_pc_trace_counter = 0;
+uint64_t g_coop_pc_trace_min_hot_hits = 0;
 
 static uint64_t current_rss_mb() {
 #if defined(__APPLE__)
@@ -397,6 +408,47 @@ static void maybe_dump_vram_snapshot() {
     }
     out.close();
     cout << "[VRAM SNAPSHOT] wrote " << out_path.string() << "\n";
+}
+
+static uint32_t vram_sample_hash(const uint32_t* pixels, size_t count) {
+    if (!pixels || count == 0) return 0;
+    uint32_t h = 2166136261u;
+    size_t step = std::max<size_t>(1, count / 4096);
+    for (size_t i = 0; i < count; i += step) {
+        h ^= pixels[i];
+        h *= 16777619u;
+    }
+    h ^= pixels[count - 1];
+    h *= 16777619u;
+    return h;
+}
+
+static void maybe_poll_vram_snapshot() {
+    if (!g_vram_poll_snapshot_enabled || !g_backend || !g_host_vram_ptr || g_guest_vram_size == 0) return;
+    uint32_t now = SDL_GetTicks();
+    if (g_last_vram_poll_ms != 0 && (now - g_last_vram_poll_ms) < g_vram_poll_interval_ms) return;
+    g_last_vram_poll_ms = now;
+
+    if (g_backend->mem_read(g_guest_vram_base, g_host_vram_ptr, g_guest_vram_size) != UC_ERR_OK) return;
+
+    size_t px_count = g_guest_vram_size / sizeof(uint32_t);
+    uint32_t hash = vram_sample_hash(g_host_vram_ptr, px_count);
+    bool changed = !g_vram_poll_seen_hash || (hash != g_vram_poll_last_hash);
+    g_vram_poll_seen_hash = true;
+    g_vram_poll_last_hash = hash;
+    if (g_vram_poll_only_on_change && !changed) return;
+
+    if (g_texture_ptr && g_renderer_ptr) {
+        SDL_UpdateTexture(g_texture_ptr, nullptr, g_host_vram_ptr, 800 * 4);
+        SDL_RenderClear(g_renderer_ptr);
+        SDL_RenderCopy(g_renderer_ptr, g_texture_ptr, nullptr, nullptr);
+        SDL_RenderPresent(g_renderer_ptr);
+    }
+    maybe_dump_vram_snapshot();
+    g_vram_poll_dumped++;
+    cout << "[VRAM POLL] dump=" << g_vram_poll_dumped
+         << " hash=0x" << hex << hash << dec
+         << " changed=" << (changed ? "1" : "0") << "\n";
 }
 
 static void print_focus_mem_sample(const char* label, uint32_t addr, size_t bytes) {
@@ -1443,7 +1495,7 @@ static bool accelerate_crt_heapfree_callsite_61fccx(uc_engine* uc, uint32_t addr
 }
 
 static bool accelerate_lock_wrappers_62ce88_62cf60(uc_engine* uc, uint32_t addr32) {
-    if (!g_hot_loop_accel_enabled) return false;
+    if (!g_hot_loop_accel_enabled || !g_lock_wrapper_accel_enabled) return false;
     if (addr32 != 0x62ce88u && addr32 != 0x62cf60u) return false;
 
     uint32_t esp = 0;
@@ -3208,6 +3260,31 @@ int main(int argc, char **argv) {
     if (vram_snap_prefix && *vram_snap_prefix) {
         g_vram_snapshot_prefix = vram_snap_prefix;
     }
+    if (env_truthy("PVZ_VRAM_POLL_SNAPSHOT")) {
+        g_vram_poll_snapshot_enabled = true;
+    }
+    int vram_poll_ms = env_int("PVZ_VRAM_POLL_INTERVAL_MS", 1000);
+    if (vram_poll_ms > 0) {
+        g_vram_poll_interval_ms = static_cast<uint32_t>(vram_poll_ms);
+    }
+    const char* vram_poll_change = std::getenv("PVZ_VRAM_POLL_ONLY_ON_CHANGE");
+    if (vram_poll_change && *vram_poll_change) {
+        g_vram_poll_only_on_change = env_truthy("PVZ_VRAM_POLL_ONLY_ON_CHANGE");
+    }
+    if (g_vram_poll_snapshot_enabled && !g_vram_snapshot_enabled) {
+        g_vram_snapshot_enabled = true;
+        if (!vram_snap_prefix || !*vram_snap_prefix) {
+            g_vram_snapshot_prefix = "artifacts/vram_poll";
+        }
+    }
+    int coop_pc_trace_interval = env_int("PVZ_COOP_PC_TRACE_INTERVAL", 0);
+    if (coop_pc_trace_interval > 0) {
+        g_coop_pc_trace_interval = static_cast<uint64_t>(coop_pc_trace_interval);
+    }
+    int coop_pc_trace_min_hot_hits = env_int("PVZ_COOP_PC_TRACE_MIN_HOT_HITS", 0);
+    if (coop_pc_trace_min_hot_hits > 0) {
+        g_coop_pc_trace_min_hot_hits = static_cast<uint64_t>(coop_pc_trace_min_hot_hits);
+    }
     const char* profile_env = std::getenv("PVZ_PROFILE_BLOCKS");
     if (profile_env && *profile_env) {
         g_profile_blocks = env_truthy("PVZ_PROFILE_BLOCKS");
@@ -3327,6 +3404,13 @@ int main(int argc, char **argv) {
         g_lock_gate_probe_accel_enabled = env_truthy("PVZ_LOCK_GATE_ACCEL");
     } else {
         g_lock_gate_probe_accel_enabled = g_hot_loop_accel_enabled;
+    }
+    const char* lock_wrapper_accel_env = std::getenv("PVZ_LOCK_WRAPPER_ACCEL");
+    if (lock_wrapper_accel_env && *lock_wrapper_accel_env) {
+        g_lock_wrapper_accel_enabled = env_truthy("PVZ_LOCK_WRAPPER_ACCEL");
+    } else {
+        // Default-off under cooperative threading to preserve lock sequencing.
+        g_lock_wrapper_accel_enabled = g_hot_loop_accel_enabled && !env_truthy("PVZ_COOP_THREADS");
     }
     const char* crt_alloc_accel_env = std::getenv("PVZ_CRT_ALLOC_ACCEL");
     if (crt_alloc_accel_env && *crt_alloc_accel_env) {
@@ -3459,6 +3543,11 @@ int main(int argc, char **argv) {
                  << ", prefix='" << g_vram_snapshot_prefix
                  << "' (PVZ_VRAM_SNAPSHOT / PVZ_VRAM_SNAPSHOT_EVERY / PVZ_VRAM_SNAPSHOT_PREFIX).\n";
         }
+        if (g_vram_poll_snapshot_enabled) {
+            cout << "[*] VRAM poll snapshot enabled: interval_ms=" << g_vram_poll_interval_ms
+                 << ", only_on_change=" << (g_vram_poll_only_on_change ? "on" : "off")
+                 << " (PVZ_VRAM_POLL_SNAPSHOT / PVZ_VRAM_POLL_INTERVAL_MS / PVZ_VRAM_POLL_ONLY_ON_CHANGE).\n";
+        }
         if (g_block_focus_trace_enabled) {
             cout << "[*] Block focus trace enabled: interval=" << g_block_focus_interval
                  << ", dump_bytes=" << g_block_focus_dump_bytes << ", addrs=";
@@ -3515,7 +3604,8 @@ int main(int argc, char **argv) {
             cout << "[*] Cookie/gate accel options: cookie="
                  << (g_security_cookie_accel_enabled ? "on" : "off")
                  << ", gate=" << (g_lock_gate_probe_accel_enabled ? "on" : "off")
-                 << " (PVZ_SECURITY_COOKIE_ACCEL / PVZ_LOCK_GATE_ACCEL).\n";
+                 << ", lockwrap=" << (g_lock_wrapper_accel_enabled ? "on" : "off")
+                 << " (PVZ_SECURITY_COOKIE_ACCEL / PVZ_LOCK_GATE_ACCEL / PVZ_LOCK_WRAPPER_ACCEL).\n";
             cout << "[*] Wstring append accel option: "
                  << (g_wstring_append_accel_enabled ? "on" : "off")
                  << " (PVZ_WSTRING_APPEND_ACCEL).\n";
@@ -3638,6 +3728,11 @@ int main(int argc, char **argv) {
             cout << "[*] PC stall trace enabled: report_every=" << pc_stall_report_every
                  << " slices (PVZ_PC_STALL_TRACE / PVZ_PC_STALL_REPORT).\n";
         }
+        if (g_coop_pc_trace_interval > 0) {
+            cout << "[*] Cooperative PC trace enabled: interval=" << g_coop_pc_trace_interval
+                 << ", min_hot_hits=" << g_coop_pc_trace_min_hot_hits
+                 << " (PVZ_COOP_PC_TRACE_INTERVAL / PVZ_COOP_PC_TRACE_MIN_HOT_HITS).\n";
+        }
         while (true) {
             size_t emu_count = 0;
             if (api_handler.coop_threads_enabled()) {
@@ -3648,6 +3743,7 @@ int main(int argc, char **argv) {
                         cout << "\n[+] Cooperative scheduler finished (no runnable threads).\n";
                         break;
                     }
+                    SDL_Delay(1);
                     continue;
                 }
                 emu_count = api_handler.coop_timeslice_count();
@@ -3702,10 +3798,23 @@ int main(int argc, char **argv) {
                 std::cerr << "[!] Stopped by RSS guard at approx " << g_rss_guard_last_mb << "MB.\n";
                 break;
             }
+            if (g_vram_poll_snapshot_enabled) {
+                maybe_poll_vram_snapshot();
+            }
             if (api_handler.coop_threads_enabled()) {
                 api_handler.coop_on_timeslice_end();
                 pc = api_handler.coop_current_pc();
                 maybe_trace_pc_stall(pc);
+                if (g_coop_pc_trace_interval > 0) {
+                    g_coop_pc_trace_counter++;
+                    if (g_hot_loop_accel_hits >= g_coop_pc_trace_min_hot_hits &&
+                        (g_coop_pc_trace_counter % g_coop_pc_trace_interval) == 0u) {
+                        cout << "[COOP PC] slice=" << g_coop_pc_trace_counter
+                             << " tid=" << api_handler.coop_current_thread_id()
+                             << " pc=0x" << hex << pc << dec
+                             << " hot_hits=" << g_hot_loop_accel_hits << "\n";
+                    }
+                }
                 if (api_handler.coop_should_terminate()) {
                     cout << "\n[+] Cooperative scheduler reported completion.\n";
                     break;

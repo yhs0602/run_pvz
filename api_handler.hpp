@@ -6,7 +6,9 @@
 #include <unordered_set>
 #include <vector>
 #include <map>
+#include <deque>
 #include <iostream>
+#include <limits>
 #include "api_context.hpp"
 
 // Move to an actual dynamic map for late injection (e.g. COM Objects)
@@ -38,11 +40,21 @@ private:
         bool runnable = true;
         bool finished = false;
         bool waiting_message = false;
+        bool waiting_critical_section = false;
+        bool waiting_handle = false;
         uint32_t wait_hwnd_filter = 0;
         uint32_t wait_min_filter = 0;
         uint32_t wait_max_filter = 0;
+        uint32_t wait_critical_section = 0;
+        uint32_t wait_handle = 0;
         uint64_t quanta = 0;
         CoopThreadRegs regs;
+    };
+
+    struct CoopCriticalSectionState {
+        uint32_t owner_thread_id = 0;
+        uint32_t recursion = 0;
+        std::deque<uint32_t> waiters;
     };
 
     CpuBackend& backend;
@@ -96,10 +108,17 @@ private:
     uint32_t coop_stack_cursor = 0x2F000000;
     uint32_t coop_live_threads = 0;
     uint64_t coop_spawn_fail_count = 0;
+    uint64_t coop_cs_enter_count = 0;
+    uint64_t coop_cs_block_count = 0;
+    uint64_t coop_cs_wake_count = 0;
+    uint64_t coop_cs_try_fail_count = 0;
     size_t guest_thread_handle_count = 0;
     std::multimap<uint32_t, uint32_t> coop_free_stacks_by_size; // size -> stack base
     std::vector<uint32_t> coop_order;
     std::unordered_map<uint32_t, CoopThreadState> coop_threads;
+    std::unordered_map<uint32_t, std::deque<uint32_t>> coop_handle_waiters;
+    std::unordered_map<uint32_t, CoopCriticalSectionState> coop_critical_sections;
+    std::unordered_map<uint32_t, std::unordered_set<uint32_t>> coop_thread_owned_critical_sections;
     uint32_t current_addr;
     std::string process_base_dir;
     bool coop_read_regs(CoopThreadRegs& regs);
@@ -111,6 +130,14 @@ private:
     bool coop_mark_thread_finished(uint32_t handle, const char* reason);
     bool coop_try_reuse_stack(uint32_t stack_size, uint32_t& stack_base);
     void coop_recycle_thread_stack(CoopThreadState& thread);
+    bool coop_find_thread_handle_by_tid(uint32_t thread_id, uint32_t& out_handle);
+    bool coop_enter_critical_section(uint32_t cs_ptr, bool blocking);
+    void coop_leave_critical_section(uint32_t cs_ptr);
+    void coop_delete_critical_section(uint32_t cs_ptr);
+    bool coop_block_current_thread_on_handle_wait(uint32_t handle);
+    size_t coop_wake_handle_waiters(uint32_t handle, size_t max_wake = std::numeric_limits<size_t>::max());
+    void coop_clear_thread_handle_wait(uint32_t thread_id);
+    void coop_release_thread_critical_sections(uint32_t thread_id);
     size_t reap_finished_thread_handles(size_t target_keep);
     size_t thread_handle_count() const { return guest_thread_handle_count; }
     void note_thread_handle_created() { guest_thread_handle_count++; }

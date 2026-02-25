@@ -1032,12 +1032,20 @@
                 uint32_t h = handler->ctx.get_arg(0);
                 auto it = handler->ctx.handle_map.find("event_" + std::to_string(h));
                 if (it != handler->ctx.handle_map.end()) {
-                    static_cast<EventHandle*>(it->second)->signaled = true;
+                    auto* ev = static_cast<EventHandle*>(it->second);
+                    ev->signaled = true;
+                    size_t woke = 0;
+                    if (handler->coop_threads_enabled()) {
+                        size_t max_wake = ev->manual_reset ? std::numeric_limits<size_t>::max() : 1u;
+                        woke = handler->coop_wake_handle_waiters(h, max_wake);
+                    }
                     handler->ctx.set_eax(1);
                     handler->ctx.global_state["LastError"] = 0;
                     if (thread_mock_trace_enabled()) {
                         std::cout << "[THREAD MOCK] SetEvent(handle=0x" << std::hex << h
-                                  << ") -> signaled\n" << std::dec;
+                                  << ") -> signaled"
+                                  << (handler->coop_threads_enabled() ? (", woke=" + std::to_string(woke)) : "")
+                                  << "\n" << std::dec;
                     }
                 } else {
                     handler->ctx.set_eax(0);
@@ -1078,12 +1086,19 @@
                         wait_result = 0; // WAIT_OBJECT_0
                         if (!ev->manual_reset) ev->signaled = false;
                     } else {
-                        // Non-blocking emulation for unsignaled events.
-                        // Infinite waits are treated as signaled to avoid deadlock,
-                        // finite waits return WAIT_TIMEOUT.
-                        wait_result = (timeout_ms == 0xFFFFFFFFu) ? 0 : 0x102;
-                        if (handler->coop_threads_enabled()) {
-                            handler->coop_request_yield();
+                        if (timeout_ms == 0u) {
+                            wait_result = 0x102; // WAIT_TIMEOUT
+                        } else if (handler->coop_threads_enabled()) {
+                            if (handler->coop_block_current_thread_on_handle_wait(h)) {
+                                handler->coop_request_yield();
+                                handler->backend.emu_stop();
+                                return;
+                            }
+                            // Fallback for unexpected cooperative state mismatch.
+                            wait_result = (timeout_ms == 0xFFFFFFFFu) ? 0u : 0x102u;
+                        } else {
+                            // Legacy non-coop fallback.
+                            wait_result = (timeout_ms == 0xFFFFFFFFu) ? 0 : 0x102;
                         }
                     }
                     handler->ctx.global_state["LastError"] = 0;
@@ -1106,13 +1121,16 @@
                         wait_result = 0; // WAIT_OBJECT_0
                     } else if (timeout_ms == 0) {
                         wait_result = 0x102; // WAIT_TIMEOUT
-                    } else {
-                        // Cooperative mode fallback: report success for compatibility but
-                        // request a scheduler yield so worker progress can happen.
-                        wait_result = 0;
-                        if (handler->coop_threads_enabled()) {
+                    } else if (handler->coop_threads_enabled()) {
+                        if (handler->coop_block_current_thread_on_handle_wait(h)) {
                             handler->coop_request_yield();
+                            handler->backend.emu_stop();
+                            return;
                         }
+                        wait_result = 0x102;
+                    } else {
+                        // Non-cooperative fallback: keep legacy behavior.
+                        wait_result = 0;
                     }
                     handler->ctx.global_state["LastError"] = 0;
                     if (thread_mock_trace_enabled()) {
@@ -1374,11 +1392,40 @@
                 val--;
                 handler->backend.mem_write(target_ptr, &val, 4);
                 handler->ctx.set_eax(val);
-            } else if (name == "KERNEL32.dll!EnterCriticalSection" ||
-                       name == "KERNEL32.dll!LeaveCriticalSection" ||
-                       name == "KERNEL32.dll!InitializeCriticalSection" ||
-                       name == "KERNEL32.dll!InitializeCriticalSectionAndSpinCount") {
-                // Hot-path sync APIs: treat as no-op success and keep logs quiet.
+            } else if (name == "KERNEL32.dll!EnterCriticalSection") {
+                uint32_t cs_ptr = handler->ctx.get_arg(0);
+                if (handler->coop_threads_enabled()) {
+                    if (!handler->coop_enter_critical_section(cs_ptr, true)) {
+                        // Keep EIP at this API stub and yield; the call should only return
+                        // after lock ownership is granted.
+                        handler->coop_request_yield();
+                        handler->backend.emu_stop();
+                        return;
+                    }
+                }
+                handler->ctx.set_eax(1);
+            } else if (name == "KERNEL32.dll!TryEnterCriticalSection") {
+                uint32_t cs_ptr = handler->ctx.get_arg(0);
+                bool acquired = true;
+                if (handler->coop_threads_enabled()) {
+                    acquired = handler->coop_enter_critical_section(cs_ptr, false);
+                }
+                handler->ctx.set_eax(acquired ? 1u : 0u);
+            } else if (name == "KERNEL32.dll!LeaveCriticalSection") {
+                if (handler->coop_threads_enabled()) {
+                    uint32_t cs_ptr = handler->ctx.get_arg(0);
+                    handler->coop_leave_critical_section(cs_ptr);
+                }
+                handler->ctx.set_eax(1);
+            } else if (name == "KERNEL32.dll!DeleteCriticalSection") {
+                if (handler->coop_threads_enabled()) {
+                    uint32_t cs_ptr = handler->ctx.get_arg(0);
+                    handler->coop_delete_critical_section(cs_ptr);
+                }
+                handler->ctx.set_eax(1);
+            } else if (name == "KERNEL32.dll!InitializeCriticalSection" ||
+                       name == "KERNEL32.dll!InitializeCriticalSectionAndSpinCount" ||
+                       name == "KERNEL32.dll!InitializeCriticalSectionEx") {
                 handler->ctx.set_eax(1);
             } else if (name == "OLEAUT32.dll!Ordinal_9") {
                 handler->ctx.set_eax(0);

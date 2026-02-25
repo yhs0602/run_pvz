@@ -1421,6 +1421,13 @@ void DummyAPIHandler::cleanup_process_state() {
     if (g_win32_queue_stats.dropped_full != 0 || g_win32_queue_stats.dropped_dedup != 0) {
         maybe_log_win32_queue_stats("cleanup", true);
     }
+    if (coop_cs_enter_count != 0 || coop_cs_block_count != 0 ||
+        coop_cs_wake_count != 0 || coop_cs_try_fail_count != 0) {
+        std::cout << "[COOP] critical-section stats: enter=" << coop_cs_enter_count
+                  << " block=" << coop_cs_block_count
+                  << " wake=" << coop_cs_wake_count
+                  << " try_fail=" << coop_cs_try_fail_count << "\n";
+    }
     for (auto& kv : ctx.handle_map) {
         const std::string& key = kv.first;
         void* ptr = kv.second;
@@ -1484,12 +1491,19 @@ void DummyAPIHandler::cleanup_process_state() {
     hot_loop_api_dropped = 0;
     dylib_mock_runtime_noop_warned.clear();
     coop_threads.clear();
+    coop_handle_waiters.clear();
+    coop_critical_sections.clear();
+    coop_thread_owned_critical_sections.clear();
     coop_order.clear();
     coop_current_handle = 0;
     coop_thread_id_top = 1;
     coop_stack_cursor = 0x2F000000;
     coop_live_threads = 0;
     coop_spawn_fail_count = 0;
+    coop_cs_enter_count = 0;
+    coop_cs_block_count = 0;
+    coop_cs_wake_count = 0;
+    coop_cs_try_fail_count = 0;
     coop_free_stacks_by_size.clear();
     guest_thread_handle_count = 0;
     coop_threads_initialized = false;
@@ -1768,8 +1782,16 @@ bool DummyAPIHandler::coop_mark_thread_finished(uint32_t handle, const char* rea
     auto it = coop_threads.find(handle);
     if (it == coop_threads.end()) return false;
     if (it->second.finished) return true;
+    coop_wake_handle_waiters(handle);
+    coop_clear_thread_handle_wait(it->second.thread_id);
+    coop_release_thread_critical_sections(it->second.thread_id);
     it->second.finished = true;
     it->second.runnable = false;
+    it->second.waiting_message = false;
+    it->second.waiting_critical_section = false;
+    it->second.waiting_handle = false;
+    it->second.wait_critical_section = 0;
+    it->second.wait_handle = 0;
     coop_recycle_thread_stack(it->second);
     if (coop_trace) {
         std::cout << "[COOP] thread 0x" << std::hex << handle << std::dec
@@ -1902,9 +1924,13 @@ void DummyAPIHandler::coop_block_current_thread_on_message_wait(uint32_t hwnd_fi
     if (it->second.is_main || it->second.finished) return;
     if (!it->second.runnable) return;
     it->second.waiting_message = true;
+    it->second.waiting_critical_section = false;
+    it->second.waiting_handle = false;
     it->second.wait_hwnd_filter = hwnd_filter;
     it->second.wait_min_filter = min_filter;
     it->second.wait_max_filter = max_filter;
+    it->second.wait_critical_section = 0;
+    it->second.wait_handle = 0;
     it->second.runnable = false;
     coop_force_yield = true;
     if (coop_trace) {
@@ -1931,6 +1957,10 @@ void DummyAPIHandler::coop_notify_message_enqueued(uint32_t target_thread_id,
             continue;
         }
         th.waiting_message = false;
+        th.waiting_critical_section = false;
+        th.waiting_handle = false;
+        th.wait_critical_section = 0;
+        th.wait_handle = 0;
         th.runnable = true;
         if (coop_trace) {
             std::cout << "[COOP] message-wake handle=0x" << std::hex << th.handle
@@ -1948,6 +1978,10 @@ void DummyAPIHandler::coop_wake_message_waiter(uint32_t thread_id) {
         if (th.finished || th.thread_id != thread_id) continue;
         if (!th.runnable) {
             th.waiting_message = false;
+            th.waiting_critical_section = false;
+            th.waiting_handle = false;
+            th.wait_critical_section = 0;
+            th.wait_handle = 0;
             th.runnable = true;
             if (coop_trace) {
                 std::cout << "[COOP] message-wake handle=0x" << std::hex << th.handle
@@ -1962,13 +1996,93 @@ void DummyAPIHandler::coop_wake_all_message_waiters() {
     for (auto& kv : coop_threads) {
         CoopThreadState& th = kv.second;
         if (th.finished) continue;
-        if (!th.runnable) {
+        if (!th.runnable && th.waiting_message) {
             th.waiting_message = false;
+            th.waiting_critical_section = false;
+            th.waiting_handle = false;
+            th.wait_critical_section = 0;
+            th.wait_handle = 0;
             th.runnable = true;
             if (coop_trace) {
                 std::cout << "[COOP] message-wake-all handle=0x" << std::hex << th.handle
                           << " tid=" << std::dec << th.thread_id << "\n";
             }
+        }
+    }
+}
+
+bool DummyAPIHandler::coop_block_current_thread_on_handle_wait(uint32_t handle) {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized || handle == 0u) return false;
+    auto it = coop_threads.find(coop_current_handle);
+    if (it == coop_threads.end() || it->second.finished) return false;
+    uint32_t tid = it->second.thread_id;
+
+    auto& waiters = coop_handle_waiters[handle];
+    if (std::find(waiters.begin(), waiters.end(), tid) == waiters.end()) {
+        waiters.push_back(tid);
+    }
+
+    it->second.waiting_message = false;
+    it->second.waiting_critical_section = false;
+    it->second.waiting_handle = true;
+    it->second.wait_critical_section = 0;
+    it->second.wait_handle = handle;
+    it->second.runnable = false;
+    coop_force_yield = true;
+
+    if (coop_trace) {
+        std::cout << "[COOP] handle-wait tid=" << tid
+                  << " handle=0x" << std::hex << it->second.handle
+                  << " wait_on=0x" << handle << std::dec << "\n";
+    }
+    return true;
+}
+
+size_t DummyAPIHandler::coop_wake_handle_waiters(uint32_t handle, size_t max_wake) {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized || handle == 0u) return 0;
+    auto it_wait = coop_handle_waiters.find(handle);
+    if (it_wait == coop_handle_waiters.end()) return 0;
+
+    size_t woke = 0;
+    auto& waiters = it_wait->second;
+    while (!waiters.empty() && woke < max_wake) {
+        uint32_t tid = waiters.front();
+        waiters.pop_front();
+
+        uint32_t th_handle = 0;
+        if (!coop_find_thread_handle_by_tid(tid, th_handle)) continue;
+        auto it_thread = coop_threads.find(th_handle);
+        if (it_thread == coop_threads.end() || it_thread->second.finished) continue;
+        CoopThreadState& th = it_thread->second;
+        if (!th.waiting_handle || th.wait_handle != handle) continue;
+        th.waiting_handle = false;
+        th.wait_handle = 0;
+        if (!th.waiting_message && !th.waiting_critical_section) {
+            th.runnable = true;
+        }
+        woke++;
+        if (coop_trace) {
+            std::cout << "[COOP] handle-wake tid=" << tid
+                      << " handle=0x" << std::hex << th.handle
+                      << " wait_on=0x" << handle << std::dec << "\n";
+        }
+    }
+
+    if (waiters.empty()) {
+        coop_handle_waiters.erase(it_wait);
+    }
+    return woke;
+}
+
+void DummyAPIHandler::coop_clear_thread_handle_wait(uint32_t thread_id) {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized || thread_id == 0u) return;
+    for (auto it = coop_handle_waiters.begin(); it != coop_handle_waiters.end();) {
+        auto& waiters = it->second;
+        waiters.erase(std::remove(waiters.begin(), waiters.end(), thread_id), waiters.end());
+        if (waiters.empty()) {
+            it = coop_handle_waiters.erase(it);
+        } else {
+            ++it;
         }
     }
 }
@@ -2068,6 +2182,203 @@ bool DummyAPIHandler::coop_is_thread_finished(uint32_t handle) const {
     return it->second.finished;
 }
 
+bool DummyAPIHandler::coop_find_thread_handle_by_tid(uint32_t thread_id, uint32_t& out_handle) {
+    if (thread_id == 0) return false;
+    for (const auto& kv : coop_threads) {
+        if (kv.second.thread_id == thread_id && !kv.second.finished) {
+            out_handle = kv.first;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool DummyAPIHandler::coop_enter_critical_section(uint32_t cs_ptr, bool blocking) {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized) return true;
+    if (cs_ptr < 0x1000u) return true;
+
+    auto it_self = coop_threads.find(coop_current_handle);
+    if (it_self == coop_threads.end() || it_self->second.finished) return false;
+    uint32_t tid = it_self->second.thread_id;
+
+    auto& cs = coop_critical_sections[cs_ptr];
+    if (cs.owner_thread_id == 0u || cs.owner_thread_id == tid) {
+        cs.owner_thread_id = tid;
+        cs.recursion = (cs.recursion == 0u) ? 1u : (cs.recursion + 1u);
+        coop_thread_owned_critical_sections[tid].insert(cs_ptr);
+        coop_cs_enter_count++;
+        it_self->second.waiting_critical_section = false;
+        it_self->second.waiting_handle = false;
+        it_self->second.wait_critical_section = 0;
+        it_self->second.wait_handle = 0;
+        return true;
+    }
+
+    if (!blocking) {
+        coop_cs_try_fail_count++;
+        return false;
+    }
+
+    if (std::find(cs.waiters.begin(), cs.waiters.end(), tid) == cs.waiters.end()) {
+        cs.waiters.push_back(tid);
+    }
+    it_self->second.waiting_message = false;
+    it_self->second.waiting_critical_section = true;
+    it_self->second.waiting_handle = false;
+    it_self->second.wait_critical_section = cs_ptr;
+    it_self->second.wait_handle = 0;
+    it_self->second.runnable = false;
+    coop_force_yield = true;
+    coop_cs_block_count++;
+
+    if (coop_trace) {
+        std::cout << "[COOP] cs-wait tid=" << tid
+                  << " handle=0x" << std::hex << it_self->second.handle
+                  << " cs=0x" << cs_ptr
+                  << " owner_tid=" << std::dec << cs.owner_thread_id << "\n";
+    }
+    return false;
+}
+
+void DummyAPIHandler::coop_leave_critical_section(uint32_t cs_ptr) {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized) return;
+    if (cs_ptr < 0x1000u) return;
+
+    auto it_cs = coop_critical_sections.find(cs_ptr);
+    if (it_cs == coop_critical_sections.end()) return;
+    auto it_self = coop_threads.find(coop_current_handle);
+    if (it_self == coop_threads.end()) return;
+    uint32_t tid = it_self->second.thread_id;
+    CoopCriticalSectionState& cs = it_cs->second;
+    if (cs.owner_thread_id != tid || cs.recursion == 0u) return;
+
+    cs.recursion--;
+    if (cs.recursion > 0u) return;
+    cs.owner_thread_id = 0u;
+
+    auto it_owned = coop_thread_owned_critical_sections.find(tid);
+    if (it_owned != coop_thread_owned_critical_sections.end()) {
+        it_owned->second.erase(cs_ptr);
+        if (it_owned->second.empty()) {
+            coop_thread_owned_critical_sections.erase(it_owned);
+        }
+    }
+
+    while (!cs.waiters.empty()) {
+        uint32_t waiter_tid = cs.waiters.front();
+        cs.waiters.pop_front();
+        uint32_t waiter_handle = 0;
+        if (!coop_find_thread_handle_by_tid(waiter_tid, waiter_handle)) {
+            continue;
+        }
+        auto it_waiter = coop_threads.find(waiter_handle);
+        if (it_waiter == coop_threads.end() || it_waiter->second.finished) {
+            continue;
+        }
+
+        cs.owner_thread_id = waiter_tid;
+        cs.recursion = 1u;
+        coop_thread_owned_critical_sections[waiter_tid].insert(cs_ptr);
+        coop_cs_wake_count++;
+        it_waiter->second.waiting_critical_section = false;
+        it_waiter->second.waiting_handle = false;
+        it_waiter->second.wait_critical_section = 0;
+        it_waiter->second.wait_handle = 0;
+        it_waiter->second.runnable = true;
+
+        if (coop_trace) {
+            std::cout << "[COOP] cs-wake tid=" << waiter_tid
+                      << " handle=0x" << std::hex << waiter_handle
+                      << " cs=0x" << cs_ptr << std::dec << "\n";
+        }
+        break;
+    }
+
+    if (cs.owner_thread_id == 0u && cs.waiters.empty()) {
+        coop_critical_sections.erase(it_cs);
+    }
+}
+
+void DummyAPIHandler::coop_delete_critical_section(uint32_t cs_ptr) {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized) return;
+    if (cs_ptr < 0x1000u) return;
+
+    auto it_cs = coop_critical_sections.find(cs_ptr);
+    if (it_cs == coop_critical_sections.end()) return;
+
+    if (it_cs->second.owner_thread_id != 0u) {
+        auto it_owned = coop_thread_owned_critical_sections.find(it_cs->second.owner_thread_id);
+        if (it_owned != coop_thread_owned_critical_sections.end()) {
+            it_owned->second.erase(cs_ptr);
+            if (it_owned->second.empty()) {
+                coop_thread_owned_critical_sections.erase(it_owned);
+            }
+        }
+    }
+
+    for (uint32_t waiter_tid : it_cs->second.waiters) {
+        uint32_t waiter_handle = 0;
+        if (!coop_find_thread_handle_by_tid(waiter_tid, waiter_handle)) continue;
+        auto it_waiter = coop_threads.find(waiter_handle);
+        if (it_waiter == coop_threads.end() || it_waiter->second.finished) continue;
+        it_waiter->second.waiting_critical_section = false;
+        it_waiter->second.waiting_handle = false;
+        it_waiter->second.wait_critical_section = 0;
+        it_waiter->second.wait_handle = 0;
+        if (!it_waiter->second.waiting_message) {
+            it_waiter->second.runnable = true;
+        }
+    }
+    coop_critical_sections.erase(it_cs);
+}
+
+void DummyAPIHandler::coop_release_thread_critical_sections(uint32_t thread_id) {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized || thread_id == 0u) return;
+
+    auto it_owned = coop_thread_owned_critical_sections.find(thread_id);
+    if (it_owned != coop_thread_owned_critical_sections.end()) {
+        std::vector<uint32_t> owned_cs(it_owned->second.begin(), it_owned->second.end());
+        for (uint32_t cs_ptr : owned_cs) {
+            auto it_cs = coop_critical_sections.find(cs_ptr);
+            if (it_cs == coop_critical_sections.end()) continue;
+            CoopCriticalSectionState& cs = it_cs->second;
+            if (cs.owner_thread_id == thread_id) {
+                cs.owner_thread_id = 0u;
+                cs.recursion = 0u;
+                while (!cs.waiters.empty()) {
+                    uint32_t waiter_tid = cs.waiters.front();
+                    cs.waiters.pop_front();
+                    uint32_t waiter_handle = 0;
+                    if (!coop_find_thread_handle_by_tid(waiter_tid, waiter_handle)) continue;
+                    auto it_waiter = coop_threads.find(waiter_handle);
+                    if (it_waiter == coop_threads.end() || it_waiter->second.finished) continue;
+                    cs.owner_thread_id = waiter_tid;
+                    cs.recursion = 1u;
+                    coop_thread_owned_critical_sections[waiter_tid].insert(cs_ptr);
+                    coop_cs_wake_count++;
+                    it_waiter->second.waiting_critical_section = false;
+                    it_waiter->second.waiting_handle = false;
+                    it_waiter->second.wait_critical_section = 0;
+                    it_waiter->second.wait_handle = 0;
+                    it_waiter->second.runnable = true;
+                    break;
+                }
+            }
+        }
+        coop_thread_owned_critical_sections.erase(it_owned);
+    }
+
+    for (auto it_cs = coop_critical_sections.begin(); it_cs != coop_critical_sections.end();) {
+        auto& waiters = it_cs->second.waiters;
+        waiters.erase(std::remove(waiters.begin(), waiters.end(), thread_id), waiters.end());
+        if (it_cs->second.owner_thread_id == 0u && waiters.empty()) {
+            it_cs = coop_critical_sections.erase(it_cs);
+        } else {
+            ++it_cs;
+        }
+    }
+}
+
 void DummyAPIHandler::coop_on_timeslice_end() {
     if (!coop_threads_enabled_flag || !coop_threads_initialized) return;
     auto it = coop_threads.find(coop_current_handle);
@@ -2140,12 +2451,16 @@ bool DummyAPIHandler::coop_should_terminate() const {
     if (it_main != coop_threads.end() && it_main->second.finished) {
         return true;
     }
+    bool any_live = false;
     for (uint32_t handle : coop_order) {
         auto it = coop_threads.find(handle);
         if (it == coop_threads.end()) continue;
-        if (!it->second.finished && it->second.runnable) return false;
+        if (!it->second.finished) {
+            any_live = true;
+            if (it->second.runnable) return false;
+        }
     }
-    return true;
+    return !any_live;
 }
 
 uint32_t DummyAPIHandler::register_fake_api(const std::string& full_name) {

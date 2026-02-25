@@ -259,6 +259,40 @@
   - `PVZ_INSERT_ITER_ACCEL` 기본값을 OFF로 롤백(명시 opt-in일 때만 활성화).
   - 해당 fast-path는 실험 옵션으로 유지하고, 기본 경로는 안정적 가속 세트로 계속 진행.
 
+### 2026-02-26 추가 진행 (동기화 정합성 보강)
+- disasm/추적 보강:
+  - `analysis/disasm/`에 `0x5a1f40`, `0x5bb860`, `0x5bb9e0`, `0x456610`, `0x5bf4e0`, `0x55d410`, `0x5a1640` 구간 추가 덤프.
+  - 최신 hot 루프(`0x5a1f7b -> 0x5bb8xx -> 0x62158c/0x6215f9`)가 반복되는 구간을 원본 바이너리 기준으로 재대조.
+- cooperative critical section 모델 도입:
+  - `Enter/TryEnter/Leave/DeleteCriticalSection`에 guest thread-id 기반 소유/재진입/대기큐 모델 추가.
+  - lock 미획득 시 API call을 즉시 반환하지 않고 해당 스레드를 park 후 `emu_stop()`으로 yield.
+  - lock release 시 waiter 깨움(`cs-wake`) 및 thread finish 시 lock ownership 정리.
+  - 계측 카운터 추가: `enter/block/wake/try_fail` (cleanup 시 출력).
+- cooperative handle wait 모델 도입:
+  - `WaitForSingleObject`에서 unsignaled event/thread handle에 대해 park+yield 처리 추가.
+  - `SetEvent`에서 waiter wake 지원(`manual reset`: all, auto reset: 1).
+  - thread finish 시 해당 thread handle waiter wake 및 waiter queue 정리.
+- scheduler/가속 안전장치:
+  - `0x62ce88/0x62cf60` lock-wrapper fast-path에 `PVZ_LOCK_WRAPPER_ACCEL` 가드 추가.
+  - 기본값: coop 모드(`PVZ_COOP_THREADS=1`)에서는 lock-wrapper accel OFF.
+  - `coop_should_terminate()`를 “runnable 없음” 기준이 아닌 “live thread 없음” 기준으로 수정(대기 스레드 조기 종료 방지).
+  - `pc==0` 대기 루프에 `SDL_Delay(1)` 추가해 busy-spin 완화.
+
+#### 검증 로그
+- `/tmp/pvz_coop_waitsync_20260226_011644.log`
+  - `CreateThread(start=0x5d5dc0)` 이후 `handle-wait/handle-wake` 확인.
+  - `WaitForSingleObject(0x7000)` 경로가 cooperative wait/wake 모델 경유로 동작함 확인.
+- `/tmp/pvz_wait_trace_20260226_011825.log`
+  - `CreateEvent(0x7000, initial=0)`, worker `SetEvent(0x7000) -> woke=1`, 이어서 main `WaitForSingleObject(0x7000)` 성공 확인.
+  - `0x7004`는 wait 시점에 이미 signaled 상태(`signaled_before=1`) 확인.
+- `/tmp/pvz_focus_xml_20260226_011919.log`
+  - `0x5a1f60/0x5a1f7b` block focus 샘플에서 문자열 입력 포인터가 변하며 전진하는 것 확인(완전 정적 무한루프는 아님).
+
+#### 현재 상태 요약
+- 렌더링 진입(`IDirectDrawSurface7::Lock/Unlock`)은 아직 미관측.
+- 병목은 여전히 resources.xml 이후 문자열/파서 루프 체인.
+- 다만 cooperative 동기화(critical section/wait handle) 의미 보존이 개선되어, 기존 “무조건 성공 반환”으로 인한 상태 오염 가능성은 줄어든 상태.
+
 ### 2026-02-25 12:45 KST 추가 가속(wide->narrow small)
 - `PVZ_INSERT_ITER_ACCEL=off` 검증 로그(`logs_render_push_insiter_off_20260225_120847.log`)에서
   - 처리량이 이전 안정 패턴(2분 기준 약 1.05M hit)으로 복귀 확인.
