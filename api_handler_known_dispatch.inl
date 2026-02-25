@@ -2593,6 +2593,47 @@
                     queued_count = 1;
                 }
 
+                // DRM IPC bridge: when game posts popcapdrm_ipc, synthesize the
+                // corresponding popcapdrm_ipc_response to keep bootstrap rendezvous moving.
+                auto lookup_regwinmsg = [&](const char* lower_name) -> uint32_t {
+                    std::string key = std::string("RegWinMsg:") + lower_name;
+                    auto it = handler->ctx.global_state.find(key);
+                    if (it == handler->ctx.global_state.end()) return 0u;
+                    return static_cast<uint32_t>(it->second);
+                };
+                uint32_t drm_ipc = lookup_regwinmsg("popcapdrm_ipc");
+                uint32_t drm_ipc_resp = lookup_regwinmsg("popcapdrm_ipc_response");
+                if (drm_ipc != 0u && drm_ipc_resp != 0u && msg.message == drm_ipc) {
+                    Win32_MSG resp = msg;
+                    resp.message = drm_ipc_resp;
+                    if (broadcast && !g_valid_hwnds.empty()) {
+                        for (uint32_t hwnd : g_valid_hwnds) {
+                            Win32_MSG per_hwnd = resp;
+                            per_hwnd.hwnd = hwnd;
+                            uint32_t target_tid = 0;
+                            auto it_owner = g_hwnd_owner_thread_id.find(hwnd);
+                            if (it_owner != g_hwnd_owner_thread_id.end()) {
+                                target_tid = it_owner->second;
+                            }
+                            enqueue_win32_message(per_hwnd, target_tid);
+                            queued_count++;
+                        }
+                    } else {
+                        uint32_t target_tid = 0;
+                        auto it_owner = g_hwnd_owner_thread_id.find(resp.hwnd);
+                        if (it_owner != g_hwnd_owner_thread_id.end()) {
+                            target_tid = it_owner->second;
+                        }
+                        enqueue_win32_message(resp, target_tid);
+                        queued_count++;
+                    }
+                    if (thread_mock_trace_enabled()) {
+                        std::cout << "[THREAD MOCK] PostMessage DRM auto-response(hwnd=0x"
+                                  << std::hex << msg.hwnd << ", req=0x" << drm_ipc
+                                  << ", resp=0x" << drm_ipc_resp << std::dec << ")\n";
+                    }
+                }
+
                 // Cooperative wakeup: many bootstrap paths wait on an event that the
                 // worker thread sets when it posts into the UI queue.
                 for (auto& kv : handler->ctx.handle_map) {

@@ -1313,7 +1313,7 @@ DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref)
     }
     coop_threads_enabled_flag = env_truthy("PVZ_COOP_THREADS");
     coop_trace = env_truthy("PVZ_COOP_TRACE");
-    int coop_timeslice = env_int("PVZ_COOP_TIMESLICE", 30000);
+    int coop_timeslice = env_int("PVZ_COOP_TIMESLICE", 120000);
     if (coop_timeslice > 0) coop_timeslice_instructions = static_cast<uint64_t>(coop_timeslice);
     int coop_stack = env_int("PVZ_COOP_STACK_SIZE", 0x200000);
     if (coop_stack > 0) coop_default_stack_size = static_cast<uint32_t>(coop_stack);

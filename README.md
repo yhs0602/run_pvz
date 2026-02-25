@@ -187,7 +187,11 @@ PVZ_MSG_DEDUP_START=512 ./build-fex/runner pvz/main.exe
 PVZ_DISABLE_MSG_DEDUP=1 ./build-fex/runner pvz/main.exe
 
 # cooperative guest thread scheduler 활성화 (CreateThread worker를 실제 guest 코드로 timeslice 실행)
+# 참고: PVZ_COOP_TIMESLICE 기본값은 120000 (미지정 시 자동 적용)
 PVZ_COOP_THREADS=1 PVZ_COOP_TIMESLICE=20000 ./build-fex/runner pvz/main.exe
+
+# CRT lock wrapper 가속 토글(기본 ON, 문제 시 0으로 비활성화)
+PVZ_LOCK_WRAPPER_ACCEL=0 ./build-fex/runner pvz/main.exe
 
 # cooperative scheduler 상세 trace
 PVZ_COOP_THREADS=1 PVZ_COOP_TRACE=1 ./build-fex/runner pvz/main.exe

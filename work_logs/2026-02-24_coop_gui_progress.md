@@ -444,3 +444,36 @@
     - 샘플 구간 내 `IDirectDrawSurface7::Lock/Unlock`는 아직 미관측.
 - 현재 결론
   - XML 상태머신 분기 오버헤드는 추가로 낮췄지만, 렌더 루프 진입까지는 아직 상태값/메시지 소비 경로 정합성 추적이 더 필요.
+
+### 2026-02-26 08:40 KST lock-wrapper/DRM 응답 보강 + resources 이후 루프 재확인
+- 코드 변경
+  - `main.cpp`
+    - lock leave wrapper fast-path 추가: `0x62ce88` (`accelerate_lock_leave_wrapper_62ce88`).
+    - lock enter wrapper 분리: `0x62cf60`만 별도 처리, slot init guard 유지.
+    - EnterCriticalSection callsite 단축 추가: `0x62cf86 -> 0x62cf8e`.
+    - lock-wrapper 가속 기본값을 hot-loop와 함께 ON으로 변경(`PVZ_LOCK_WRAPPER_ACCEL=0`으로 비활성화 가능).
+    - stream-pop 마크 차감 분기(`sar`)를 디스어셈블 방식으로 정합화.
+  - `api_handler.cpp`
+    - cooperative 기본 timeslice를 `30000 -> 120000`으로 상향.
+  - `api_handler_known_dispatch.inl`
+    - `PostMessage(popcapdrm_ipc)` 수신 시 `popcapdrm_ipc_response`를 자동 enqueue하는 DRM auto-response 경로 추가.
+  - `README.md`
+    - 위 옵션 기본값/토글 설명 반영.
+- 검증 로그
+  - `logs_fex_wndproc_trace_after_drmresp_20260226_082856.log`
+    - `c005` 요청 이후 auto-response `c006` enqueue/소비 확인.
+  - `logs_fex_120s_after_drmresp_20260226_082944.log`
+    - `resources.xml` 진입 후 장시간 실행에서도 `IDirectDrawSurface7::Lock/Unlock` 미관측.
+    - hot 체인은 지속적으로 `0x456610/0x5a1640/0x5bd830/0x61be1b/0x5a1f60/0x5a217d/0x5bb880`에 집중.
+  - `logs_fex_blockhot_20260226_083629.log`
+    - block-hot 상위 주소가 위 체인으로 고정됨을 재확인.
+  - `logs_fex_stubxml_20260226_083931.log`
+    - `PVZ_RESOURCES_XML_STUB=1` 실험 시 빠르게 다음 단계로 이동하지만 `UC_ERR_WRITE_UNMAPPED` (`EIP=0x61bf70`)로 종료.
+  - `logs_fex_stubxml_nullmap_20260226_083952.log`
+    - null-page 허용 후에는 `UC_ERR_READ_UNMAPPED` (`EIP=0x65263f`)로 크래시 지점만 이동.
+- 운영 이슈
+  - 장시간 계측 중 타임아웃 세션이 겹치며 `runner`가 다중 실행된 상태를 확인.
+  - 정리: 중복 `timeout/runner` PID 강제 종료 완료(메모리 폭증 예방).
+- 현재 결론
+  - DRM 메시지 요청/응답 정합성은 개선되었지만, 렌더 루프 미진입의 주 병목은 여전히 `resources.xml` 이후 파서/문자열 체인.
+  - 단순 시간 증가(장기 런)로는 진입이 확인되지 않았고, parser 상태 전이 또는 상위 로더 성공 조건을 추가로 고정해야 함.

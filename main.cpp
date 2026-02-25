@@ -1554,9 +1554,34 @@ static bool accelerate_crt_heapfree_callsite_61fccx(uc_engine* uc, uint32_t addr
     return true;
 }
 
-static bool accelerate_lock_wrappers_62ce88_62cf60(uc_engine* uc, uint32_t addr32) {
+static bool accelerate_lock_leave_wrapper_62ce88(uc_engine* uc, uint32_t addr32) {
+    if (!g_hot_loop_accel_enabled) return false;
+    if (addr32 != 0x62ce88u) return false;
+
+    uint32_t esp = 0;
+    uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+    uint32_t ret_addr = 0;
+    if (g_backend->mem_read(esp, &ret_addr, 4) != UC_ERR_OK) return false;
+
+    uint32_t lock_id = 0;
+    if (g_backend->mem_read(esp + 4u, &lock_id, 4) != UC_ERR_OK) return false;
+    if (lock_id > 0x80u) return false;
+
+    uint32_t eax = 1u;
+    uint32_t new_esp = esp + 4u; // plain ret
+    uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+    uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
+    uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+    uc_emu_stop(uc);
+
+    g_lock_wrapper_fast_count++;
+    g_hot_loop_accel_hits++;
+    return true;
+}
+
+static bool accelerate_lock_wrappers_62cf60(uc_engine* uc, uint32_t addr32) {
     if (!g_hot_loop_accel_enabled || !g_lock_wrapper_accel_enabled) return false;
-    if (addr32 != 0x62ce88u && addr32 != 0x62cf60u) return false;
+    if (addr32 != 0x62cf60u) return false;
 
     uint32_t esp = 0;
     uc_reg_read(uc, UC_X86_REG_ESP, &esp);
@@ -1569,12 +1594,10 @@ static bool accelerate_lock_wrappers_62ce88_62cf60(uc_engine* uc, uint32_t addr3
 
     // Enter-lock wrapper may do one-time setup on empty slot.
     // Keep original path until slot is initialized.
-    if (addr32 == 0x62cf60u) {
-        uint32_t slot_addr = 0x69a8f8u + lock_id * 8u;
-        uint32_t slot_lock_ptr = 0;
-        if (g_backend->mem_read(slot_addr, &slot_lock_ptr, 4) != UC_ERR_OK) return false;
-        if (slot_lock_ptr == 0u) return false;
-    }
+    uint32_t slot_addr = 0x69a8f8u + lock_id * 8u;
+    uint32_t slot_lock_ptr = 0;
+    if (g_backend->mem_read(slot_addr, &slot_lock_ptr, 4) != UC_ERR_OK) return false;
+    if (slot_lock_ptr == 0u) return false;
 
     uint32_t eax = 1u;
     uint32_t new_esp = esp + 4u; // plain ret
@@ -1584,6 +1607,28 @@ static bool accelerate_lock_wrappers_62ce88_62cf60(uc_engine* uc, uint32_t addr3
     uc_emu_stop(uc);
 
     g_lock_wrapper_fast_count++;
+    g_hot_loop_accel_hits++;
+    return true;
+}
+
+static bool accelerate_lock_enter_callsite_62cf86(uc_engine* uc, uint32_t addr32) {
+    if (!g_hot_loop_accel_enabled) return false;
+    if (addr32 != 0x62cf86u) return false;
+
+    uint32_t esi = 0;
+    uc_reg_read(uc, UC_X86_REG_ESI, &esi);
+    if (esi < 0x1000u) return false;
+    uint32_t lock_ptr = 0;
+    if (g_backend->mem_read(esi, &lock_ptr, 4) != UC_ERR_OK) return false;
+    if (lock_ptr < 0x1000u) return false;
+
+    // 0x62cf86 does push [esi]; call EnterCriticalSection and then falls through
+    // to 0x62cf8e. Skip the call while preserving net stack effect.
+    uint32_t next = 0x62cf8eu;
+    uc_reg_write(uc, UC_X86_REG_EIP, &next);
+    uc_emu_stop(uc);
+
+    g_tiny_ctrl_fast_count++;
     g_hot_loop_accel_hits++;
     return true;
 }
@@ -2046,9 +2091,10 @@ static bool stream_pop_u16_from_reader(uint32_t this_ptr, uint32_t out_ptr, uint
 
     uint32_t mark_ptr = 0;
     if (g_backend->mem_read(this_ptr + 0x0cu, &mark_ptr, 4) != UC_ERR_OK) return false;
-    if (mark_ptr != 0u && end_ptr >= mark_ptr) {
-        uint32_t remain = end_ptr - mark_ptr;
-        if ((remain >> 1) != 0u) {
+    if (mark_ptr != 0u) {
+        int32_t diff = static_cast<int32_t>(end_ptr - mark_ptr);
+        diff >>= 1; // mirror `sar edx` at 0x5bb8c3
+        if (diff != 0) {
             uint32_t new_end = end_ptr - 2u;
             if (g_backend->mem_write(this_ptr + 0x10u, &new_end, 4) != UC_ERR_OK) return false;
         }
@@ -3109,7 +3155,9 @@ static bool maybe_accelerate_hot_loop_block(uc_engine* uc, uint32_t addr32) {
     if (accelerate_string_grow_404080(uc, addr32)) return true;
     if (accelerate_crt_alloc_helper_4041c0(uc, addr32)) return true;
     if (accelerate_fast_worker_thread(uc, addr32)) return true;
-    if (accelerate_lock_wrappers_62ce88_62cf60(uc, addr32)) return true;
+    if (accelerate_lock_leave_wrapper_62ce88(uc, addr32)) return true;
+    if (accelerate_lock_wrappers_62cf60(uc, addr32)) return true;
+    if (accelerate_lock_enter_callsite_62cf86(uc, addr32)) return true;
     if (accelerate_tiny_control_blocks(uc, addr32)) return true;
     if (accelerate_int3_pad_blocks(uc, addr32)) return true;
     if (accelerate_crt_alloc_wrappers(uc, addr32)) return true;
@@ -3697,8 +3745,9 @@ int main(int argc, char **argv) {
     if (lock_wrapper_accel_env && *lock_wrapper_accel_env) {
         g_lock_wrapper_accel_enabled = env_truthy("PVZ_LOCK_WRAPPER_ACCEL");
     } else {
-        // Default-off under cooperative threading to preserve lock sequencing.
-        g_lock_wrapper_accel_enabled = g_hot_loop_accel_enabled && !env_truthy("PVZ_COOP_THREADS");
+        // Default-on: this wrapper family is a high-frequency CRT lock shim.
+        // Can still be disabled with PVZ_LOCK_WRAPPER_ACCEL=0 if needed.
+        g_lock_wrapper_accel_enabled = g_hot_loop_accel_enabled;
     }
     const char* crt_alloc_accel_env = std::getenv("PVZ_CRT_ALLOC_ACCEL");
     if (crt_alloc_accel_env && *crt_alloc_accel_env) {
@@ -3880,7 +3929,7 @@ int main(int argc, char **argv) {
                 << "0x403e20(substr assign), "
                 << "0x404330(assign ptr,len), "
                 << "0x404080(string grow), 0x4041c0(alloc helper), "
-                << "0x62ce88/0x62cf60(lock wrappers), "
+                << "0x62ce88/0x62cf60(lock wrappers), 0x62cf86(lock callsite), "
                 << "0x62ce9b/0x62cf8e/0x62118b/0x61fcd4(tiny ctrl blocks).\n";
             if (g_crt_alloc_accel_enabled) {
                 uint32_t arena_mb = (g_crt_alloc_limit - g_crt_alloc_base) / (1024u * 1024u);
