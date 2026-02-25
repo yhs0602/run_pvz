@@ -687,6 +687,42 @@
                                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
                 handler->maybe_start_eip_hot_sample(normalized_guest_path);
                 std::string host_path = resolve_guest_path_to_host(guest_path, handler->process_base_dir);
+                if (normalized_guest_path == "properties/resources.xml") {
+                    const char* override_path_env = std::getenv("PVZ_RESOURCES_XML_OVERRIDE");
+                    if (override_path_env && *override_path_env) {
+                        host_path = override_path_env;
+                        std::cout << "[FILE OVERRIDE] resources.xml -> '" << host_path << "'\n";
+                    }
+                }
+                if (normalized_guest_path == "properties/resources.xml" &&
+                    env_truthy("PVZ_RESOURCES_XML_STUB")) {
+                    auto* fh = new HostFileHandle();
+                    const std::string stub_xml =
+                        "<ResourceManifest>\n"
+                        "  <Resources id=\"stub\"/>\n"
+                        "</ResourceManifest>\n";
+                    fh->data.assign(stub_xml.begin(), stub_xml.end());
+                    fh->pos = 0;
+                    fh->guest_path = guest_path;
+                    fh->normalized_guest_path = normalized_guest_path;
+                    fh->trace_io = should_trace_guest_file_path(normalized_guest_path);
+
+                    uint32_t handle = 0x5000;
+                    if (handler->ctx.global_state.find("FileHandleTop") == handler->ctx.global_state.end()) {
+                        handler->ctx.global_state["FileHandleTop"] = handle;
+                    } else {
+                        handle = static_cast<uint32_t>(handler->ctx.global_state["FileHandleTop"]);
+                    }
+                    handler->ctx.global_state["FileHandleTop"] = handle + 4;
+                    handler->ctx.handle_map["file_" + std::to_string(handle)] = fh;
+                    handler->ctx.set_eax(handle);
+                    handler->ctx.global_state["LastError"] = 0;
+                    std::cout << "\n[API CALL] [FILE] CreateFileA('" << guest_path
+                              << "') -> stub handle=0x" << std::hex << handle
+                              << std::dec << " (" << fh->data.size()
+                              << " bytes, PVZ_RESOURCES_XML_STUB)\n";
+                    return;
+                }
                 if (host_path.empty()) {
                     // Some PvZ builds probe adlist/popc registry files that may not exist yet.
                     bool allow_virtual = (normalized_guest_path == "adlist.txt" ||
@@ -704,6 +740,9 @@
                     if (allow_virtual) {
                         auto* fh = new HostFileHandle();
                         fh->pos = 0;
+                        fh->guest_path = guest_path;
+                        fh->normalized_guest_path = normalized_guest_path;
+                        fh->trace_io = should_trace_guest_file_path(normalized_guest_path);
                         uint32_t handle = 0x5000;
                         if (handler->ctx.global_state.find("FileHandleTop") == handler->ctx.global_state.end()) {
                             handler->ctx.global_state["FileHandleTop"] = handle;
@@ -728,6 +767,9 @@
                     std::ifstream in(host_path, std::ios::binary);
                     fh->data.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
                     fh->pos = 0;
+                    fh->guest_path = guest_path;
+                    fh->normalized_guest_path = normalized_guest_path;
+                    fh->trace_io = should_trace_guest_file_path(normalized_guest_path);
 
                     uint32_t handle = 0x5000;
                     if (handler->ctx.global_state.find("FileHandleTop") == handler->ctx.global_state.end()) {
@@ -757,11 +799,26 @@
                     handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
                 } else {
                     auto* fh = static_cast<HostFileHandle*>(itf->second);
+                    size_t prev_pos = fh->pos;
                     size_t remaining = (fh->pos < fh->data.size()) ? (fh->data.size() - fh->pos) : 0;
                     uint32_t to_read = static_cast<uint32_t>(std::min<size_t>(remaining, nBytesToRead));
                     if (to_read > 0) {
                         handler->backend.mem_write(lpBuffer, fh->data.data() + fh->pos, to_read);
                         fh->pos += to_read;
+                    }
+                    fh->read_calls++;
+                    fh->read_bytes += to_read;
+                    if (to_read == 0) fh->eof_reads++;
+                    if (fh->pos > fh->max_pos) fh->max_pos = fh->pos;
+                    if (fh->trace_io &&
+                        (fh->read_calls <= 16u || (fh->read_calls % 1024u) == 0u || to_read == 0u)) {
+                        std::cout << "[FILE TRACE] ReadFile(handle=0x" << std::hex << hFile << std::dec
+                                  << ", path='" << fh->guest_path
+                                  << "', req=" << nBytesToRead
+                                  << ", got=" << to_read
+                                  << ", pos=" << prev_pos << "->" << fh->pos
+                                  << ", size=" << fh->data.size()
+                                  << ", reads=" << fh->read_calls << ")\n";
                     }
                     if (lpBytesRead) handler->backend.mem_write(lpBytesRead, &to_read, 4);
                     handler->ctx.set_eax(1);
@@ -815,6 +872,7 @@
                     handler->ctx.global_state["LastError"] = 6; // ERROR_INVALID_HANDLE
                 } else {
                     auto* fh = static_cast<HostFileHandle*>(itf->second);
+                    size_t prev_pos = fh->pos;
                     int64_t base = 0;
                     if (moveMethod == 1) base = static_cast<int64_t>(fh->pos);
                     else if (moveMethod == 2) base = static_cast<int64_t>(fh->data.size());
@@ -827,6 +885,17 @@
                     int64_t next = base + distance;
                     if (next < 0) next = 0;
                     fh->pos = static_cast<size_t>(next);
+                    fh->seek_calls++;
+                    if (fh->pos > fh->max_pos) fh->max_pos = fh->pos;
+                    if (fh->trace_io &&
+                        (fh->seek_calls <= 16u || (fh->seek_calls % 256u) == 0u)) {
+                        std::cout << "[FILE TRACE] SetFilePointer(handle=0x" << std::hex << hFile << std::dec
+                                  << ", path='" << fh->guest_path
+                                  << "', method=" << moveMethod
+                                  << ", low=" << low
+                                  << ", pos=" << prev_pos << "->" << fh->pos
+                                  << ", seeks=" << fh->seek_calls << ")\n";
+                    }
                     uint32_t out_low = static_cast<uint32_t>(static_cast<uint64_t>(fh->pos) & 0xFFFFFFFFu);
                     if (lpDistanceToMoveHigh != 0) {
                         uint32_t out_high = static_cast<uint32_t>((static_cast<uint64_t>(fh->pos) >> 32) & 0xFFFFFFFFu);
@@ -1178,7 +1247,19 @@
                 uint32_t h = handler->ctx.get_arg(0);
                 auto itf = handler->ctx.handle_map.find("file_" + std::to_string(h));
                 if (itf != handler->ctx.handle_map.end()) {
-                    delete static_cast<HostFileHandle*>(itf->second);
+                    auto* fh = static_cast<HostFileHandle*>(itf->second);
+                    if (fh->trace_io) {
+                        std::cout << "[FILE TRACE] CloseFile(handle=0x" << std::hex << h << std::dec
+                                  << ", path='" << fh->guest_path
+                                  << "', reads=" << fh->read_calls
+                                  << ", bytes=" << fh->read_bytes
+                                  << ", seeks=" << fh->seek_calls
+                                  << ", eof_reads=" << fh->eof_reads
+                                  << ", max_pos=" << fh->max_pos
+                                  << ", final_pos=" << fh->pos
+                                  << ", size=" << fh->data.size() << ")\n";
+                    }
+                    delete fh;
                     handler->ctx.handle_map.erase(itf);
                     handler->ctx.set_eax(1);
                     handler->ctx.global_state["LastError"] = 0;
@@ -1478,6 +1559,29 @@
                     handler->ctx.set_eax(1);
                     handler->ctx.global_state["LastError"] = 0;
                 }
+            } else if (name == "KERNEL32.dll!RaiseException") {
+                uint32_t esp = 0;
+                handler->backend.reg_read(UC_X86_REG_ESP, &esp);
+                uint32_t ret_addr = 0;
+                if (esp != 0 && handler->backend.mem_read(esp, &ret_addr, 4) == UC_ERR_OK &&
+                    ret_addr != 0 && ret_addr < DummyAPIHandler::FAKE_API_BASE) {
+                    uint32_t patched_ret = ret_addr;
+                    for (int i = 0; i < 8; ++i) {
+                        uint8_t op = 0;
+                        if (handler->backend.mem_read(patched_ret, &op, 1) != UC_ERR_OK) break;
+                        if (op != 0xCCu) break;
+                        patched_ret++;
+                    }
+                    if (patched_ret != ret_addr) {
+                        handler->backend.mem_write(esp, &patched_ret, 4);
+                        std::cout << "\n[API CALL] [EXCEPTION] RaiseException return patch: 0x"
+                                  << std::hex << ret_addr << " -> 0x" << patched_ret
+                                  << std::dec << "\n";
+                    }
+                }
+                handler->ctx.set_eax(0);
+                handler->ctx.global_state["LastError"] = 0;
+                std::cout << "\n[API CALL] [OK] Intercepted call to " << name << " returning 0.\n";
             } else if (name == "KERNEL32.dll!GetLastError" ||
                        name == "KERNEL32.dll!GetFileVersionInfoSizeA" || name == "KERNEL32.dll!GetFileVersionInfoA" || name == "KERNEL32.dll!VerQueryValueA" ||
                        name == "VERSION.dll!GetFileVersionInfoSizeA" || name == "VERSION.dll!GetFileVersionInfoA" || name == "VERSION.dll!VerQueryValueA") {

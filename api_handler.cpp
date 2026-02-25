@@ -47,6 +47,14 @@ struct PendingWin32Message {
 struct HostFileHandle {
     std::vector<uint8_t> data;
     size_t pos = 0;
+    size_t max_pos = 0;
+    std::string guest_path;
+    std::string normalized_guest_path;
+    uint64_t read_calls = 0;
+    uint64_t read_bytes = 0;
+    uint64_t seek_calls = 0;
+    uint64_t eof_reads = 0;
+    bool trace_io = false;
 };
 
 struct FindFileEntry {
@@ -697,6 +705,26 @@ static bool force_idle_timer_enabled() {
 static bool loader_trace_enabled() {
     static const bool enabled = env_truthy("PVZ_LOADER_TRACE");
     return enabled;
+}
+
+static bool file_io_trace_enabled() {
+    static const bool enabled = env_truthy("PVZ_FILE_IO_TRACE");
+    return enabled;
+}
+
+static bool file_io_trace_all_enabled() {
+    static const bool enabled = env_truthy("PVZ_FILE_IO_TRACE_ALL");
+    return enabled;
+}
+
+static bool should_trace_guest_file_path(const std::string& normalized_guest_path) {
+    if (!file_io_trace_enabled()) return false;
+    if (file_io_trace_all_enabled()) return true;
+    return contains_any_token_ci(normalized_guest_path, {
+        "resources.xml",
+        "main.pak",
+        "drm.xml"
+    });
 }
 
 static int env_int(const char* name, int default_value) {

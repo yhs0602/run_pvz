@@ -162,6 +162,12 @@ PVZ_BLOCK_FOCUS_TRACE=1 PVZ_BLOCK_FOCUS_ADDRS=0x441a73,0x441a79,0x441dd0,0x5d889
 # 리소스 단계 hot-loop 가속(선택): 0x441a73/0x5d888c/0x5d8890/0x62456a/0x404470/0x61e4e6/0x441d20 루프를 호스트 빠른 경로로 처리
 PVZ_HOT_LOOP_ACCEL=1 ./build-fex/runner pvz/main.exe
 
+# CRT alloc/free 핫경로 가속(기본: `PVZ_HOT_LOOP_ACCEL=1`일 때 자동 ON, 명시값이 우선)
+PVZ_CRT_ALLOC_ACCEL=1 ./build-fex/runner pvz/main.exe
+
+# CRT alloc fast arena 크기(MB, 기본 128)
+PVZ_CRT_ALLOC_ACCEL=1 PVZ_CRT_ALLOC_ARENA_MB=256 ./build-fex/runner pvz/main.exe
+
 # WndProc 브릿지 상세 추적(RegisterClass/CreateWindowEx/Dispatch/SendMessage)
 PVZ_WNDPROC_TRACE=1 ./build-fex/runner pvz/main.exe
 
