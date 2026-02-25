@@ -2306,6 +2306,14 @@
                     SDL_WaitEventTimeout(&evt, 16);
                 }
                 pump_due_win32_timers(SDL_GetTicks());
+                if (handler->coop_threads_enabled() && !handler->coop_current_thread_is_main()) {
+                    uint32_t current_tid = handler->coop_current_thread_id();
+                    if (!win32_queue_has_message_for_thread(current_tid)) {
+                        handler->coop_block_current_thread_on_message_wait(0, 0, 0);
+                    } else {
+                        handler->coop_request_yield();
+                    }
+                }
                 handler->ctx.set_eax(1);
             } else if (name == "USER32.dll!MsgWaitForMultipleObjects" ||
                        name == "USER32.dll!MsgWaitForMultipleObjectsEx") {
@@ -2326,9 +2334,13 @@
                 uint32_t current_tid = handler->coop_threads_enabled()
                     ? handler->coop_current_thread_id()
                     : 1u;
-                if (win32_queue_has_message_for_thread(current_tid)) {
+                bool has_message = win32_queue_has_message_for_thread(current_tid);
+                if (has_message) {
                     handler->ctx.set_eax(0); // WAIT_OBJECT_0 + nCount(0)
                 } else {
+                    if (handler->coop_threads_enabled() && !handler->coop_current_thread_is_main()) {
+                        handler->coop_block_current_thread_on_message_wait(0, 0, 0);
+                    }
                     handler->ctx.set_eax(0x102); // WAIT_TIMEOUT
                 }
             } else if (name == "USER32.dll!MoveWindow") {

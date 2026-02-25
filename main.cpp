@@ -314,6 +314,7 @@ bool g_xml_branch_accel_enabled = false;
 uint64_t g_xml_branch_fast_count = 0;
 bool g_text_norm_branch_accel_enabled = false;
 uint64_t g_text_norm_branch_fast_count = 0;
+uint64_t g_tiny_ctrl_fast_count = 0;
 bool g_security_cookie_accel_enabled = false;
 bool g_lock_gate_probe_accel_enabled = false;
 uint64_t g_security_cookie_fast_count = 0;
@@ -1473,6 +1474,72 @@ static bool accelerate_lock_wrappers_62ce88_62cf60(uc_engine* uc, uint32_t addr3
     g_lock_wrapper_fast_count++;
     g_hot_loop_accel_hits++;
     return true;
+}
+
+static bool accelerate_tiny_control_blocks(uc_engine* uc, uint32_t addr32) {
+    if (!g_hot_loop_accel_enabled) return false;
+
+    if (addr32 == 0x62ce9bu) {
+        uint32_t esp = 0;
+        uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+        uint32_t new_ebp = 0;
+        uint32_t ret_addr = 0;
+        if (g_backend->mem_read(esp, &new_ebp, 4) != UC_ERR_OK) return false;
+        if (g_backend->mem_read(esp + 4u, &ret_addr, 4) != UC_ERR_OK) return false;
+        uint32_t new_esp = esp + 8u;
+        uc_reg_write(uc, UC_X86_REG_EBP, &new_ebp);
+        uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
+        uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+        uc_emu_stop(uc);
+        g_tiny_ctrl_fast_count++;
+        g_hot_loop_accel_hits++;
+        return true;
+    }
+
+    if (addr32 == 0x62cf8eu) {
+        uint32_t esp = 0;
+        uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+        uint32_t new_esi = 0;
+        uint32_t new_ebp = 0;
+        uint32_t ret_addr = 0;
+        if (g_backend->mem_read(esp, &new_esi, 4) != UC_ERR_OK) return false;
+        if (g_backend->mem_read(esp + 4u, &new_ebp, 4) != UC_ERR_OK) return false;
+        if (g_backend->mem_read(esp + 8u, &ret_addr, 4) != UC_ERR_OK) return false;
+        uint32_t new_esp = esp + 12u;
+        uc_reg_write(uc, UC_X86_REG_ESI, &new_esi);
+        uc_reg_write(uc, UC_X86_REG_EBP, &new_ebp);
+        uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
+        uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+        uc_emu_stop(uc);
+        g_tiny_ctrl_fast_count++;
+        g_hot_loop_accel_hits++;
+        return true;
+    }
+
+    if (addr32 == 0x62118bu) {
+        uint32_t eax = 0;
+        uc_reg_read(uc, UC_X86_REG_EAX, &eax);
+        uc_reg_write(uc, UC_X86_REG_ESI, &eax);
+        uint32_t next = (eax != 0u) ? 0x6211b7u : 0x621191u;
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_tiny_ctrl_fast_count++;
+        g_hot_loop_accel_hits++;
+        return true;
+    }
+
+    if (addr32 == 0x61fcd4u) {
+        uint32_t eax = 0;
+        uc_reg_read(uc, UC_X86_REG_EAX, &eax);
+        uint32_t next = (eax != 0u) ? 0x61fceeu : 0x61fcd8u;
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_tiny_ctrl_fast_count++;
+        g_hot_loop_accel_hits++;
+        return true;
+    }
+
+    return false;
 }
 
 static bool accelerate_fast_worker_thread(uc_engine* uc, uint32_t addr32) {
@@ -2709,6 +2776,7 @@ static bool maybe_accelerate_hot_loop_block(uc_engine* uc, uint32_t addr32) {
     if (accelerate_crt_alloc_helper_4041c0(uc, addr32)) return true;
     if (accelerate_fast_worker_thread(uc, addr32)) return true;
     if (accelerate_lock_wrappers_62ce88_62cf60(uc, addr32)) return true;
+    if (accelerate_tiny_control_blocks(uc, addr32)) return true;
     if (accelerate_crt_alloc_wrappers(uc, addr32)) return true;
     if (accelerate_crt_heapalloc_callsite_621182(uc, addr32)) return true;
     if (accelerate_crt_heapfree_callsite_61fccx(uc, addr32)) return true;
@@ -2884,6 +2952,9 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
             }
             if (g_text_norm_branch_fast_count > 0) {
                 cout << " txtnorm=" << g_text_norm_branch_fast_count;
+            }
+            if (g_tiny_ctrl_fast_count > 0) {
+                cout << " tinyctrl=" << g_tiny_ctrl_fast_count;
             }
             cout << "\n";
         }
@@ -3297,7 +3368,8 @@ int main(int argc, char **argv) {
                 0x5bba20u, 0x5bb880u, 0x5bb894u, 0x5bb89fu, 0x5bbad0u, 0x5bbb12u, 0x61be1bu,
                 0x5a1f72u, 0x5a1f7bu, 0x5a1f8bu, 0x5a2052u, 0x5a210au,
                 0x62b0d8u, 0x62b0e5u, 0x62b0e9u, 0x62b0f5u, 0x62b0fdu, 0x62b105u, 0x62b184u, 0x62b185u,
-                0x5afbb0u, 0x5afc06u, 0x5afc0du, 0x5afc26u
+                0x5afbb0u, 0x5afc06u, 0x5afc0du, 0x5afc26u,
+                0x62ce9bu, 0x62cf8eu, 0x62118bu, 0x61fcd4u
             };
         }
         for (uint32_t a : addrs) {
@@ -3422,7 +3494,8 @@ int main(int argc, char **argv) {
                 << "0x403e20(substr assign), "
                 << "0x404330(assign ptr,len), "
                 << "0x404080(string grow), 0x4041c0(alloc helper), "
-                << "0x62ce88/0x62cf60(lock wrappers).\n";
+                << "0x62ce88/0x62cf60(lock wrappers), "
+                << "0x62ce9b/0x62cf8e/0x62118b/0x61fcd4(tiny ctrl blocks).\n";
             if (g_crt_alloc_accel_enabled) {
                 uint32_t arena_mb = (g_crt_alloc_limit - g_crt_alloc_base) / (1024u * 1024u);
                 cout << "[*] CRT alloc accel enabled: base=0x" << hex << g_crt_alloc_base
@@ -3523,15 +3596,59 @@ int main(int argc, char **argv) {
             cout << "[*] Cooperative scheduler: ON (timeslice=" << api_handler.coop_timeslice_count()
                  << " instructions, env=PVZ_COOP_THREADS).\n";
         }
+        bool pc_stall_trace_enabled = env_truthy("PVZ_PC_STALL_TRACE");
+        uint64_t pc_stall_report_every =
+            static_cast<uint64_t>(std::max(1, env_int("PVZ_PC_STALL_REPORT", 50000)));
+        uint32_t pc_stall_last = 0;
+        uint64_t pc_stall_run = 0;
+        auto maybe_trace_pc_stall = [&](uint32_t cur_pc) {
+            if (!pc_stall_trace_enabled) return;
+            if (cur_pc == 0u || cur_pc == 0xFFFFFFFFu) {
+                pc_stall_last = 0;
+                pc_stall_run = 0;
+                return;
+            }
+            if (cur_pc == pc_stall_last) {
+                pc_stall_run++;
+            } else {
+                if (pc_stall_run >= pc_stall_report_every) {
+                    cout << "[STALL TRACE] pc moved 0x" << hex << pc_stall_last
+                         << " -> 0x" << cur_pc << dec
+                         << " after run=" << pc_stall_run
+                         << " tid=" << (api_handler.coop_threads_enabled()
+                                        ? api_handler.coop_current_thread_id()
+                                        : 1u)
+                         << " hot_hits=" << g_hot_loop_accel_hits << "\n";
+                }
+                pc_stall_last = cur_pc;
+                pc_stall_run = 1;
+            }
+            if (pc_stall_run == pc_stall_report_every ||
+                (pc_stall_run > pc_stall_report_every &&
+                 (pc_stall_run % pc_stall_report_every) == 0u)) {
+                cout << "[STALL TRACE] pc=0x" << hex << cur_pc << dec
+                     << " run=" << pc_stall_run
+                     << " tid=" << (api_handler.coop_threads_enabled()
+                                    ? api_handler.coop_current_thread_id()
+                                    : 1u)
+                     << " hot_hits=" << g_hot_loop_accel_hits << "\n";
+            }
+        };
+        if (pc_stall_trace_enabled) {
+            cout << "[*] PC stall trace enabled: report_every=" << pc_stall_report_every
+                 << " slices (PVZ_PC_STALL_TRACE / PVZ_PC_STALL_REPORT).\n";
+        }
         while (true) {
             size_t emu_count = 0;
             if (api_handler.coop_threads_enabled()) {
+                api_handler.coop_prepare_to_run();
                 pc = api_handler.coop_current_pc();
                 if (pc == 0 || pc == 0xFFFFFFFFu) {
                     if (api_handler.coop_should_terminate()) {
                         cout << "\n[+] Cooperative scheduler finished (no runnable threads).\n";
                         break;
                     }
+                    continue;
                 }
                 emu_count = api_handler.coop_timeslice_count();
                 if (emu_count == 0) emu_count = 1;
@@ -3588,12 +3705,14 @@ int main(int argc, char **argv) {
             if (api_handler.coop_threads_enabled()) {
                 api_handler.coop_on_timeslice_end();
                 pc = api_handler.coop_current_pc();
+                maybe_trace_pc_stall(pc);
                 if (api_handler.coop_should_terminate()) {
                     cout << "\n[+] Cooperative scheduler reported completion.\n";
                     break;
                 }
             } else {
                 backend.reg_read(UC_X86_REG_EIP, &pc);
+                maybe_trace_pc_stall(pc);
                 if (pc == 0 || pc == 0xffffffff) {
                     cout << "\n[+] Emulation cleanly finished at EIP = 0x" << hex << pc << endl;
                     cout << "--- Last 50 Basic Blocks Executed ---\n";
@@ -3674,6 +3793,9 @@ int main(int argc, char **argv) {
         }
         if (g_text_norm_branch_fast_count > 0) {
             cout << "[*] Text-norm-branch fast-path summary: hits=" << g_text_norm_branch_fast_count << "\n";
+        }
+        if (g_tiny_ctrl_fast_count > 0) {
+            cout << "[*] Tiny-control fast-path summary: hits=" << g_tiny_ctrl_fast_count << "\n";
         }
         if (g_security_cookie_fast_count > 0) {
             cout << "[*] Security-cookie fast-path summary: hits=" << g_security_cookie_fast_count << "\n";

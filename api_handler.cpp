@@ -110,6 +110,7 @@ static uint32_t g_resource_handle_top = 0xB000;
 static uint32_t g_resource_heap_top = 0x36000000;
 static bool g_resource_heap_mapped = false;
 static std::deque<PendingWin32Message> g_win32_message_queue;
+static DummyAPIHandler* g_active_api_handler = nullptr;
 static std::unordered_map<uint64_t, Win32Timer> g_win32_timers;
 static std::unordered_set<uint32_t> g_valid_hwnds;
 static std::unordered_map<uint32_t, uint32_t> g_hwnd_owner_thread_id;
@@ -318,6 +319,9 @@ static void enqueue_win32_message(const Win32_MSG& msg, uint32_t target_thread_i
     g_win32_message_queue.push_back(pending);
     g_win32_queue_stats.enqueued++;
     maybe_log_win32_queue_stats("enqueue");
+    if (g_active_api_handler && g_active_api_handler->coop_threads_enabled()) {
+        g_active_api_handler->coop_notify_message_enqueued(target_thread_id, msg.hwnd, msg.message);
+    }
 }
 
 static uint64_t win32_timer_key(uint32_t hwnd, uint32_t timer_id) {
@@ -354,11 +358,34 @@ static uint32_t win32_class_wndproc_from_arg(APIContext& ctx, uint32_t class_arg
         if (it_atom != g_win32_class_by_atom.end()) return it_atom->second.wndproc;
         return 0;
     }
+    // Some callers mix A/W registration and CreateWindow variants.
+    // Try requested encoding first, then fall back to the other one.
     std::string key = win32_class_key_from_arg(ctx, class_arg, wide);
-    if (key.empty()) return 0;
-    auto it_name = g_win32_class_by_name.find(key);
-    if (it_name == g_win32_class_by_name.end()) return 0;
-    return it_name->second.wndproc;
+    if (!key.empty()) {
+        auto it_name = g_win32_class_by_name.find(key);
+        if (it_name != g_win32_class_by_name.end()) return it_name->second.wndproc;
+    }
+    std::string alt_key = win32_class_key_from_arg(ctx, class_arg, !wide);
+    if (!alt_key.empty()) {
+        auto it_alt = g_win32_class_by_name.find(alt_key);
+        if (it_alt != g_win32_class_by_name.end()) return it_alt->second.wndproc;
+    }
+    return 0;
+}
+
+static bool is_builtin_win32_class_name(const std::string& name) {
+    if (name.empty()) return false;
+    std::string key = to_lower_ascii(name);
+    return key == "button" ||
+           key == "edit" ||
+           key == "static" ||
+           key == "listbox" ||
+           key == "combobox" ||
+           key == "scrollbar" ||
+           key == "mdiclient" ||
+           key == "menu" ||
+           key == "dialog" ||
+           key == "#32770";
 }
 
 static std::string normalize_module_name_ascii(std::string module_raw) {
@@ -610,6 +637,23 @@ static bool win32_queue_has_message_for_thread(uint32_t current_thread_id) {
     return false;
 }
 
+static bool win32_queue_has_filtered_message_for_thread(uint32_t current_thread_id,
+                                                        uint32_t hwnd_filter,
+                                                        uint32_t min_filter,
+                                                        uint32_t max_filter) {
+    for (const auto& pending : g_win32_message_queue) {
+        if (pending.target_thread_id != 0 &&
+            current_thread_id != 0 &&
+            pending.target_thread_id != current_thread_id) {
+            continue;
+        }
+        if (win32_message_matches_filter(pending.msg, hwnd_filter, min_filter, max_filter)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool env_truthy(const char* name) {
     const char* v = std::getenv(name);
     if (!v) return false;
@@ -643,6 +687,11 @@ static bool messagebox_auto_ack_enabled() {
     // Default to auto-ack to avoid unattended runs blocking on guest popups.
     cached = 1;
     return cached != 0;
+}
+
+static bool force_idle_timer_enabled() {
+    static const bool enabled = env_truthy("PVZ_FORCE_IDLE_TIMER");
+    return enabled;
 }
 
 static bool loader_trace_enabled() {
@@ -1201,6 +1250,7 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
 };
 
 DummyAPIHandler::DummyAPIHandler(CpuBackend& backend_ref) : backend(backend_ref), current_addr(FAKE_API_BASE) {
+    g_active_api_handler = this;
     llm_pipeline_enabled = env_truthy("PVZ_ENABLE_LLM");
     dylib_mocks_enabled = env_truthy("PVZ_ENABLE_DYLIB_MOCKS");
     dylib_mock_audit_enabled = !env_truthy("PVZ_DISABLE_DYLIB_MOCK_AUDIT");
@@ -1447,6 +1497,9 @@ void DummyAPIHandler::cleanup_process_state() {
 }
 
 DummyAPIHandler::~DummyAPIHandler() {
+    if (g_active_api_handler == this) {
+        g_active_api_handler = nullptr;
+    }
     cleanup_process_state();
     for (auto& pair : dylib_handles) {
         if (pair.second) dlclose(pair.second);
@@ -1823,6 +1876,103 @@ uint32_t DummyAPIHandler::coop_current_thread_id() const {
     return it->second.thread_id;
 }
 
+bool DummyAPIHandler::coop_current_thread_is_main() const {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized) return true;
+    auto it = coop_threads.find(coop_current_handle);
+    if (it == coop_threads.end()) return true;
+    return it->second.is_main;
+}
+
+bool DummyAPIHandler::coop_prepare_to_run() {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized) return false;
+    auto it = coop_threads.find(coop_current_handle);
+    if (it == coop_threads.end() || it->second.finished || !it->second.runnable) {
+        return coop_advance_to_next_runnable();
+    }
+    return true;
+}
+
+void DummyAPIHandler::coop_block_current_thread_on_message_wait(uint32_t hwnd_filter,
+                                                                uint32_t min_filter,
+                                                                uint32_t max_filter) {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized) return;
+    auto it = coop_threads.find(coop_current_handle);
+    if (it == coop_threads.end()) return;
+    // Keep main thread runnable to avoid false "all threads blocked" termination.
+    if (it->second.is_main || it->second.finished) return;
+    if (!it->second.runnable) return;
+    it->second.waiting_message = true;
+    it->second.wait_hwnd_filter = hwnd_filter;
+    it->second.wait_min_filter = min_filter;
+    it->second.wait_max_filter = max_filter;
+    it->second.runnable = false;
+    coop_force_yield = true;
+    if (coop_trace) {
+        std::cout << "[COOP] message-wait park handle=0x" << std::hex << it->second.handle
+                  << " tid=" << std::dec << it->second.thread_id
+                  << " hwnd=0x" << std::hex << hwnd_filter
+                  << " min=0x" << min_filter
+                  << " max=0x" << max_filter << std::dec << "\n";
+    }
+}
+
+void DummyAPIHandler::coop_notify_message_enqueued(uint32_t target_thread_id,
+                                                    uint32_t msg_hwnd,
+                                                    uint32_t msg_id) {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized) return;
+    Win32_MSG probe = {};
+    probe.hwnd = msg_hwnd;
+    probe.message = msg_id;
+    for (auto& kv : coop_threads) {
+        CoopThreadState& th = kv.second;
+        if (th.finished || th.runnable || !th.waiting_message) continue;
+        if (target_thread_id != 0 && th.thread_id != target_thread_id) continue;
+        if (!win32_message_matches_filter(probe, th.wait_hwnd_filter, th.wait_min_filter, th.wait_max_filter)) {
+            continue;
+        }
+        th.waiting_message = false;
+        th.runnable = true;
+        if (coop_trace) {
+            std::cout << "[COOP] message-wake handle=0x" << std::hex << th.handle
+                      << " tid=" << std::dec << th.thread_id
+                      << " msg=0x" << std::hex << msg_id
+                      << " hwnd=0x" << msg_hwnd << std::dec << "\n";
+        }
+    }
+}
+
+void DummyAPIHandler::coop_wake_message_waiter(uint32_t thread_id) {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized || thread_id == 0) return;
+    for (auto& kv : coop_threads) {
+        CoopThreadState& th = kv.second;
+        if (th.finished || th.thread_id != thread_id) continue;
+        if (!th.runnable) {
+            th.waiting_message = false;
+            th.runnable = true;
+            if (coop_trace) {
+                std::cout << "[COOP] message-wake handle=0x" << std::hex << th.handle
+                          << " tid=" << std::dec << th.thread_id << "\n";
+            }
+        }
+    }
+}
+
+void DummyAPIHandler::coop_wake_all_message_waiters() {
+    if (!coop_threads_enabled_flag || !coop_threads_initialized) return;
+    for (auto& kv : coop_threads) {
+        CoopThreadState& th = kv.second;
+        if (th.finished) continue;
+        if (!th.runnable) {
+            th.waiting_message = false;
+            th.runnable = true;
+            if (coop_trace) {
+                std::cout << "[COOP] message-wake-all handle=0x" << std::hex << th.handle
+                          << " tid=" << std::dec << th.thread_id << "\n";
+            }
+        }
+    }
+}
+
 bool DummyAPIHandler::coop_spawn_thread(uint32_t handle, uint32_t start_address, uint32_t parameter, uint32_t requested_stack_size) {
     if (!coop_threads_enabled_flag) return false;
     if (!coop_threads_initialized) {
@@ -1950,7 +2100,7 @@ void DummyAPIHandler::coop_on_timeslice_end() {
     }
     coop_force_yield = false;
 
-    if (!switched && !it->second.finished) {
+    if (!switched && !it->second.finished && it->second.runnable) {
         coop_load_thread_regs(coop_current_handle);
     }
 }
@@ -2353,12 +2503,41 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
 
             uint32_t class_arg = handler->ctx.get_arg(1);
             uint32_t wndproc = win32_class_wndproc_from_arg(handler->ctx, class_arg, wide);
+            std::string class_name_dbg = win32_class_key_from_arg(handler->ctx, class_arg, wide);
+            if (class_name_dbg.empty()) {
+                class_name_dbg = win32_class_key_from_arg(handler->ctx, class_arg, !wide);
+            }
+            if (wndproc == 0 && !is_builtin_win32_class_name(class_name_dbg)) {
+                if (env_truthy("PVZ_STRICT_CREATEWINDOW_CLASS")) {
+                    if (env_truthy("PVZ_WNDPROC_TRACE")) {
+                        std::cout << "[WNDPROC] CreateWindowEx fail(unregistered class) class='"
+                                  << class_name_dbg << "' ptr=0x" << std::hex << class_arg
+                                  << std::dec << "\n";
+                    }
+                    handler->ctx.set_eax(0);
+                    handler->ctx.global_state["LastError"] = 1411; // ERROR_CLASS_DOES_NOT_EXIST
+                    uint32_t esp = 0;
+                    handler->backend.reg_read(UC_X86_REG_ESP, &esp);
+                    uint32_t ret_addr = 0;
+                    handler->backend.mem_read(esp, &ret_addr, 4);
+                    esp += 48 + 4; // 12 args + ret
+                    handler->backend.reg_write(UC_X86_REG_ESP, &esp);
+                    handler->backend.reg_write(UC_X86_REG_EIP, &ret_addr);
+                    return;
+                }
+                if (env_truthy("PVZ_WNDPROC_TRACE")) {
+                    std::cout << "[WNDPROC] CreateWindowEx fallback(unregistered class) class='"
+                              << class_name_dbg << "' ptr=0x" << std::hex << class_arg
+                              << " -> proceeding with hwnd only" << std::dec << "\n";
+                }
+            }
             if (wndproc != 0) {
                 g_window_long_values[win32_window_long_key(hwnd, -4)] = static_cast<int32_t>(wndproc); // GWL_WNDPROC
             }
             if (env_truthy("PVZ_WNDPROC_TRACE")) {
                 std::cout << "[WNDPROC] CreateWindowEx hwnd=0x" << std::hex << hwnd
                           << " class=0x" << class_arg << " wndproc=0x" << wndproc
+                          << " class_name='" << class_name_dbg << "'"
                           << std::dec << "\n";
             }
 
@@ -2428,20 +2607,6 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             uint32_t ret_addr;
             handler->backend.mem_read(esp, &ret_addr, 4);
             esp += 4 + 16;
-            handler->backend.reg_write(UC_X86_REG_ESP, &esp);
-            handler->backend.reg_write(UC_X86_REG_EIP, &ret_addr);
-            return;
-        }
-
-        if (name == "USER32.dll!RegisterClassA" || name == "USER32.dll!RegisterClassW" ||
-            name == "USER32.dll!RegisterClassExA" || name == "USER32.dll!RegisterClassExW") {
-            handler->ctx.set_eax(0xC000); // Dummy ATOM
-            
-            uint32_t esp;
-            handler->backend.reg_read(UC_X86_REG_ESP, &esp);
-            uint32_t ret_addr;
-            handler->backend.mem_read(esp, &ret_addr, 4);
-            esp += 4 + 4; // 1 arg
             handler->backend.reg_write(UC_X86_REG_ESP, &esp);
             handler->backend.reg_write(UC_X86_REG_EIP, &ret_addr);
             return;
@@ -2938,10 +3103,6 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
                 std::cout << "\n";
             };
-            if (verbose_msg_pump) {
-                std::cout << "\n[API CALL] [HLE] Intercepted " << name << std::endl;
-            }
-            
             uint32_t lpMsg = handler->ctx.get_arg(0);
             uint32_t hWnd = handler->ctx.get_arg(1);
             uint32_t wMsgFilterMin = handler->ctx.get_arg(2);
@@ -2950,14 +3111,28 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             uint32_t current_tid = handler->coop_threads_enabled()
                 ? handler->coop_current_thread_id()
                 : 1u;
+            bool allow_sdl_events = !handler->coop_threads_enabled() || handler->coop_current_thread_is_main();
+            if (verbose_msg_pump) {
+                std::cout << "\n[API CALL] [HLE] Intercepted " << name
+                          << " tid=" << current_tid
+                          << " hwnd=0x" << std::hex << hWnd
+                          << " min=0x" << wMsgFilterMin
+                          << " max=0x" << wMsgFilterMax
+                          << std::dec << std::endl;
+            }
             
             SDL_Event event;
             bool has_event = false;
             bool from_queue = false;
+            bool stop_after_return = false;
             Win32_MSG msg = {0};
-            SDL_PumpEvents();
+            if (allow_sdl_events) {
+                SDL_PumpEvents();
+            }
             pump_due_win32_timers(SDL_GetTicks());
-            maybe_enqueue_synth_click(SDL_GetTicks());
+            if (allow_sdl_events) {
+                maybe_enqueue_synth_click(SDL_GetTicks());
+            }
 
             for (auto it = g_win32_message_queue.begin(); it != g_win32_message_queue.end(); ++it) {
                 if (!win32_message_matches_filter(*it, current_tid, hWnd, wMsgFilterMin, wMsgFilterMax)) {
@@ -2974,9 +3149,9 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 break;
             }
             
-            if (!has_event && is_peek) {
+            if (!has_event && is_peek && allow_sdl_events) {
                 has_event = SDL_PollEvent(&event);
-            } else if (!has_event) {
+            } else if (!has_event && allow_sdl_events) {
                 // GetMessage blocks until an event is available
                 // Use WaitEventTimeout to not freeze the whole JIT loop indefinitely
                 has_event = SDL_WaitEventTimeout(&event, 50); 
@@ -2998,11 +3173,18 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 }
             }
 
-            if (!has_event && !is_peek && g_win32_timers.empty() && !g_valid_hwnds.empty()) {
+            if (!has_event && !is_peek && force_idle_timer_enabled() &&
+                g_win32_timers.empty() && !g_valid_hwnds.empty()) {
                 uint32_t now_ms = SDL_GetTicks();
                 if (g_synth_idle_timer_next_ms == 0 || static_cast<int32_t>(now_ms - g_synth_idle_timer_next_ms) >= 0) {
-                    uint32_t hwnd = *g_valid_hwnds.begin();
-                    enqueue_timer_message(hwnd, 1, now_ms);
+                    // Prefer caller-requested HWND to satisfy GetMessage filter.
+                    if (hWnd != 0 && hWnd != 0xFFFFFFFFu) {
+                        enqueue_timer_message(hWnd, 1, now_ms);
+                    } else {
+                        for (uint32_t hwnd : g_valid_hwnds) {
+                            enqueue_timer_message(hwnd, 1, now_ms);
+                        }
+                    }
                     g_synth_idle_timer_next_ms = now_ms + 16;
                     for (auto it = g_win32_message_queue.begin(); it != g_win32_message_queue.end(); ++it) {
                         if (!win32_message_matches_filter(*it, current_tid, hWnd, wMsgFilterMin, wMsgFilterMax)) {
@@ -3058,6 +3240,12 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
 
                 handler->backend.mem_write(lpMsg, &msg, sizeof(msg));
                 record_msg(msg.message);
+                if (verbose_msg_pump) {
+                    std::cout << "[MSG PUMP] deliver msg=0x" << std::hex << msg.message
+                              << " hwnd=0x" << msg.hwnd
+                              << " from=" << (from_queue ? "queue" : "sdl")
+                              << std::dec << "\n";
+                }
                 if (is_peek) {
                     handler->ctx.set_eax(1);
                 } else {
@@ -3067,21 +3255,60 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 if (is_peek) {
                     handler->ctx.set_eax(0);
                 } else {
-                    // Win32 GetMessage should block; avoid returning 0 (WM_QUIT) on idle.
-                    if (handler->coop_threads_enabled()) {
-                        handler->coop_request_yield();
+                    // Optional compatibility shim for apps that depend on timer-like wakeups.
+                    bool synthesized = false;
+                    if (force_idle_timer_enabled() && !g_valid_hwnds.empty()) {
+                        Win32_MSG msg = {0};
+                        msg.hwnd = (hWnd != 0 && hWnd != 0xFFFFFFFFu) ? hWnd : *g_valid_hwnds.begin();
+                        msg.message = WM_TIMER;
+                        msg.wParam = 1;
+                        msg.lParam = 0;
+                        msg.time = SDL_GetTicks();
+                        int mx, my;
+                        SDL_GetMouseState(&mx, &my);
+                        msg.pt_x = mx;
+                        msg.pt_y = my;
+                        if (win32_message_matches_filter(msg, hWnd, wMsgFilterMin, wMsgFilterMax)) {
+                            handler->backend.mem_write(lpMsg, &msg, sizeof(msg));
+                            record_msg(msg.message);
+                            handler->ctx.set_eax(1);
+                            synthesized = true;
+                        }
                     }
-                    Win32_MSG msg = {0};
-                    msg.hwnd = hWnd;
-                    msg.message = WM_NULL;
-                    msg.time = SDL_GetTicks();
-                    int mx, my;
-                    SDL_GetMouseState(&mx, &my);
-                    msg.pt_x = mx;
-                    msg.pt_y = my;
-                    handler->backend.mem_write(lpMsg, &msg, sizeof(msg));
-                    record_msg(msg.message);
-                    handler->ctx.set_eax(1);
+                    if (!synthesized) {
+                        bool parked_for_wait = false;
+                        // Win32 GetMessage should block; avoid returning 0 (WM_QUIT) on idle.
+                        if (handler->coop_threads_enabled()) {
+                            if (!win32_queue_has_filtered_message_for_thread(
+                                    current_tid, hWnd, wMsgFilterMin, wMsgFilterMax)) {
+                                // In cooperative mode, park worker threads that spin in
+                                // empty GetMessage loops until a message is enqueued.
+                                handler->coop_block_current_thread_on_message_wait(
+                                    hWnd, wMsgFilterMin, wMsgFilterMax);
+                                parked_for_wait = true;
+                                stop_after_return = true;
+                            } else {
+                                handler->coop_request_yield();
+                            }
+                        }
+                        Win32_MSG msg = {0};
+                        msg.hwnd = hWnd;
+                        msg.message = WM_NULL;
+                        msg.time = SDL_GetTicks();
+                        int mx, my;
+                        SDL_GetMouseState(&mx, &my);
+                        msg.pt_x = mx;
+                        msg.pt_y = my;
+                        handler->backend.mem_write(lpMsg, &msg, sizeof(msg));
+                        record_msg(msg.message);
+                        if (verbose_msg_pump) {
+                            std::cout << "[MSG PUMP] idle msg=0x" << std::hex << msg.message
+                                      << " hwnd=0x" << msg.hwnd
+                                      << " parked=" << (parked_for_wait ? "1" : "0")
+                                      << std::dec << "\n";
+                        }
+                        handler->ctx.set_eax(1);
+                    }
                 }
             }
 
@@ -3093,6 +3320,11 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
             esp += (is_peek ? 24 : 20); // Peek arguments: 5 (20 bytes), Get arguments: 4 (16 bytes) + 4 for ret
             handler->backend.reg_write(UC_X86_REG_ESP, &esp);
             handler->backend.reg_write(UC_X86_REG_EIP, &ret_addr);
+            if (stop_after_return) {
+                // Break current slice immediately after parking this thread so
+                // the cooperative scheduler can switch away before another loop iteration.
+                handler->backend.emu_stop();
+            }
             return;
         }
 

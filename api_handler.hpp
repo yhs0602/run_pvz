@@ -37,6 +37,10 @@ private:
         bool is_main = false;
         bool runnable = true;
         bool finished = false;
+        bool waiting_message = false;
+        uint32_t wait_hwnd_filter = 0;
+        uint32_t wait_min_filter = 0;
+        uint32_t wait_max_filter = 0;
         uint64_t quanta = 0;
         CoopThreadRegs regs;
     };
@@ -145,9 +149,15 @@ public:
     void coop_register_main_thread();
     uint32_t coop_current_pc() const;
     uint32_t coop_current_thread_id() const;
+    bool coop_current_thread_is_main() const;
+    bool coop_prepare_to_run();
     bool coop_spawn_thread(uint32_t handle, uint32_t start_address, uint32_t parameter, uint32_t requested_stack_size);
     bool coop_is_thread_finished(uint32_t handle) const;
     bool coop_fail_create_on_spawn_failure() const { return coop_fail_create_thread_on_spawn_failure; }
+    void coop_block_current_thread_on_message_wait(uint32_t hwnd_filter, uint32_t min_filter, uint32_t max_filter);
+    void coop_notify_message_enqueued(uint32_t target_thread_id, uint32_t msg_hwnd, uint32_t msg_id);
+    void coop_wake_message_waiter(uint32_t thread_id);
+    void coop_wake_all_message_waiters();
     void coop_request_yield() { coop_force_yield = true; }
     void coop_on_timeslice_end();
     bool coop_try_absorb_emu_error(uc_err err);

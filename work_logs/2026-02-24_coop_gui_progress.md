@@ -332,3 +332,27 @@
 - 다음 액션:
   - cooperative 장시간(180~300s)에서 `GetMessage/DispatchMessage` 및 `Lock/Unlock` 진입 여부를 집중 샘플링.
   - resources 이후 상위 체인(`0x456610/0x5a1640/0x5bd830/0x61be1b/0x5bb880/0x5a1f72`) return-value/state 정합성 추가 점검.
+
+### 2026-02-26 00:32 KST message-wait 스핀 원인 고정 및 디스어셈블 기준선 추가
+- 디스어셈블 산출물 저장:
+  - `analysis/disasm/pvz_main_thread_entry_0x5d5dc0.asm`
+  - `analysis/disasm/pvz_main_lock_wrapper_0x62ce9b.asm`
+  - `analysis/disasm/pvz_main_lock_branch_0x62118b.asm`
+  - `analysis/disasm/pvz_main_lock_branch_0x61fcd4.asm`
+  - `analysis/disasm/pvz_main_tiny_hot_0x441dd0.asm`
+  - `analysis/disasm/pvz_main_textnorm_hot_0x5d7c0d.asm`
+  - `analysis/disasm/pvz_main_upper_hot_0x61e4e6.asm`
+  - 요약 노트: `analysis/disasm/2026-02-26_bootstrap_hotspot_notes.md`
+- 핵심 관찰:
+  - SDL/D3D/DDraw 초기화 API까지는 도달하나, 120초 샘플에서도 `IDirectDrawSurface7::Lock/Unlock` 미진입.
+  - `CreateThread(0x5d5dc0) -> WaitForSingleObject -> CreateFileA('properties\\resources.xml')` 이후 parser/text normalize 체인에서 장시간 체류.
+  - verbose msg 샘플에서 worker `GetMessageA(tid=2)` idle 루프가 과도하게 반복(약 392회/25초).
+- 수정:
+  - cooperative message wait 필터/상태 추적 필드 추가(`waiting_message`, filter 3종).
+  - worker thread(`non-main`)는 `GetMessage/PeekMessage`에서 SDL 이벤트를 직접 poll하지 않도록 제한.
+  - 메시지 enqueue 시 필터 매칭 기반 wake(`coop_notify_message_enqueued`)로 변경.
+  - `GetMessage`에서 park가 걸린 경우 API 리턴 직후 `emu_stop()`으로 현재 timeslice 즉시 종료하여 재진입 스핀 차단.
+  - main loop 진입 전에 `coop_prepare_to_run()`를 호출해 non-runnable current thread 보정.
+- 검증:
+  - `logs_coop_trace_msg_after_emustop_20260226_0032.log`: `tid=2 GetMessageA`가 `392 -> 1`로 감소(8초 샘플), `park=1` 확인.
+  - `logs_coop_after_msgparkstop_20260226_0033.log`: 장시간 진행 안정성 유지, 그러나 아직 `Lock/Unlock` 미진입.
