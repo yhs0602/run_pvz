@@ -30,8 +30,8 @@
   - 종료 조건: guest wrapper 경로 성능 확보 또는 wrapper 전체를 정확 번역/JIT로 대체.
 
 - `main.cpp` CRT alloc/free fast callsite (`0x61c130`, `0x621182`, `0x61fcc5`, `0x61fcc6`)
-  - 내용: `PVZ_CRT_ALLOC_ACCEL`에서 CRT heap 호출을 arena allocator/성공 분기로 우회.
-  - 리스크: 장기 실행 메모리 회수 불완전, allocator semantics 차이.
+  - 내용: `PVZ_CRT_ALLOC_ACCEL`에서 CRT heap 호출을 arena allocator로 우회하고, free helper/callsite에서 fast arena 블록을 free-cache로 재사용.
+  - 리스크: 실제 CRT allocator의 세부 semantics(메타데이터/진단/에러 경로)와 차이.
   - 종료 조건: guest CRT allocator 경로 안정화(실제 HeapAlloc/HeapFree 호출로도 성능/정합성 확보).
 
 - `main.cpp` CRT free helper fast-path (`0x61c19a`, `0x61c19f`, `0x61fc66`)
@@ -160,11 +160,11 @@
   - 종료 조건: 해당 블록이 병목에서 이탈하거나 native/JIT 경로가 안정화.
 
 - `main.cpp` xml parser branch-block accel (`0x5a1f72/0x5a1f7b/0x5a1f8b/0x5a2052/0x5a210a`, `PVZ_XML_BRANCH_ACCEL`)
-  - 내용: parser 상태머신의 고빈도 분기 블록을 의미보존 형태로 단축.
+  - 내용: parser 상태머신의 고빈도 분기 블록 단축 + `0x5a1f60`에서 char pull 이후 연쇄 분기를 단일 점프로 축약.
   - 리스크: 분기 블록에서의 레지스터/조건 플래그 미세 차이가 누적될 가능성.
   - 종료 조건: parser 루프가 병목에서 벗어나거나 parser 경로를 정식 번역으로 대체.
 
 - `main.cpp` text normalize branch-block accel (`0x62b0d8/0x62b0e5/0x62b0e9/0x62b0f5/0x62b0fd/0x62b105/0x62b184/0x62b185`, `PVZ_TEXT_NORM_BRANCH_ACCEL`)
-  - 내용: CR/LF/EOF 정규화 문자 루프의 분기 블록을 의미보존 형태로 단축.
+  - 내용: CR/LF/EOF 정규화 문자 루프 분기 단축 + `0x62b0d8` 연속 일반문자 구간 bulk-copy fast-path.
   - 리스크: 블록 경계의 플래그/미세 side effect 불일치가 누적될 가능성.
   - 종료 조건: `0x62b0xx` 군집이 top-hot에서 이탈하거나 parser 경로가 정식 번역/JIT로 대체.

@@ -403,3 +403,27 @@
 - 검증:
   - `logs_coop_trace_msg_after_emustop_20260226_0032.log`: `tid=2 GetMessageA`가 `392 -> 1`로 감소(8초 샘플), `park=1` 확인.
   - `logs_coop_after_msgparkstop_20260226_0033.log`: 장시간 진행 안정성 유지, 그러나 아직 `Lock/Unlock` 미진입.
+
+### 2026-02-26 02:30 KST 디스어셈블 기반 추가 가속 + CRT free-cache 도입
+- 코드 변경 (`main.cpp`)
+  - `0x5a1f60` XML hot path를 디스어셈블 기준으로 재구성:
+    - 기존: `0x5a1f60 -> 0x5a1f7b -> 0x5a1f8b -> 0x5a2052 -> 0x5a210a`를 블록별 분리 가속.
+    - 변경: char pull 직후 state/char 분기를 한 번에 계산해 `0x5a1f9a/0x5a205b/0x5a2110/0x5a217d`로 직접 점프.
+  - `0x62b0d8` text-normalize 루프에 bulk-copy fast-path 추가:
+    - `\r`/`0x1A`를 만나기 전 연속 바이트를 host에서 한 번에 복사.
+    - 특수 문자 처리 분기(`0x62b0e5` 이하)는 기존 흐름 유지.
+  - CRT fast allocator에 free-cache 재사용 도입:
+    - 새 옵션: `PVZ_CRT_ALLOC_FREE_CAP` (기본 262144, `0`=무제한).
+    - free helper/callsite(`0x61c19a`, `0x61fcc5/0x61fcc6`)에서 fast arena 포인터 회수.
+    - string grow/assign fast-path에서 이전 fast arena 블록 recycle 연동.
+- 검증 로그
+  - `/tmp/pvz_textnormbulk_20260226_021909.log`
+    - `txtnorm` 카운터가 기존 수십만 단위에서 수천 단위로 감소(동일 샘플 구간 기준).
+  - `/tmp/pvz_smoke_after_crtcache_20260226_022402.log`
+    - 신규 옵션 출력 및 회귀 없이 부팅/파서 체인 진행 확인.
+  - `/tmp/pvz_push60_20260226_021940.log`
+    - `resources.xml` 이후 parser hot-chain 지속 진입 확인.
+    - 샘플 구간 내 `IDirectDrawSurface7::Lock/Unlock`는 여전히 미관측.
+- 현재 결론
+  - parser/text-normalize 루프 오버헤드는 추가로 감소했지만, 아직 렌더 루프 진입 조건(또는 후속 게이트) 미충족.
+  - 다음 추적 포커스: `0x5a217d/0x5a2184/0x5a21a6` 이후 XML state 전이와 메시지/타이밍 상태값 정합성.

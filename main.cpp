@@ -7,6 +7,7 @@
 #include <iostream>
 #include <algorithm>
 #include <set>
+#include <map>
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
@@ -280,9 +281,15 @@ uint32_t g_crt_alloc_base = 0x48000000u;
 uint32_t g_crt_alloc_limit = 0x50000000u; // 128MB arena
 uint32_t g_crt_alloc_top = 0x48000000u;
 uint32_t g_crt_alloc_mapped_end = 0x48000000u;
+size_t g_crt_alloc_free_cap_entries = 262144;
+bool g_crt_alloc_free_cap_warned = false;
+unordered_map<uint32_t, uint32_t> g_crt_alloc_live_sizes; // ptr -> aligned size
+multimap<uint32_t, uint32_t> g_crt_alloc_free_by_size;    // size -> ptr
 uint64_t g_crt_alloc_count = 0;
 uint64_t g_crt_alloc_bytes = 0;
 uint64_t g_crt_free_fast_count = 0;
+uint64_t g_crt_alloc_reuse_count = 0;
+uint64_t g_crt_alloc_recycled_count = 0;
 uint64_t g_lock_wrapper_fast_count = 0;
 uint64_t g_string_grow_fast_count = 0;
 uint64_t g_substr_assign_fast_count = 0;
@@ -600,15 +607,50 @@ static bool ensure_crt_alloc_mapped(uint32_t end_addr) {
     return true;
 }
 
+static bool crt_alloc_try_reuse(uint32_t aligned, uint32_t& out_ptr) {
+    auto it = g_crt_alloc_free_by_size.lower_bound(aligned);
+    if (it == g_crt_alloc_free_by_size.end()) return false;
+    uint32_t block_size = it->first;
+    out_ptr = it->second;
+    g_crt_alloc_free_by_size.erase(it);
+    g_crt_alloc_live_sizes[out_ptr] = block_size;
+    g_crt_alloc_reuse_count++;
+    return true;
+}
+
+static bool crt_free_fast_ptr(uint32_t ptr) {
+    if (ptr == 0u) return true;
+    auto it = g_crt_alloc_live_sizes.find(ptr);
+    if (it == g_crt_alloc_live_sizes.end()) return false;
+    uint32_t block_size = it->second;
+    g_crt_alloc_live_sizes.erase(it);
+    bool unlimited = (g_crt_alloc_free_cap_entries == 0u);
+    if (unlimited || g_crt_alloc_free_by_size.size() < g_crt_alloc_free_cap_entries) {
+        g_crt_alloc_free_by_size.emplace(block_size, ptr);
+        g_crt_alloc_recycled_count++;
+    } else if (!g_crt_alloc_free_cap_warned) {
+        std::cerr << "[!] CRT alloc free-cache cap reached (" << g_crt_alloc_free_cap_entries
+                  << ", PVZ_CRT_ALLOC_FREE_CAP). Recycled blocks above cap are dropped.\n";
+        g_crt_alloc_free_cap_warned = true;
+    }
+    return true;
+}
+
 static bool crt_alloc_fast(uint32_t requested_bytes, uint32_t& out_ptr) {
     uint32_t bytes = requested_bytes == 0 ? 1u : requested_bytes;
     uint32_t aligned = align_up_u32(bytes, 16u);
+    if (crt_alloc_try_reuse(aligned, out_ptr)) {
+        g_crt_alloc_count++;
+        g_crt_alloc_bytes += aligned;
+        return true;
+    }
     if (g_crt_alloc_top + aligned < g_crt_alloc_top) return false;
     uint32_t end = g_crt_alloc_top + aligned;
     if (end > g_crt_alloc_limit) return false;
     if (!ensure_crt_alloc_mapped(end)) return false;
     out_ptr = g_crt_alloc_top;
     g_crt_alloc_top = end;
+    g_crt_alloc_live_sizes[out_ptr] = aligned;
     g_crt_alloc_count++;
     g_crt_alloc_bytes += aligned;
     return true;
@@ -1210,9 +1252,8 @@ static bool accelerate_substr_assign_403e20(uc_engine* uc, uint32_t addr32) {
         if (!crt_alloc_fast(new_cap + 1u, new_ptr)) return false;
         if (g_backend->mem_write(this_ptr + 4u, &new_ptr, 4) != UC_ERR_OK) return false;
         if (g_backend->mem_write(this_ptr + 0x18u, &new_cap, 4) != UC_ERR_OK) return false;
-        if (dst_cap >= 0x10u) {
-            // Original path would free old heap storage.
-            g_crt_free_fast_count++;
+        if (dst_cap >= 0x10u && dst_ptr >= g_crt_alloc_base && dst_ptr < g_crt_alloc_top) {
+            if (crt_free_fast_ptr(dst_ptr)) g_crt_free_fast_count++;
         }
         dst_cap = new_cap;
         dst_ptr = new_ptr;
@@ -1284,8 +1325,8 @@ static bool accelerate_assign_ptr_404330(uc_engine* uc, uint32_t addr32) {
         if (!crt_alloc_fast(new_cap + 1u, new_ptr)) return false;
         if (g_backend->mem_write(this_ptr + 4u, &new_ptr, 4) != UC_ERR_OK) return false;
         if (g_backend->mem_write(this_ptr + 0x18u, &new_cap, 4) != UC_ERR_OK) return false;
-        if (dst_cap >= 0x10u) {
-            g_crt_free_fast_count++;
+        if (dst_cap >= 0x10u && old_ptr >= g_crt_alloc_base && old_ptr < g_crt_alloc_top) {
+            if (crt_free_fast_ptr(old_ptr)) g_crt_free_fast_count++;
         }
         dst_ptr = new_ptr;
         dst_cap = new_cap;
@@ -1349,6 +1390,9 @@ static bool accelerate_crt_free_helper_61c19a(uc_engine* uc, uint32_t addr32) {
 
     bool owned_by_fast_arena = (ptr >= g_crt_alloc_base && ptr < g_crt_alloc_top);
     if (ptr != 0u && !owned_by_fast_arena) return false;
+    if (owned_by_fast_arena) {
+        crt_free_fast_ptr(ptr);
+    }
 
     uint32_t new_esp = esp + 4u; // cdecl ret
     uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
@@ -1407,9 +1451,8 @@ static bool accelerate_string_grow_404080(uc_engine* uc, uint32_t addr32) {
     if (g_backend->mem_write(this_ptr + 4u, &new_ptr, 4) != UC_ERR_OK) return false;
     if (g_backend->mem_write(this_ptr + 0x18u, &new_cap, 4) != UC_ERR_OK) return false;
     if (g_backend->mem_write(this_ptr + 0x14u, &copy_len, 4) != UC_ERR_OK) return false;
-    if (old_cap >= 0x10u) {
-        // Original path would release old heap storage.
-        g_crt_free_fast_count++;
+    if (old_cap >= 0x10u && old_ptr >= g_crt_alloc_base && old_ptr < g_crt_alloc_top) {
+        if (crt_free_fast_ptr(old_ptr)) g_crt_free_fast_count++;
     }
 
     uint32_t new_esp = esp + 12u; // ret 8
@@ -1482,6 +1525,18 @@ static bool accelerate_crt_heapfree_callsite_61fccx(uc_engine* uc, uint32_t addr
 
     uint32_t esp = 0;
     uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+    uint32_t ptr = 0;
+    if (addr32 == 0x61fcc5u) {
+        uc_reg_read(uc, UC_X86_REG_ESI, &ptr);
+    } else {
+        if (g_backend->mem_read(esp, &ptr, 4) != UC_ERR_OK) return false;
+    }
+    bool owned_by_fast_arena = (ptr >= g_crt_alloc_base && ptr < g_crt_alloc_top);
+    if (ptr != 0u && !owned_by_fast_arena) return false;
+    if (owned_by_fast_arena) {
+        crt_free_fast_ptr(ptr);
+    }
+
     uint32_t eax = 1u;         // HeapFree success
     uint32_t eip = 0x61fceeu;  // success continuation
     // 0x61fcc6 is a branch target where pointer arg was pushed before this block.
@@ -1597,6 +1652,23 @@ static bool accelerate_tiny_control_blocks(uc_engine* uc, uint32_t addr32) {
     }
 
     return false;
+}
+
+static bool accelerate_int3_pad_blocks(uc_engine* uc, uint32_t addr32) {
+    if (!g_hot_loop_accel_enabled) return false;
+    // Debug sentinel pad observed after RaiseException helper in startup path.
+    uint32_t next = 0;
+    if (addr32 == 0x5b816eu || addr32 == 0x5b816fu) {
+        next = 0x5b8170u;
+    } else if (addr32 == 0x61c199u) {
+        next = 0x61c19au;
+    } else {
+        return false;
+    }
+    uc_reg_write(uc, UC_X86_REG_EIP, &next);
+    uc_emu_stop(uc);
+    g_hot_loop_accel_hits++;
+    return true;
 }
 
 static bool accelerate_fast_worker_thread(uc_engine* uc, uint32_t addr32) {
@@ -1949,31 +2021,10 @@ static bool accelerate_memmove_s_61be96(uc_engine* uc, uint32_t addr32) {
     return true;
 }
 
-static bool accelerate_stream_pop_5bb880(uc_engine* uc, uint32_t addr32) {
-    if (!g_stream_pop_accel_enabled) return false;
-    if (addr32 != 0x5bb880u) return false;
-
-    uint32_t this_ptr = 0;
-    uint32_t esp = 0;
-    uc_reg_read(uc, UC_X86_REG_ECX, &this_ptr);
-    uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+static bool stream_pop_u16_from_reader(uint32_t this_ptr, uint32_t out_ptr, uint32_t& out_eax) {
     if (this_ptr < 0x1000u) return false;
-
-    uint32_t ret_addr = 0;
-    uint32_t out_ptr = 0;
-    if (g_backend->mem_read(esp, &ret_addr, 4) != UC_ERR_OK) return false;
-    if (g_backend->mem_read(esp + 4u, &out_ptr, 4) != UC_ERR_OK) return false;
-
     if (out_ptr == 0u) {
-        uint32_t eax = 3u;
-        uint32_t new_esp = esp + 8u; // ret 4
-        uc_reg_write(uc, UC_X86_REG_EAX, &eax);
-        uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
-        uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
-        uc_emu_stop(uc);
-        g_stream_pop_fast_count++;
-        g_hot_loop_accel_hits++;
-        g_hot_loop_accel_bytes += 1u;
+        out_eax = 3u;
         return true;
     }
 
@@ -2003,7 +2054,28 @@ static bool accelerate_stream_pop_5bb880(uc_engine* uc, uint32_t addr32) {
         }
     }
 
-    uint32_t eax = 0u;
+    out_eax = 0u;
+    return true;
+}
+
+static bool accelerate_stream_pop_5bb880(uc_engine* uc, uint32_t addr32) {
+    if (!g_stream_pop_accel_enabled) return false;
+    if (addr32 != 0x5bb880u) return false;
+
+    uint32_t this_ptr = 0;
+    uint32_t esp = 0;
+    uc_reg_read(uc, UC_X86_REG_ECX, &this_ptr);
+    uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+    if (this_ptr < 0x1000u) return false;
+
+    uint32_t ret_addr = 0;
+    uint32_t out_ptr = 0;
+    if (g_backend->mem_read(esp, &ret_addr, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_read(esp + 4u, &out_ptr, 4) != UC_ERR_OK) return false;
+
+    uint32_t eax = 0;
+    if (!stream_pop_u16_from_reader(this_ptr, out_ptr, eax)) return false;
+
     uint32_t new_esp = esp + 8u; // ret 4
     uc_reg_write(uc, UC_X86_REG_EAX, &eax);
     uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
@@ -2011,6 +2083,77 @@ static bool accelerate_stream_pop_5bb880(uc_engine* uc, uint32_t addr32) {
     uc_emu_stop(uc);
 
     g_stream_pop_fast_count++;
+    g_hot_loop_accel_hits++;
+    g_hot_loop_accel_bytes += 2u;
+    return true;
+}
+
+static bool accelerate_xml_char_pull_5a1f60(uc_engine* uc, uint32_t addr32) {
+    if (!g_xml_branch_accel_enabled) return false;
+    if (addr32 != 0x5a1f60u) return false;
+
+    uint32_t esp = 0;
+    uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+    uint32_t edi = 0;
+    if (g_backend->mem_read(esp + 0x2cu, &edi, 4) != UC_ERR_OK) return false;
+
+    uint32_t eax = 0;
+    uint32_t out_ptr = esp + 0x24u;
+    if (!stream_pop_u16_from_reader(edi, out_ptr, eax)) return false;
+    if (eax != 0u) {
+        uint32_t next = 0x5a2f78u;
+        uc_reg_write(uc, UC_X86_REG_EDI, &edi);
+        uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_xml_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 2u;
+        return true;
+    }
+
+    // Collapse 0x5a1f7b -> 0x5a1f8b -> 0x5a2052 -> 0x5a210a branch chain
+    // into a single transition to reduce stop/resume overhead in XML token loop.
+    uint32_t edx = 0;
+    if (g_backend->mem_read(out_ptr, &edx, 4) != UC_ERR_OK) return false;
+    uint16_t dx = static_cast<uint16_t>(edx & 0xFFFFu);
+
+    uint32_t ebx = 0;
+    uc_reg_read(uc, UC_X86_REG_EBX, &ebx);
+    ebx &= 0xFFFFFF00u; // xor bl, bl
+
+    if (dx == 0x000Au) {
+        uint32_t line = 0;
+        if (g_backend->mem_read(edi + 0x58u, &line, 4) != UC_ERR_OK) return false;
+        line += 1u;
+        if (g_backend->mem_write(edi + 0x58u, &line, 4) != UC_ERR_OK) return false;
+    }
+
+    uint32_t ecx = 0;
+    if (g_backend->mem_read(esp + 0x18u, &ecx, 4) != UC_ERR_OK) return false;
+    if (ecx < 0x1000u) return false;
+
+    uint32_t state = 0;
+    if (g_backend->mem_read(ecx, &state, 4) != UC_ERR_OK) return false;
+
+    uint32_t next = 0x5a217du;
+    if (state == 5u) {
+        next = 0x5a1f9au;
+    } else if (state == 4u) {
+        next = 0x5a205bu;
+    } else if (dx == 0x0022u) {
+        next = 0x5a2110u;
+    }
+
+    uc_reg_write(uc, UC_X86_REG_EDI, &edi);
+    uc_reg_write(uc, UC_X86_REG_EAX, &state);
+    uc_reg_write(uc, UC_X86_REG_EBX, &ebx);
+    uc_reg_write(uc, UC_X86_REG_ECX, &ecx);
+    uc_reg_write(uc, UC_X86_REG_EDX, &edx);
+    uc_reg_write(uc, UC_X86_REG_EIP, &next);
+    uc_emu_stop(uc);
+
+    g_xml_branch_fast_count++;
     g_hot_loop_accel_hits++;
     g_hot_loop_accel_bytes += 2u;
     return true;
@@ -2183,6 +2326,75 @@ static bool accelerate_xml_branch_blocks(uc_engine* uc, uint32_t addr32) {
         return true;
     }
 
+    if (addr32 == 0x5a217du) {
+        uint32_t esp = 0;
+        uint32_t eax = 0;
+        uint32_t ecx = 0;
+        uint32_t edx = 0;
+        uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+        uc_reg_read(uc, UC_X86_REG_EAX, &eax);
+        uc_reg_read(uc, UC_X86_REG_ECX, &ecx);
+        uc_reg_read(uc, UC_X86_REG_EDX, &edx);
+
+        uint8_t in_quote = 0;
+        if (g_backend->mem_read(esp + 0x1fu, &in_quote, 1) != UC_ERR_OK) return false;
+
+        uint32_t next = 0x5a21a6u;
+        if (in_quote != 0u) {
+            next = 0x5a2138u;
+        } else {
+            uint16_t dx = static_cast<uint16_t>(edx & 0xFFFFu);
+            if (dx == 0x003Cu) { // '<'
+                if (eax == 3u) {
+                    next = 0x5a254du;
+                } else if (eax != 0u) {
+                    next = 0x5a314cu;
+                } else {
+                    if (ecx < 0x1000u) return false;
+                    uint32_t one = 1u;
+                    if (g_backend->mem_write(ecx, &one, 4) != UC_ERR_OK) return false;
+                    next = 0x5a1f60u;
+                }
+            }
+        }
+
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_xml_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
+    if (addr32 == 0x5a21a6u) {
+        uint32_t edx = 0;
+        uc_reg_read(uc, UC_X86_REG_EDX, &edx);
+        uint16_t dx = static_cast<uint16_t>(edx & 0xFFFFu);
+        if (dx == 0x003Eu) { // '>'
+            uint32_t next = 0x5a2560u;
+            uc_reg_write(uc, UC_X86_REG_EIP, &next);
+            uc_emu_stop(uc);
+            g_xml_branch_fast_count++;
+            g_hot_loop_accel_hits++;
+            g_hot_loop_accel_bytes += 1u;
+            return true;
+        }
+
+        uint32_t esi = 0;
+        uint32_t esp = 0;
+        uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+        if (g_backend->mem_read(esp + 0x20u, &esi, 4) != UC_ERR_OK) return false;
+        uc_reg_write(uc, UC_X86_REG_ESI, &esi);
+
+        uint32_t next = (dx == 0x002Fu) ? 0x5a21bau : 0x5a21eau;
+        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        uc_emu_stop(uc);
+        g_xml_branch_fast_count++;
+        g_hot_loop_accel_hits++;
+        g_hot_loop_accel_bytes += 1u;
+        return true;
+    }
+
     return false;
 }
 
@@ -2192,8 +2404,46 @@ static bool accelerate_text_norm_branch_blocks(uc_engine* uc, uint32_t addr32) {
     if (addr32 == 0x62b0d8u) {
         uint32_t ebp = 0;
         uint32_t eax = 0;
+        uint32_t ebx = 0;
         uc_reg_read(uc, UC_X86_REG_EBP, &ebp);
         uc_reg_read(uc, UC_X86_REG_EAX, &eax);
+        uc_reg_read(uc, UC_X86_REG_EBX, &ebx);
+
+        // Fast bulk path: copy consecutive non-special bytes in one shot.
+        // Special bytes (\r / 0x1A) are left to original branch flow.
+        uint32_t src_cur = 0;
+        uint32_t src_end = 0;
+        if (g_backend->mem_read(ebp + 0x10u, &src_cur, 4) == UC_ERR_OK &&
+            g_backend->mem_read(ebp - 0x10u, &src_end, 4) == UC_ERR_OK &&
+            src_cur >= 0x1000u && src_end > src_cur && ebx >= 0x1000u) {
+            uint32_t avail = src_end - src_cur;
+            if (avail > 0u && avail <= (1u << 24)) {
+                uint32_t chunk = std::min<uint32_t>(avail, 4096u);
+                vector<uint8_t> buf(chunk, 0);
+                if (g_backend->mem_read(src_cur, buf.data(), chunk) == UC_ERR_OK) {
+                    size_t run = 0;
+                    while (run < chunk && buf[run] != 0x1Au && buf[run] != 0x0Du) {
+                        run++;
+                    }
+                    if (run > 0) {
+                        if (g_backend->mem_write(ebx, buf.data(), run) != UC_ERR_OK) return false;
+                        src_cur += static_cast<uint32_t>(run);
+                        ebx += static_cast<uint32_t>(run);
+                        if (g_backend->mem_write(ebp + 0x10u, &src_cur, 4) != UC_ERR_OK) return false;
+
+                        uint32_t next = 0x62b185u;
+                        uc_reg_write(uc, UC_X86_REG_EBX, &ebx);
+                        uc_reg_write(uc, UC_X86_REG_ECX, &src_cur);
+                        uc_reg_write(uc, UC_X86_REG_EIP, &next);
+                        uc_emu_stop(uc);
+                        g_text_norm_branch_fast_count++;
+                        g_hot_loop_accel_hits++;
+                        g_hot_loop_accel_bytes += static_cast<uint64_t>(run);
+                        return true;
+                    }
+                }
+            }
+        }
 
         uint32_t ecx = 0;
         if (g_backend->mem_read(ebp + 0x10u, &ecx, 4) != UC_ERR_OK) return false;
@@ -2839,6 +3089,7 @@ static bool accelerate_strlen_loop_5d8310(uc_engine* uc, uint32_t addr32) {
 static bool maybe_accelerate_hot_loop_block(uc_engine* uc, uint32_t addr32) {
     if (!g_hot_loop_accel_enabled) return false;
     if (accelerate_stream_pop_5bb880(uc, addr32)) return true;
+    if (accelerate_xml_char_pull_5a1f60(uc, addr32)) return true;
     if (accelerate_streambuf_branch_blocks(uc, addr32)) return true;
     if (accelerate_xml_branch_blocks(uc, addr32)) return true;
     if (accelerate_text_norm_branch_blocks(uc, addr32)) return true;
@@ -2860,6 +3111,7 @@ static bool maybe_accelerate_hot_loop_block(uc_engine* uc, uint32_t addr32) {
     if (accelerate_fast_worker_thread(uc, addr32)) return true;
     if (accelerate_lock_wrappers_62ce88_62cf60(uc, addr32)) return true;
     if (accelerate_tiny_control_blocks(uc, addr32)) return true;
+    if (accelerate_int3_pad_blocks(uc, addr32)) return true;
     if (accelerate_crt_alloc_wrappers(uc, addr32)) return true;
     if (accelerate_crt_heapalloc_callsite_621182(uc, addr32)) return true;
     if (accelerate_crt_heapfree_callsite_61fccx(uc, addr32)) return true;
@@ -3467,8 +3719,17 @@ int main(int argc, char **argv) {
             g_crt_alloc_limit = static_cast<uint32_t>(limit64);
         }
     }
+    int crt_alloc_free_cap = env_int("PVZ_CRT_ALLOC_FREE_CAP", 262144);
+    if (crt_alloc_free_cap >= 0) {
+        g_crt_alloc_free_cap_entries = static_cast<size_t>(crt_alloc_free_cap);
+    }
     g_crt_alloc_top = g_crt_alloc_base;
     g_crt_alloc_mapped_end = g_crt_alloc_base;
+    g_crt_alloc_free_cap_warned = false;
+    g_crt_alloc_live_sizes.clear();
+    g_crt_alloc_free_by_size.clear();
+    g_crt_alloc_reuse_count = 0;
+    g_crt_alloc_recycled_count = 0;
     int block_focus_interval = env_int("PVZ_BLOCK_FOCUS_INTERVAL", 50000);
     if (block_focus_interval > 0) {
         g_block_focus_interval = static_cast<uint64_t>(block_focus_interval);
@@ -3486,7 +3747,7 @@ int main(int argc, char **argv) {
                 0x456610u, 0x456650u, 0x5a1640u, 0x5a16bdu, 0x5bd830u, 0x5bd88au, 0x5bf470u, 0x5bf47bu,
                 0x5bf4e0u, 0x5bf4efu, 0x5bf4f8u, 0x5bf518u, 0x5bf52fu, 0x61be96u, 0x61beebu, 0x55d410u,
                 0x5bba20u, 0x5bb880u, 0x5bb894u, 0x5bb89fu, 0x5bbad0u, 0x5bbb12u, 0x61be1bu,
-                0x5a1f72u, 0x5a1f7bu, 0x5a1f8bu, 0x5a2052u, 0x5a210au,
+                0x5a1f60u, 0x5a1f72u, 0x5a1f7bu, 0x5a1f8bu, 0x5a2052u, 0x5a210au,
                 0x62b0d8u, 0x62b0e5u, 0x62b0e9u, 0x62b0f5u, 0x62b0fdu, 0x62b105u, 0x62b184u, 0x62b185u,
                 0x5afbb0u, 0x5afc06u, 0x5afc0du, 0x5afc26u,
                 0x62ce9bu, 0x62cf8eu, 0x62118bu, 0x61fcd4u
@@ -3610,7 +3871,7 @@ int main(int argc, char **argv) {
                 << "0x5bba20(insert iterator), "
                 << "0x5afbb0(wstr->str small), "
                 << "0x5bb880(stream pop), 0x5bb880/0x5bb894/0x5bb89f(streambuf branches), "
-                << "0x5a1f72/0x5a1f7b/0x5a1f8b/0x5a2052/0x5a210a(xml branches), "
+                << "0x5a1f60/0x5a1f72/0x5a1f7b/0x5a1f8b/0x5a2052/0x5a210a(xml branches), "
                 << "0x62b0d8/0x62b0e5/0x62b0e9/0x62b0f5/0x62b0fd/0x62b105/0x62b184/0x62b185(text norm branches), "
                 << "0x5d8850(stream xor decode), "
                 << "0x61be1b(memmove_s wrapper), 0x624510(memmove), "
@@ -3626,7 +3887,8 @@ int main(int argc, char **argv) {
                 cout << "[*] CRT alloc accel enabled: base=0x" << hex << g_crt_alloc_base
                      << " limit=0x" << g_crt_alloc_limit << dec
                      << " (" << arena_mb
-                     << "MB, PVZ_CRT_ALLOC_ACCEL / PVZ_CRT_ALLOC_ARENA_MB), "
+                     << "MB, free_cap=" << g_crt_alloc_free_cap_entries
+                     << " (PVZ_CRT_ALLOC_ACCEL / PVZ_CRT_ALLOC_ARENA_MB / PVZ_CRT_ALLOC_FREE_CAP), "
                      << "fast callsites=0x61c130/0x621182/0x61fcc5/0x61fcc6.\n";
             }
             if (g_fast_worker_thread_enabled) {
@@ -3885,7 +4147,11 @@ int main(int argc, char **argv) {
         if (g_crt_alloc_accel_enabled && g_crt_alloc_count > 0) {
             cout << "[*] CRT alloc accel summary: allocs=" << g_crt_alloc_count
                  << ", bytes=" << g_crt_alloc_bytes
-                 << ", used=0x" << hex << g_crt_alloc_top << dec << "\n";
+                 << ", used=0x" << hex << g_crt_alloc_top << dec
+                 << ", reuse=" << g_crt_alloc_reuse_count
+                 << ", recycled=" << g_crt_alloc_recycled_count
+                 << ", live=" << g_crt_alloc_live_sizes.size()
+                 << ", free_cached=" << g_crt_alloc_free_by_size.size() << "\n";
         }
         if (g_crt_free_fast_count > 0) {
             cout << "[*] CRT free fast-path summary: frees=" << g_crt_free_fast_count << "\n";
