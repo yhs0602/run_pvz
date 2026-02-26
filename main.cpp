@@ -309,6 +309,7 @@ uint64_t g_memmove_s_fast_count = 0;
 uint64_t g_memmove_wrap_fast_count = 0;
 bool g_string_insert_accel_enabled = false;
 uint64_t g_string_insert_fast_count = 0;
+uint64_t g_string_insert_grow_fast_count = 0;
 bool g_insert_iter_accel_enabled = false;
 uint64_t g_insert_iter_fast_count = 0;
 bool g_wstr_to_str_accel_enabled = false;
@@ -2666,7 +2667,6 @@ static bool accelerate_string_insert_fill_55d410(uc_engine* uc, uint32_t addr32)
     if (insert_count > 0x7ffffffeu - len) return false;
     uint32_t new_len = len + insert_count;
     if (new_len > 0x7ffffffeu) return false;
-    if (new_len > cap) return false; // preserve grow path via guest fallback
 
     uint32_t data_ptr = 0;
     if (cap < 0x10u) {
@@ -2676,14 +2676,38 @@ static bool accelerate_string_insert_fill_55d410(uc_engine* uc, uint32_t addr32)
     }
     if (data_ptr < 0x1000u) return false;
 
+    uint32_t old_data_ptr = data_ptr;
+    uint32_t old_cap = cap;
+    bool grew = false;
+    if (new_len > cap) {
+        if (!g_crt_alloc_accel_enabled) return false;
+
+        uint32_t new_cap = new_len | 0x0Fu;
+        if (cap <= 0xFFFFFFFDu) {
+            uint32_t grow = cap + (cap >> 1);
+            if (grow > new_cap) new_cap = grow;
+        }
+        if (new_cap < new_len || new_cap >= 0xFFFFFFFEu) return false;
+        if (new_cap < 0x10u) return false;
+
+        uint32_t new_ptr = 0;
+        if (!crt_alloc_fast(new_cap + 1u, new_ptr)) return false;
+        if (g_backend->mem_write(this_ptr + 4u, &new_ptr, 4) != UC_ERR_OK) return false;
+        if (g_backend->mem_write(this_ptr + 0x18u, &new_cap, 4) != UC_ERR_OK) return false;
+        data_ptr = new_ptr;
+        cap = new_cap;
+        grew = true;
+    }
+
     if (insert_count > 0u) {
         uint32_t tail_count = len - pos;
+        if (grew && pos > 0u) {
+            if (!host_memmove_copy(data_ptr, old_data_ptr, pos)) return false;
+        }
         if (tail_count > 0u) {
-            vector<uint8_t> tail(tail_count, 0);
-            uint32_t src = data_ptr + pos;
+            uint32_t src = (grew ? old_data_ptr : data_ptr) + pos;
             uint32_t dst = data_ptr + pos + insert_count;
-            if (g_backend->mem_read(src, tail.data(), tail.size()) != UC_ERR_OK) return false;
-            if (g_backend->mem_write(dst, tail.data(), tail.size()) != UC_ERR_OK) return false;
+            if (!host_memmove_copy(dst, src, tail_count)) return false;
         }
 
         uint8_t ch = static_cast<uint8_t>(value & 0xFFu);
@@ -2702,6 +2726,13 @@ static bool accelerate_string_insert_fill_55d410(uc_engine* uc, uint32_t addr32)
     uint8_t nul = 0;
     if (g_backend->mem_write(data_ptr + new_len, &nul, 1) != UC_ERR_OK) return false;
     if (g_backend->mem_write(this_ptr + 0x14u, &new_len, 4) != UC_ERR_OK) return false;
+
+    if (grew) {
+        if (old_cap >= 0x10u && old_data_ptr >= g_crt_alloc_base && old_data_ptr < g_crt_alloc_top) {
+            if (crt_free_fast_ptr(old_data_ptr)) g_crt_free_fast_count++;
+        }
+        g_string_insert_grow_fast_count++;
+    }
 
     uint32_t new_esp = esp + 16u; // ret 0xC
     uc_reg_write(uc, UC_X86_REG_EAX, &this_ptr);
@@ -3317,6 +3348,9 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
             }
             if (g_string_insert_fast_count > 0) {
                 cout << " strins=" << g_string_insert_fast_count;
+                if (g_string_insert_grow_fast_count > 0) {
+                    cout << "(grow=" << g_string_insert_grow_fast_count << ")";
+                }
             }
             if (g_insert_iter_fast_count > 0) {
                 cout << " insiter=" << g_insert_iter_fast_count;
@@ -4238,7 +4272,11 @@ int main(int argc, char **argv) {
             cout << "[*] memmove wrapper fast-path summary: hits=" << g_memmove_wrap_fast_count << "\n";
         }
         if (g_string_insert_fast_count > 0) {
-            cout << "[*] String-insert fast-path summary: hits=" << g_string_insert_fast_count << "\n";
+            cout << "[*] String-insert fast-path summary: hits=" << g_string_insert_fast_count;
+            if (g_string_insert_grow_fast_count > 0) {
+                cout << ", grow=" << g_string_insert_grow_fast_count;
+            }
+            cout << "\n";
         }
         if (g_insert_iter_fast_count > 0) {
             cout << "[*] Insert-iterator fast-path summary: hits=" << g_insert_iter_fast_count << "\n";

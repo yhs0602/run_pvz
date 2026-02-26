@@ -477,3 +477,12 @@
 - 현재 결론
   - DRM 메시지 요청/응답 정합성은 개선되었지만, 렌더 루프 미진입의 주 병목은 여전히 `resources.xml` 이후 파서/문자열 체인.
   - 단순 시간 증가(장기 런)로는 진입이 확인되지 않았고, parser 상태 전이 또는 상위 로더 성공 조건을 추가로 고정해야 함.
+
+### 2026-02-26 09:26 KST string_insert grow-path fast-path 확장 정리
+- 코드 변경 (`main.cpp`)
+  - `accelerate_string_insert_fill_55d410`가 `new_len > cap`인 경우에도 fast-path로 grow/realloc 처리하도록 확장.
+  - grow 시 old buffer -> new buffer 복사, tail 이동, null-terminate, old fast-arena 블록 recycle까지 fast-path에서 수행.
+  - 계측 카운터 `g_string_insert_grow_fast_count` 추가 및 주기/종료 summary 출력에 반영.
+- 관찰
+  - 짧은 FEX 샘플 실행에서 `strins(grow=...)` 카운터가 지속 증가하며 grow 경로도 host fast-path로 소화됨을 확인.
+  - 다만 이 변경만으로는 `IDirectDrawSurface7::Lock/Unlock` 렌더 경로 진입이 아직 관측되지는 않음.
