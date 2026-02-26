@@ -174,6 +174,16 @@
   - 리스크: 분기 블록에서의 레지스터/조건 플래그 미세 차이가 누적될 가능성.
   - 종료 조건: parser 루프가 병목에서 벗어나거나 parser 경로를 정식 번역으로 대체.
 
+- `main.cpp` xml append-run accel (`0x5a1f9a/0x5a207a`, `PVZ_XML_BRANCH_ACCEL`)
+  - 내용: state=4/5 경로에서 `0x441d20` 1-char append 반복을 최대 256자 배치 append로 단축.
+  - 리스크: grow 경로를 직접 수행하지 않고 no-grow에서만 작동하므로, 혼합 실행 시 경계 조건에서 의미차 가능.
+  - 종료 조건: parser hot-loop의 근본 원인이 해소되거나 parser 경로를 정식 번역/JIT로 대체.
+
+- `main.cpp` string compare fast-path (`0x4565a0`, `PVZ_HOT_LOOP_ACCEL`)
+  - 내용: `basic_string::compare` 계열 helper를 host-side 비교로 단축해 `0x456610/0x441a60` 왕복을 감소.
+  - 리스크: out-of-range 예외 경로는 guest로 폴백하지만, 비교 결과의 미세 semantics 차이가 누적될 가능성.
+  - 종료 조건: `0x4565a0` caller 체인이 병목에서 이탈하거나 정식 helper 번역/JIT로 대체.
+
 - `main.cpp` text normalize branch-block accel (`0x62b0d8/0x62b0e5/0x62b0e9/0x62b0f5/0x62b0fd/0x62b105/0x62b184/0x62b185`, `PVZ_TEXT_NORM_BRANCH_ACCEL`)
   - 내용: CR/LF/EOF 정규화 문자 루프 분기 단축 + `0x62b0d8` 연속 일반문자 구간 bulk-copy fast-path.
   - 리스크: 블록 경계의 플래그/미세 side effect 불일치가 누적될 가능성.

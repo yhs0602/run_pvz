@@ -18,6 +18,8 @@
 #include <cstdlib>
 #include <cctype>
 #include <sstream>
+#include <array>
+#include <cstring>
 #include <limits>
 #include <SDL.h>
 #include <sys/resource.h>
@@ -295,6 +297,7 @@ uint64_t g_string_grow_fast_count = 0;
 uint64_t g_substr_assign_fast_count = 0;
 uint64_t g_stream_xor_decode_fast_count = 0;
 uint64_t g_assign_ptr_fast_count = 0;
+uint64_t g_compare_4565a0_fast_count = 0;
 bool g_string_range_clamp_enabled = false;
 bool g_string_range_trace_enabled = false;
 uint64_t g_string_range_fast_count = 0;
@@ -320,9 +323,12 @@ bool g_streambuf_branch_accel_enabled = false;
 uint64_t g_streambuf_branch_fast_count = 0;
 bool g_xml_branch_accel_enabled = false;
 uint64_t g_xml_branch_fast_count = 0;
+uint64_t g_xml_append_run_fast_count = 0;
 bool g_text_norm_branch_accel_enabled = false;
 uint64_t g_text_norm_branch_fast_count = 0;
 uint64_t g_tiny_ctrl_fast_count = 0;
+uint32_t g_strlen_scan_limit = (1u << 20); // 1MB guard for host-side strlen fast-paths.
+uint64_t g_strlen_scan_fallback_count = 0;
 bool g_xml_progress_trace_enabled = false;
 uint64_t g_xml_progress_trace_interval = 50000;
 uint64_t g_xml_progress_call_count = 0;
@@ -1736,6 +1742,88 @@ static bool accelerate_fast_worker_thread(uc_engine* uc, uint32_t addr32) {
     return true;
 }
 
+static bool accelerate_compare_4565a0(uc_engine* uc, uint32_t addr32) {
+    if (addr32 != 0x4565a0u) return false;
+
+    uint32_t this_ptr = 0;
+    uint32_t esp = 0;
+    uc_reg_read(uc, UC_X86_REG_ECX, &this_ptr);
+    uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+    if (this_ptr < 0x1000u) return false;
+
+    uint32_t ret_addr = 0;
+    uint32_t pos = 0;
+    uint32_t req_count = 0;
+    uint32_t rhs_ptr = 0;
+    uint32_t rhs_len = 0;
+    if (g_backend->mem_read(esp, &ret_addr, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_read(esp + 4u, &pos, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_read(esp + 8u, &req_count, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_read(esp + 12u, &rhs_ptr, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_read(esp + 16u, &rhs_len, 4) != UC_ERR_OK) return false;
+
+    uint32_t len = 0;
+    uint32_t cap = 0;
+    if (g_backend->mem_read(this_ptr + 0x14u, &len, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_read(this_ptr + 0x18u, &cap, 4) != UC_ERR_OK) return false;
+    if (pos > len) return false; // preserve throw/error path in guest
+
+    uint32_t avail = len - pos;
+    uint32_t lhs_count = std::min<uint32_t>(req_count, avail);
+    uint32_t cmp_len = std::min<uint32_t>(lhs_count, rhs_len);
+
+    uint32_t lhs_ptr = 0;
+    if (!read_basic_string_ptr(this_ptr, cap, lhs_ptr)) return false;
+    if (cmp_len > 0u) {
+        if (lhs_ptr < 0x1000u) return false;
+        if (rhs_ptr < 0x1000u) return false;
+        if (lhs_ptr + pos < lhs_ptr) return false;
+        lhs_ptr += pos;
+    }
+
+    int cmp = 0;
+    if (cmp_len > 0u) {
+        constexpr size_t kChunk = 4096;
+        std::array<uint8_t, kChunk> lbuf{};
+        std::array<uint8_t, kChunk> rbuf{};
+        uint32_t off = 0;
+        while (off < cmp_len) {
+            uint32_t n = std::min<uint32_t>(cmp_len - off, static_cast<uint32_t>(kChunk));
+            if (g_backend->mem_read(lhs_ptr + off, lbuf.data(), n) != UC_ERR_OK) return false;
+            if (g_backend->mem_read(rhs_ptr + off, rbuf.data(), n) != UC_ERR_OK) return false;
+            int local = std::memcmp(lbuf.data(), rbuf.data(), n);
+            if (local != 0) {
+                cmp = local;
+                break;
+            }
+            off += n;
+        }
+    }
+
+    int32_t result = 0;
+    if (cmp != 0) {
+        result = (cmp < 0) ? -1 : 1;
+    } else if (lhs_count < rhs_len) {
+        result = -1;
+    } else if (lhs_count != rhs_len) {
+        result = 1;
+    } else {
+        result = 0;
+    }
+
+    uint32_t eax = static_cast<uint32_t>(result);
+    uint32_t new_esp = esp + 20u; // ret 16
+    uc_reg_write(uc, UC_X86_REG_EAX, &eax);
+    uc_reg_write(uc, UC_X86_REG_ESP, &new_esp);
+    uc_reg_write(uc, UC_X86_REG_EIP, &ret_addr);
+    uc_emu_stop(uc);
+
+    g_compare_4565a0_fast_count++;
+    g_hot_loop_accel_hits++;
+    g_hot_loop_accel_bytes += cmp_len;
+    return true;
+}
+
 static bool accelerate_string_range_view_456610(uc_engine* uc, uint32_t addr32) {
     if (addr32 != 0x456610u) return false;
 
@@ -2203,6 +2291,126 @@ static bool accelerate_xml_char_pull_5a1f60(uc_engine* uc, uint32_t addr32) {
     g_xml_branch_fast_count++;
     g_hot_loop_accel_hits++;
     g_hot_loop_accel_bytes += 2u;
+    return true;
+}
+
+static bool append_ascii_run_no_grow(uint32_t str_obj, const vector<uint8_t>& run, uint32_t& out_new_len) {
+    if (str_obj < 0x1000u || run.empty()) return false;
+
+    uint32_t len = 0;
+    uint32_t cap = 0;
+    if (g_backend->mem_read(str_obj + 0x14u, &len, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_read(str_obj + 0x18u, &cap, 4) != UC_ERR_OK) return false;
+    if (len > cap) return false;
+    if (run.size() > static_cast<size_t>(cap - len)) return false;
+
+    uint32_t data_ptr = 0;
+    if (!read_basic_string_ptr(str_obj, cap, data_ptr)) return false;
+    if (data_ptr < 0x1000u) return false;
+
+    if (g_backend->mem_write(data_ptr + len, run.data(), run.size()) != UC_ERR_OK) return false;
+    uint8_t nul = 0;
+    uint32_t new_len = len + static_cast<uint32_t>(run.size());
+    if (g_backend->mem_write(data_ptr + new_len, &nul, 1) != UC_ERR_OK) return false;
+    if (g_backend->mem_write(str_obj + 0x14u, &new_len, 4) != UC_ERR_OK) return false;
+
+    out_new_len = new_len;
+    return true;
+}
+
+static bool accelerate_xml_append_runs(uc_engine* uc, uint32_t addr32) {
+    if (!g_xml_branch_accel_enabled) return false;
+    if (addr32 != 0x5a1f9au && addr32 != 0x5a207au) return false;
+
+    uint32_t esp = 0;
+    uc_reg_read(uc, UC_X86_REG_ESP, &esp);
+
+    uint32_t str_obj = 0;
+    if (addr32 == 0x5a1f9au) {
+        if (g_backend->mem_read(esp + 0x28u, &str_obj, 4) != UC_ERR_OK) return false;
+    } else {
+        uc_reg_read(uc, UC_X86_REG_EDI, &str_obj);
+    }
+    if (str_obj < 0x1000u) return false;
+
+    uint32_t reader = 0;
+    if (g_backend->mem_read(esp + 0x2cu, &reader, 4) != UC_ERR_OK) return false;
+    if (reader < 0x1000u) return false;
+
+    uint16_t first_u16 = 0;
+    if (g_backend->mem_read(esp + 0x24u, &first_u16, sizeof(first_u16)) != UC_ERR_OK) return false;
+    uint8_t first = static_cast<uint8_t>(first_u16 & 0xFFu);
+
+    uint32_t len = 0;
+    uint32_t cap = 0;
+    if (g_backend->mem_read(str_obj + 0x14u, &len, 4) != UC_ERR_OK) return false;
+    if (g_backend->mem_read(str_obj + 0x18u, &cap, 4) != UC_ERR_OK) return false;
+    if (len >= cap) return false; // preserve grow-path behavior in guest code
+
+    uint32_t budget = cap - len;
+    budget = std::min<uint32_t>(budget, 256u);
+    if (budget == 0u) return false;
+
+    vector<uint8_t> run;
+    run.reserve(budget);
+    run.push_back(first);
+    uint16_t last_u16 = first_u16;
+
+    while (run.size() < budget && last_u16 != 0x003Eu) { // '>'
+        uint32_t pop_status = 0;
+        if (!stream_pop_u16_from_reader(reader, esp + 0x24u, pop_status)) {
+            break;
+        }
+        if (pop_status != 0u) {
+            break;
+        }
+        uint16_t ch = 0;
+        if (g_backend->mem_read(esp + 0x24u, &ch, sizeof(ch)) != UC_ERR_OK) break;
+        run.push_back(static_cast<uint8_t>(ch & 0xFFu));
+        last_u16 = ch;
+    }
+
+    uint32_t new_len = 0;
+    if (!append_ascii_run_no_grow(str_obj, run, new_len)) return false;
+
+    if (g_backend->mem_write(esp + 0x24u, &last_u16, sizeof(last_u16)) != UC_ERR_OK) return false;
+    uint32_t edx = static_cast<uint32_t>(last_u16);
+
+    if (addr32 == 0x5a1f9au) {
+        uint32_t esi = str_obj;
+        uc_reg_write(uc, UC_X86_REG_ESI, &esi);
+        if (last_u16 == 0x003Eu) { // '>'
+            uint32_t edi = new_len;
+            uint32_t next = 0x5a1fb3u;
+            uc_reg_write(uc, UC_X86_REG_EDI, &edi);
+            uc_reg_write(uc, UC_X86_REG_EDX, &edx);
+            uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        } else {
+            uint32_t next = 0x5a1f60u;
+            uc_reg_write(uc, UC_X86_REG_EDX, &edx);
+            uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        }
+    } else {
+        uint32_t edi = str_obj;
+        uc_reg_write(uc, UC_X86_REG_EDI, &edi);
+        if (last_u16 == 0x003Eu) { // '>'
+            uint32_t esi = new_len;
+            uint32_t next = 0x5a2093u;
+            uc_reg_write(uc, UC_X86_REG_ESI, &esi);
+            uc_reg_write(uc, UC_X86_REG_EDX, &edx);
+            uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        } else {
+            uint32_t next = 0x5a1f60u;
+            uc_reg_write(uc, UC_X86_REG_EDX, &edx);
+            uc_reg_write(uc, UC_X86_REG_EIP, &next);
+        }
+    }
+
+    uc_emu_stop(uc);
+    g_xml_branch_fast_count++;
+    g_xml_append_run_fast_count++;
+    g_hot_loop_accel_hits++;
+    g_hot_loop_accel_bytes += run.size();
     return true;
 }
 
@@ -2891,7 +3099,13 @@ static bool accelerate_strlen_loop(uc_engine* uc, uint32_t addr32) {
     constexpr size_t kChunk = 4096;
     vector<uint8_t> buf(kChunk, 0);
     uint32_t cursor = eax;
+    uint64_t scanned = 0;
     while (true) {
+        if (g_strlen_scan_limit != 0u &&
+            scanned >= static_cast<uint64_t>(g_strlen_scan_limit)) {
+            g_strlen_scan_fallback_count++;
+            return false;
+        }
         if (g_backend->mem_read(cursor, buf.data(), buf.size()) != UC_ERR_OK) return false;
         auto it = std::find(buf.begin(), buf.end(), 0u);
         if (it != buf.end()) {
@@ -2912,6 +3126,7 @@ static bool accelerate_strlen_loop(uc_engine* uc, uint32_t addr32) {
             g_hot_loop_accel_bytes += static_cast<uint64_t>(eax - start);
             return true;
         }
+        scanned += buf.size();
         cursor += static_cast<uint32_t>(buf.size());
     }
 }
@@ -3138,7 +3353,13 @@ static bool accelerate_strlen_loop_5d8310(uc_engine* uc, uint32_t addr32) {
     constexpr size_t kChunk = 4096;
     vector<uint8_t> buf(kChunk, 0);
     uint32_t cursor = eax;
+    uint64_t scanned = 0;
     while (true) {
+        if (g_strlen_scan_limit != 0u &&
+            scanned >= static_cast<uint64_t>(g_strlen_scan_limit)) {
+            g_strlen_scan_fallback_count++;
+            return false;
+        }
         if (g_backend->mem_read(cursor, buf.data(), buf.size()) != UC_ERR_OK) return false;
         auto it = std::find(buf.begin(), buf.end(), 0u);
         if (it != buf.end()) {
@@ -3159,6 +3380,7 @@ static bool accelerate_strlen_loop_5d8310(uc_engine* uc, uint32_t addr32) {
             g_hot_loop_accel_bytes += static_cast<uint64_t>(eax - start);
             return true;
         }
+        scanned += buf.size();
         cursor += static_cast<uint32_t>(buf.size());
     }
 }
@@ -3167,6 +3389,7 @@ static bool maybe_accelerate_hot_loop_block(uc_engine* uc, uint32_t addr32) {
     if (!g_hot_loop_accel_enabled) return false;
     if (accelerate_stream_pop_5bb880(uc, addr32)) return true;
     if (accelerate_xml_char_pull_5a1f60(uc, addr32)) return true;
+    if (accelerate_xml_append_runs(uc, addr32)) return true;
     if (accelerate_streambuf_branch_blocks(uc, addr32)) return true;
     if (accelerate_xml_branch_blocks(uc, addr32)) return true;
     if (accelerate_text_norm_branch_blocks(uc, addr32)) return true;
@@ -3178,6 +3401,7 @@ static bool maybe_accelerate_hot_loop_block(uc_engine* uc, uint32_t addr32) {
     if (accelerate_wstring_append_fill_5bd830(uc, addr32)) return true;
     if (accelerate_lock_gate_probe_5a1640(uc, addr32)) return true;
     if (accelerate_security_cookie_check_61efd1(uc, addr32)) return true;
+    if (accelerate_compare_4565a0(uc, addr32)) return true;
     if (accelerate_string_range_view_456610(uc, addr32)) return true;
     if (accelerate_stream_xor_decode_5d8850(uc, addr32)) return true;
     if (accelerate_crt_free_helper_61c19a(uc, addr32)) return true;
@@ -3334,6 +3558,9 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
             if (g_assign_ptr_fast_count > 0) {
                 cout << " asgnptr=" << g_assign_ptr_fast_count;
             }
+            if (g_compare_4565a0_fast_count > 0) {
+                cout << " cmp4565a0=" << g_compare_4565a0_fast_count;
+            }
             if (g_wstring_append_fast_count > 0) {
                 cout << " wstrapp=" << g_wstring_append_fast_count;
             }
@@ -3366,6 +3593,9 @@ void hook_block_lva(uc_engine *uc, uint64_t address, uint32_t size, void *user_d
             }
             if (g_xml_branch_fast_count > 0) {
                 cout << " xmlbranch=" << g_xml_branch_fast_count;
+            }
+            if (g_xml_append_run_fast_count > 0) {
+                cout << " xmlrun=" << g_xml_append_run_fast_count;
             }
             if (g_text_norm_branch_fast_count > 0) {
                 cout << " txtnorm=" << g_text_norm_branch_fast_count;
@@ -3763,6 +3993,10 @@ int main(int argc, char **argv) {
     if (xml_progress_interval > 0) {
         g_xml_progress_trace_interval = static_cast<uint64_t>(xml_progress_interval);
     }
+    int strlen_scan_limit = env_int("PVZ_STRLEN_SCAN_LIMIT", (1 << 20));
+    if (strlen_scan_limit >= 0) {
+        g_strlen_scan_limit = static_cast<uint32_t>(strlen_scan_limit);
+    }
     const char* cookie_accel_env = std::getenv("PVZ_SECURITY_COOKIE_ACCEL");
     if (cookie_accel_env && *cookie_accel_env) {
         g_security_cookie_accel_enabled = env_truthy("PVZ_SECURITY_COOKIE_ACCEL");
@@ -3946,7 +4180,7 @@ int main(int argc, char **argv) {
                 << "0x441dd0(char store), 0x441dd9(cap branch), "
                 << "0x5d7c0d(uppercase append loop), 0x5d8310(strlen loop), "
                 << "0x61efd1(security cookie), 0x5a1640(lock gate probe), "
-                << "0x456610(string range view), "
+                << "0x4565a0(string compare), 0x456610(string range view), "
                 << "0x5bd830(wstring append fill), "
                 << "0x5bf4e0(iterator advance), "
                 << "0x61be96(memmove_s), "
@@ -4000,6 +4234,8 @@ int main(int argc, char **argv) {
             cout << "[*] memmove_s accel option: "
                  << (g_memmove_s_accel_enabled ? "on" : "off")
                  << " (PVZ_MEMMOVE_S_ACCEL).\n";
+            cout << "[*] Strlen accel scan limit: " << g_strlen_scan_limit
+                 << " bytes (PVZ_STRLEN_SCAN_LIMIT, 0=unlimited).\n";
             cout << "[*] String insert accel option: "
                  << (g_string_insert_accel_enabled ? "on" : "off")
                  << " (PVZ_STRING_INSERT_ACCEL).\n";
@@ -4267,6 +4503,10 @@ int main(int argc, char **argv) {
         }
         if (g_memmove_s_fast_count > 0) {
             cout << "[*] memmove_s fast-path summary: hits=" << g_memmove_s_fast_count << "\n";
+        }
+        if (g_strlen_scan_fallback_count > 0) {
+            cout << "[*] Strlen fast-path fallback summary: capped=" << g_strlen_scan_fallback_count
+                 << " (scan_limit=" << g_strlen_scan_limit << ")\n";
         }
         if (g_memmove_wrap_fast_count > 0) {
             cout << "[*] memmove wrapper fast-path summary: hits=" << g_memmove_wrap_fast_count << "\n";
