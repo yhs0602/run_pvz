@@ -84,3 +84,24 @@
 - 미완료:
   - `HeapAlloc/HeapFree` 핫루프 로그 억제(선택적 디버그 플래그화)
   - `PVZ_CPU_BACKEND=fexcore` 실제 구현
+
+## 업데이트 (2026-02-26, libFEXCore PoC 타당성 재평가)
+- 실측(로컬 strict probe):
+  - 실행: `PVZ_CPU_BACKEND=fexcore PVZ_FEXCORE_STRICT=1 ./build-fex/runner pvz/main.exe`
+  - 로그:
+    - `[*] FEX bridge backend implementation: unicorn-shim`
+    - `[!] PVZ_FEXCORE_STRICT=1 but bridge backend is not 'fexcore'.`
+  - 결론: 현재 `build-fex/libpvz_fexcore_bridge.dylib`는 실질적으로 Unicorn shim이며, 실제 libFEXCore 실행 경로가 아직 없다.
+- 공식 지원 근거:
+  - FEX-Emu README 기준 지원 호스트는 ARM64 Linux이며, macOS 호스트 직접 실행은 지원 범위가 아니다.
+  - 따라서 macOS에서 `libFEXCore`를 "직접 임베드"하는 경로는 통합 공수가 작지 않고, ABI/호스트 런타임 제약이 큰 편이다.
+- 의사결정:
+  - "완전 전환"보다 "PoC 스파이크"가 맞다.
+  - PoC 목표는 성능이 아니라 아래 2개 확인:
+    1) 실제 fexcore 엔진 문자열(`backend_name == fexcore`) 확인
+    2) 현재 `CpuBackend` 인터페이스(`mem/reg/emu/hook`)가 bridge ABI로 충분한지 확인
+- 다음 단계(권장):
+  1. Linux ARM64 환경(실제 FEX 지원 호스트)에서 `libpvz_fexcore_bridge.dylib`의 fexcore 구현체 프로토타입 작성.
+  2. macOS runner는 기존대로 bridge 동적 로딩(`PVZ_FEXCORE_BRIDGE_PATH`)만 담당.
+  3. strict probe 통과(`backend implementation: fexcore`) 시, PvZ boot smoke 60초 비교를 재개.
+  4. 실패 시 Unicorn 경로를 본선으로 유지하고, 병목(API mock 정합성/GUI 루프) 최적화를 계속 진행.
