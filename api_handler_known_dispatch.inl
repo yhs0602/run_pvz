@@ -1813,13 +1813,19 @@
                 std::cout << "[API CALL] [OK] IDirectDraw7::QueryInterface -> Wrote Object to 0x" << std::hex << ppvObj << std::dec << "\n";
             } else if (name == "DDRAW.dll!IDirect3D7_Method_4") {
                 // HRESULT CreateDevice(REFCLSID rclsid, LPDIRECTDRAWSURFACE7 lpDDS, LPDIRECT3DDEVICE7 *lplpD3DDevice)
-                uint32_t lplpD3DDevice = handler->ctx.get_arg(3);
-                if (lplpD3DDevice) {
-                    uint32_t dummy_device = handler->create_fake_com_object("IDirect3DDevice7", 100);
-                    handler->backend.mem_write(lplpD3DDevice, &dummy_device, 4);
+                static const bool force_software_ddraw = env_truthy("PVZ_FORCE_SOFTWARE_DDRAW");
+                if (force_software_ddraw) {
+                    handler->ctx.set_eax(0x8876025Cu); // D3DERR_INVALIDDEVICE
+                    std::cout << "\n[API CALL] [OK] IDirect3D7::CreateDevice forced failure (PVZ_FORCE_SOFTWARE_DDRAW).\n";
+                } else {
+                    uint32_t lplpD3DDevice = handler->ctx.get_arg(3);
+                    if (lplpD3DDevice) {
+                        uint32_t dummy_device = handler->create_fake_com_object("IDirect3DDevice7", 100);
+                        handler->backend.mem_write(lplpD3DDevice, &dummy_device, 4);
+                    }
+                    handler->ctx.set_eax(0); // D3D_OK
+                    std::cout << "\n[API CALL] [OK] IDirect3D7::CreateDevice -> Returned Dummy IDirect3DDevice7 object.\n";
                 }
-                handler->ctx.set_eax(0); // D3D_OK
-                std::cout << "\n[API CALL] [OK] IDirect3D7::CreateDevice -> Returned Dummy IDirect3DDevice7 object.\n";
             } else if (name == "DDRAW.dll!IDirectDraw7_Method_4") {
                 // Expected by many titles as CreateClipper-style method.
                 // COM call stack includes `this` as arg0, so out pointer may be arg3.
@@ -2052,18 +2058,30 @@
                        name == "KERNEL32.dll!BASS_Free" || name == "BASS.dll!BASS_Free") {
                 handler->ctx.set_eax(1);
             } else if (name == "KERNEL32.dll!Direct3DCreate8" || name == "D3D8.dll!Direct3DCreate8") {
-                uint32_t dummy_d3d_obj = handler->create_fake_com_object("IDirect3D8", 50);
-                handler->ctx.set_eax(dummy_d3d_obj); // Returns the interface pointer directly in EAX
-                std::cout << "\n[API CALL] [OK] Intercepted Direct3DCreate8 -> Returned Dummy IDirect3D8 Interface.\n";
+                static const bool force_ddraw_fallback = env_truthy("PVZ_FORCE_DDRAW_FALLBACK");
+                if (force_ddraw_fallback) {
+                    handler->ctx.set_eax(0); // NULL => caller should fallback to non-D3D8 path.
+                    std::cout << "\n[API CALL] [OK] Direct3DCreate8 forced NULL (PVZ_FORCE_DDRAW_FALLBACK).\n";
+                } else {
+                    uint32_t dummy_d3d_obj = handler->create_fake_com_object("IDirect3D8", 50);
+                    handler->ctx.set_eax(dummy_d3d_obj); // Returns the interface pointer directly in EAX
+                    std::cout << "\n[API CALL] [OK] Intercepted Direct3DCreate8 -> Returned Dummy IDirect3D8 Interface.\n";
+                }
             } else if (name == "DDRAW.dll!IDirect3D8_Method_5") {
                 // HRESULT GetAdapterDisplayMode(UINT Adapter, D3DDISPLAYMODE *pMode)
-                uint32_t pMode = handler->ctx.get_arg(1);
-                if (pMode) {
-                    uint32_t mode_data[4] = {800, 600, 60, 22}; // Width=800, Height=600, RefreshRate=60, Format=D3DFMT_X8R8G8B8 (22)
-                    handler->backend.mem_write(pMode, mode_data, 16);
+                static const bool force_ddraw_fallback = env_truthy("PVZ_FORCE_DDRAW_FALLBACK");
+                if (force_ddraw_fallback) {
+                    handler->ctx.set_eax(0x8876086Cu); // D3DERR_INVALIDCALL
+                    std::cout << "\n[API CALL] [OK] IDirect3D8::GetAdapterDisplayMode forced failure (PVZ_FORCE_DDRAW_FALLBACK).\n";
+                } else {
+                    uint32_t pMode = handler->ctx.get_arg(1);
+                    if (pMode) {
+                        uint32_t mode_data[4] = {800, 600, 60, 22}; // Width=800, Height=600, RefreshRate=60, Format=D3DFMT_X8R8G8B8 (22)
+                        handler->backend.mem_write(pMode, mode_data, 16);
+                    }
+                    handler->ctx.set_eax(0); // D3D_OK
+                    std::cout << "\n[API CALL] [OK] IDirect3D8::GetAdapterDisplayMode spoofed 800x600.\n";
                 }
-                handler->ctx.set_eax(0); // D3D_OK
-                std::cout << "\n[API CALL] [OK] IDirect3D8::GetAdapterDisplayMode spoofed 800x600.\n";
             } else if (name == "USER32.dll!RegisterClassA" || name == "USER32.dll!RegisterClassW" ||
                        name == "USER32.dll!RegisterClassExA" || name == "USER32.dll!RegisterClassExW") {
                 uint32_t pClass = handler->ctx.get_arg(0);

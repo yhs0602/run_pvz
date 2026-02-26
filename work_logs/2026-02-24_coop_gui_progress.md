@@ -486,3 +486,27 @@
 - 관찰
   - 짧은 FEX 샘플 실행에서 `strins(grow=...)` 카운터가 지속 증가하며 grow 경로도 host fast-path로 소화됨을 확인.
   - 다만 이 변경만으로는 `IDirectDrawSurface7::Lock/Unlock` 렌더 경로 진입이 아직 관측되지는 않음.
+
+### 2026-02-26 09:59 KST DDraw/D3D 분기 재실험 + 메시지 루프 로그 폭증 가드
+- 코드 변경
+  - `api_handler_known_dispatch.inl`
+    - `PVZ_FORCE_DDRAW_FALLBACK` 경로 유지(Direct3DCreate8 NULL + GetAdapterDisplayMode 실패).
+    - 신규 토글 `PVZ_FORCE_SOFTWARE_DDRAW` 추가:
+      - `IDirect3D7::CreateDevice`를 실패(`D3DERR_INVALIDDEVICE`)로 강제할 수 있도록 구현.
+  - `api_handler.cpp`
+    - noisy API 목록에 `USER32.dll!DefWindowProcA/W` 추가(대량 로그 억제).
+    - `GetMessage` idle fallback 내 WM_TIMER 합성 경로에 16ms throttle 적용(`g_synth_idle_timer_next_ms` 재사용).
+- 진단/실험 결과
+  - `PVZ_FORCE_DDRAW_FALLBACK=1`에서 D3D8 NULL 강제 및 DDraw 경로 진입 확인.
+  - `IDirectDraw_Method_27`(GetDeviceIdentifier) 처리 누락은 별도 보강 후 unhandled 로그 제거 확인.
+  - `PVZ_HOT_LOOP_ACCEL=1` 기준, resources.xml 이후 `hot-accel` 카운터가 약 1.5M까지 상승 후 정체하는 패턴 재현.
+    - 정체 직전 PC trace는 `0x5a1f7b/0x5a2052/0x5a217d/0x5a21a6` 등 XML 상태머신 군집 중심.
+  - `PVZ_SYNTH_CLICK=1 + PVZ_FORCE_IDLE_TIMER=1` 조합에서 기존에는 DefWindowProc 로그가 폭주(약 128MB/80s)했으나,
+    - 위 로그 억제 + timer throttle 패치 후 동일 계열 실행 로그 크기가 수십 KB 수준으로 안정화.
+  - `PVZ_FORCE_SOFTWARE_DDRAW=1` 실험:
+    - `IDirect3D7::CreateDevice forced failure` 후 cooperative scheduler가 조기 완료되며 종료.
+    - 렌더 경로(`IDirectDrawSurface7::Lock/Unlock`) 진입은 여전히 미확인.
+- 현재 결론
+  - 메시지 루프/로그 폭증 운영 이슈는 완화됨.
+  - D3D7 경로를 단순 실패로 강제하면 종료로 빠져 렌더 진입에는 불충분.
+  - 다음은 D3D7 device 메서드 정합성(특히 `IDirect3DDevice7_Method_*`)을 실제 호출 패턴 기준으로 보강하는 방향이 필요.

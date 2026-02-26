@@ -131,6 +131,12 @@ PVZ_INTERACTIVE_MESSAGEBOX=1 ./build/runner pvz/main.exe
 # VRAM present 시점 프레임 덤프(PPM) 저장
 PVZ_VRAM_SNAPSHOT=1 PVZ_VRAM_SNAPSHOT_EVERY=1 PVZ_VRAM_SNAPSHOT_PREFIX=artifacts/vram_frame ./build-fex/runner pvz/main.exe
 
+# D3D8 생성을 강제로 실패시켜 DirectDraw fallback 경로 유도(렌더 경로 분기 진단용)
+PVZ_FORCE_DDRAW_FALLBACK=1 ./build-fex/runner pvz/main.exe
+
+# D3D7 CreateDevice도 실패시켜 software/DDraw Lock-Unlock 경로 강제 유도(진단용)
+PVZ_FORCE_DDRAW_FALLBACK=1 PVZ_FORCE_SOFTWARE_DDRAW=1 ./build-fex/runner pvz/main.exe
+
 # 테스트용 가짜 좌클릭 1회 주입(메시지 큐): 딜레이/좌표 커스텀 가능
 PVZ_SYNTH_CLICK=1 PVZ_SYNTH_CLICK_DELAY_MS=4000 PVZ_SYNTH_CLICK_X=400 PVZ_SYNTH_CLICK_Y=300 ./build-fex/runner pvz/main.exe
 

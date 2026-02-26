@@ -97,6 +97,16 @@
 
 ## P1 (안정화/운영성)
 
+- `api_handler_known_dispatch.inl` D3D8 강제 fallback 토글 (`PVZ_FORCE_DDRAW_FALLBACK`)
+  - 내용: `Direct3DCreate8`을 NULL로 반환(및 `GetAdapterDisplayMode` 실패 반환)해 DDraw/소프트웨어 경로로 강제 유도.
+  - 리스크: 실제 Windows 런타임의 GPU capability probing 순서와 다르게 동작할 수 있음.
+  - 종료 조건: 렌더 경로 진입 원인이 확정되고, 정식 D3D8 capability/modeling 구현 또는 불필요 확인 후 제거.
+
+- `api_handler_known_dispatch.inl` D3D7 CreateDevice 실패 토글 (`PVZ_FORCE_SOFTWARE_DDRAW`)
+  - 내용: `IDirect3D7::CreateDevice`를 실패로 반환해 software/DDraw `Lock/Unlock` 경로로 강제 유도.
+  - 리스크: 실제 D3D7 디바이스 경로를 완전히 우회하므로 런타임 분기와 괴리가 커질 수 있음.
+  - 종료 조건: 렌더링 진입에 필요한 최소 경로가 확인되고, 정식 D3D7 모킹/구현 또는 제거 판단 완료.
+
 - `api_handler_known_dispatch.inl` MessageBox auto-ack 기본 ON
   - 내용: unattended 실행에서 MessageBox를 로그만 남기고 `IDOK`.
   - 리스크: 사용자 상호작용 필요 분기 누락.

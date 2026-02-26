@@ -260,7 +260,9 @@ static bool is_noisy_fastpath_api(const std::string& n) {
            n == "KERNEL32.dll!InterlockedIncrement" ||
            n == "KERNEL32.dll!InterlockedDecrement" ||
            n == "KERNEL32.dll!InterlockedExchange" ||
-           n == "KERNEL32.dll!InterlockedCompareExchange";
+           n == "KERNEL32.dll!InterlockedCompareExchange" ||
+           n == "USER32.dll!DefWindowProcA" ||
+           n == "USER32.dll!DefWindowProcW";
 }
 
 constexpr size_t kWin32MessageQueueMax = 4096;
@@ -1084,6 +1086,7 @@ std::unordered_map<std::string, int> KNOWN_SIGNATURES = {
     {"DDRAW.dll!IDirectDraw_Method_21", 16}, // SetDisplayMode(this, w, h, bpp)
     {"DDRAW.dll!IDirectDraw_Method_22", 12}, // WaitForVerticalBlank(this, flags, hEvent)
     {"DDRAW.dll!IDirectDraw_Method_23", 16}, // GetAvailableVidMem(this, caps, total, free)
+    {"DDRAW.dll!IDirectDraw_Method_27", 12}, // GetDeviceIdentifier(this, outDeviceId, flags)
     {"DDRAW.dll!IDirectDraw2_Method_20", 12}, // SetCooperativeLevel
     {"DDRAW.dll!IDirectDraw2_Method_21", 24}, // SetDisplayMode
     {"DDRAW.dll!IDirectDrawSurface2_Method_22", 8}, // GetSurfaceDesc
@@ -3058,6 +3061,15 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                 handler->ctx.set_eax(0);
                 handler->ctx.pop_args(4);
                 return;
+            } else if (method_idx == 27) { // GetDeviceIdentifier
+                uint32_t out_device_id = handler->ctx.get_arg(1);
+                if (out_device_id != 0) {
+                    std::vector<uint8_t> zero(512, 0);
+                    handler->backend.mem_write(out_device_id, zero.data(), zero.size());
+                }
+                handler->ctx.set_eax(0);
+                handler->ctx.pop_args(3); // this, outDeviceId, flags
+                return;
             } else if (method_idx == 4) { // CreateClipper
                 uint32_t lplpClipper = handler->ctx.get_arg(2);
                 if (lplpClipper != 0) {
@@ -3601,21 +3613,26 @@ void DummyAPIHandler::hook_api_call(uc_engine* uc, uint64_t address, uint32_t si
                     // Optional compatibility shim for apps that depend on timer-like wakeups.
                     bool synthesized = false;
                     if (force_idle_timer_enabled() && !g_valid_hwnds.empty()) {
-                        Win32_MSG msg = {0};
-                        msg.hwnd = (hWnd != 0 && hWnd != 0xFFFFFFFFu) ? hWnd : *g_valid_hwnds.begin();
-                        msg.message = WM_TIMER;
-                        msg.wParam = 1;
-                        msg.lParam = 0;
-                        msg.time = SDL_GetTicks();
-                        int mx, my;
-                        SDL_GetMouseState(&mx, &my);
-                        msg.pt_x = mx;
-                        msg.pt_y = my;
-                        if (win32_message_matches_filter(msg, hWnd, wMsgFilterMin, wMsgFilterMax)) {
-                            handler->backend.mem_write(lpMsg, &msg, sizeof(msg));
-                            record_msg(msg.message);
-                            handler->ctx.set_eax(1);
-                            synthesized = true;
+                        uint32_t now_ms = SDL_GetTicks();
+                        if (g_synth_idle_timer_next_ms == 0 ||
+                            static_cast<int32_t>(now_ms - g_synth_idle_timer_next_ms) >= 0) {
+                            Win32_MSG msg = {0};
+                            msg.hwnd = (hWnd != 0 && hWnd != 0xFFFFFFFFu) ? hWnd : *g_valid_hwnds.begin();
+                            msg.message = WM_TIMER;
+                            msg.wParam = 1;
+                            msg.lParam = 0;
+                            msg.time = now_ms;
+                            int mx, my;
+                            SDL_GetMouseState(&mx, &my);
+                            msg.pt_x = mx;
+                            msg.pt_y = my;
+                            if (win32_message_matches_filter(msg, hWnd, wMsgFilterMin, wMsgFilterMax)) {
+                                handler->backend.mem_write(lpMsg, &msg, sizeof(msg));
+                                record_msg(msg.message);
+                                handler->ctx.set_eax(1);
+                                synthesized = true;
+                                g_synth_idle_timer_next_ms = now_ms + 16;
+                            }
                         }
                     }
                     if (!synthesized) {
